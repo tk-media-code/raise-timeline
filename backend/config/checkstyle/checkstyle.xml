@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+		"-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+		"https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+  このプロジェクトのCheckstyle設定。
+
+  Google/Sunが配布する既定設定（google_checks.xml / sun_checks.xml）は採用していない。
+  それらはインデント幅・行の折り返し・命名規則など「コードの見た目（書式）」に踏み込む検査を
+  大量に含んでおり、本プロジェクトが採用しているタブインデントや既存のコーディングスタイルと
+  真正面から衝突する。フォーマッタ（Prettier/Spotless相当）を導入しない方針とも矛盾するため、
+  ここでは書式に踏み込まない「実質的な誤り・見落としの検出」だけを個別に選んで並べている。
+-->
+<module name="Checker">
+	<!-- ファイルの文字コード。プロジェクト全体がUTF-8前提のため明示する。 -->
+	<property name="charset" value="UTF-8" />
+
+	<module name="TreeWalker">
+		<!-- 使われていないimport文。リファクタリングの置き土産（消し忘れ）を検出する。 -->
+		<module name="UnusedImports" />
+		<!-- 同じクラスを重複してimportしている、または`java.lang`など不要なimportを検出する。 -->
+		<module name="RedundantImport" />
+		<!-- equals()をオーバーライドしているのにhashCode()が無い（またはその逆）を検出する。
+		     HashMap/HashSetでの不可解な動作の典型的な原因になるため。 -->
+		<module name="EqualsHashCode" />
+		<!-- switch文にdefault節が無いことを検出する。将来enumに値が増えたときの
+		     「どの分岐にも当てはまらない」という見落としを防ぐ。 -->
+		<module name="MissingSwitchDefault" />
+		<!-- switch文のcaseからbreak/return無しで次のcaseへ流れ落ちる「フォールスルー」を検出する。
+		     意図的なフォールスルーは"// fall through"等のコメントがあれば許可される。 -->
+		<module name="FallThrough" />
+		<!-- if (a == true) のような、booleanを冗長に比較する式を検出する。 -->
+		<module name="SimplifyBooleanExpression" />
+		<!-- 中身が空のブロック（catch節の握りつぶし等）を検出する。空であることが意図的な場合は
+		     コメントを1行入れることで許可される（"// 何もしない"のような）。 -->
+		<module name="EmptyBlock">
+			<property name="option" value="text" />
+		</module>
+		<!-- if/for/while等を波括弧無しの1行で書くことを禁止する。「後で行を足したら
+		     if文の外になっていた」という典型的なバグを防ぐ（書式の強制ではなく安全対策）。 -->
+		<module name="NeedBraces" />
+		<!-- ==/!=による文字列比較（本来equalsを使うべき箇所）を検出する。 -->
+		<module name="StringLiteralEquality" />
+		<!-- 特定のクラスのimport自体を禁止する。jakarta.transaction.Transactionalは
+		     org.springframework.transaction.annotation.Transactionalとよく似た名前を持つが
+		     readOnly属性を持たず、誤ってimportしてもコンパイルは通ってしまう。同様の理由でjavax.*系（Jakarta EE移行前の
+		     パッケージ）の混入も防ぐ。 -->
+		<module name="IllegalImport">
+			<property name="illegalPkgs" value="javax" />
+			<property name="illegalClasses" value="jakarta.transaction.Transactional" />
+		</module>
+	</module>
+</module>
