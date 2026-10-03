@@ -45,21 +45,14 @@ tasks.withType(JavaCompile).configureEach {
 	options.compilerArgs << '-Xlint:all'
 }
 
-// SpotBugs: コンパイル後のbytecodeを解析してバグの可能性がある箇所を検出する静的解析ツール。
-// Checkstyleがソースコードの見た目（未使用import等）を見るのに対し、SpotBugsは実際の挙動に
-// 近いレベル（bytecode）で「nullになり得る値の非チェック参照」「使われていない戻り値」といった
-// 実質的な不具合を検出する。
 spotbugs {
-	// effort: 解析の深さ。'max'はSpotBugsが用意する中で最も詳細な解析を行う設定
-	// （その分、他のeffortよりも解析に時間がかかる）。
 	toolVersion = '4.10.3'
 	// GroovyのDSLでは `effort = 'max'` のような文字列代入もできるが、Gradle 10で廃止予定の
 	// 非推奨機能（文字列→enumの暗黙変換）に依存してしまうため、valueOf(...)でenum定数を明示的に
 	// 解決してから.set()で渡す（`Effort.MAX`という書き方だとGroovyがKotlin実装の内部クラスと
 	// 誤認してConfigurationエラーになるため、あえてvalueOfを介す）。
+	// 解析時間が延びても、見落としを減らす側に倒す。
 	effort.set(com.github.spotbugs.snom.Effort.valueOf('MAX'))
-	// reportLevel: 検出結果として報告する最低の重要度。DEFAULT（Medium）は、
-	// 明らかなバグ（High）に加えて、バグである可能性が高いもの（Medium）まで報告する。
 	reportLevel.set(com.github.spotbugs.snom.Confidence.valueOf('DEFAULT'))
 	// excludeFilter: 実装のコーディングスタイル上、意図的に許容しているパターンを除外する
 	// 設定ファイル。理由はconfig/spotbugs/exclude.xmlのコメントを参照。
@@ -80,8 +73,6 @@ tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
 	}
 }
 
-// Checkstyle: ソースコードを字句解析して、書式ではなく「見落とし・誤りの可能性」を検出するツール。
-// 検査項目自体はconfig/checkstyle/checkstyle.xml（このファイル冒頭のコメント参照）で定義する。
 checkstyle {
 	toolVersion = '13.9.0'
 	// テストコードも検査対象に含める。テストコードも「読んで意味が分かること」が重要な資産であり、

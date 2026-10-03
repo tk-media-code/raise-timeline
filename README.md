@@ -12,6 +12,13 @@
 | 開発環境 | Docker Compose（frontend / backend / db の3サービス） |
 | 静的解析とテスト | フロントエンド: oxlint・Vitest／バックエンド: Checkstyle・SpotBugs・JUnit |
 
+## 必要なもの
+
+- Docker と Docker Compose v2（`docker compose` コマンド）
+- 品質チェックを手で走らせるときだけ、ホストの Node.js（[品質チェック](#品質チェック)）
+
+アプリを動かすだけなら、ホストに Java も Node.js も要りません。
+
 ## 起動方法
 
 ```bash
@@ -25,9 +32,7 @@ docker compose up -d --build
 | http://localhost:5173 | ダミーページ（frontend） |
 | http://localhost:8080 | ヘルスチェック（backend）。DB に届けば 200、届かなければ 503 を返します |
 
-止めるときは `docker compose down` です。データごと消すときは `docker compose down -v` です。
-
-アプリを動かすだけなら、ホストに Java も Node.js も要りません。
+止めるときは `docker compose down` です。データごと消すときは `docker compose down -v` です。`-v` は DB のデータだけでなく、依存とビルド結果のボリュームも消すので、次の起動は依存のダウンロードからやり直しで数分かかります。
 
 ## 設定を変える
 
@@ -39,7 +44,7 @@ docker compose up -d --build
 | `POSTGRES_USER` | `raise_timeline` | データベースのユーザー名 |
 | `POSTGRES_PASSWORD` | `local-dev-only` | データベースのパスワード |
 
-DB の3つは初回起動時だけ読まれます。変えたら `docker compose down -v` でデータごと作り直してください。
+DB の3つは初回起動時だけ読まれます。変えたら `docker compose down -v` でデータごと作り直してください。依存のボリュームも消えるので、次の起動は数分かかります。
 
 ## よく使うコマンド
 
@@ -62,7 +67,7 @@ docker compose exec db psql -U raise_timeline -d raise_timeline
 docker compose exec frontend npm install <パッケージ名>
 ```
 
-`node_modules` はコンテナ側のボリュームにあるので、ホストで `npm install` しても反映されません。
+`frontend/node_modules`・`backend/build`・`backend/.gradle` はコンテナ用のボリュームのマウント先で、ホストからは root 所有になり書き込めません。ホストで `npm install` しても権限エラーで失敗するので、依存はコンテナの中で足します。
 
 `package-lock.json` が変わったブランチへ切り替えたあとは、引数なしの `docker compose exec frontend npm install` で `node_modules` を合わせます。
 
@@ -70,13 +75,13 @@ docker compose exec frontend npm install <パッケージ名>
 
 Claude Code から push するときは、hook（`.claude/hooks/guard.cjs`）が `scripts/harness-check.cjs`（ハーネス共通）と `scripts/quality-check.cjs`（このプロジェクト）を自動で走らせ、通らなければ push を止めます。
 
-ターミナルから手で `git push` するときは、何も走りません。push の前に、次のコマンドで確かめてください。CI も静的解析とテストは走らせません。
-
-どちらの場合も、`scripts/quality-check.cjs` はコンテナの中で Gradle と npm を動かすので、コンテナが起動している必要があります。
+ターミナルから手で `git push` するときは、何も走りません。CI も静的解析とテストは走らせないので、push の前に、次のコマンドで確かめてください。
 
 ```bash
 node scripts/quality-check.cjs
 ```
+
+どちらの場合も、`scripts/quality-check.cjs` はコンテナの中で Gradle と npm を動かすので、コンテナが起動している必要があります。
 
 | 終了コード | 意味 |
 | --- | --- |

@@ -219,7 +219,7 @@ raise-timeline/
 
 | 対象 | コマンド | 見るもの |
 | --- | --- | --- |
-| backend | `./gradlew check --console=plain` | コンパイル・Checkstyle・SpotBugs・テスト |
+| backend | `./gradlew check --continue --console=plain` | コンパイル・Checkstyle・SpotBugs・テスト |
 | frontend | `npm run lint` | oxlint |
 | frontend | `npm run typecheck` | 型 |
 | frontend | `npm test` | Vitest |
@@ -230,7 +230,7 @@ raise-timeline/
 | --- | --- | --- |
 | 0 | 合格 | |
 | 1 | 指摘あり | 上のどれかが失敗した |
-| 3 | 環境の問題で実行できない | `docker` を実行できない／3つのコンテナのどれかが起動していない／`db` が healthy でない／git の worktree の中から実行した |
+| 3 | 環境の問題で実行できない | `docker` を実行できない／3つのコンテナのどれかが起動していない／`db` が healthy でない／git の worktree の中から実行した／検査の途中で docker 自体が失敗した（集計で `[環境]` と出る） |
 
 - **Node で書きます。** 作者が Windows 機も使っているためです（`writing-quality-checks` スキルの「迷ったら Node」）
 - **worktree の中からは検査しません。** コンテナがマウントしているのはメインの作業ディレクトリなので、worktree から走らせると、変更していない側のコードを検査して合格させてしまいます

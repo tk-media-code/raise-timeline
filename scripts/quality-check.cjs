@@ -66,7 +66,19 @@ const notRunning = [BACKEND, FRONTEND, DB].filter(
 );
 if (notRunning.length > 0) {
 	envError(
-		...notRunning.map((name) => `コンテナ ${name} が起動していません。`),
+		...notRunning.flatMap((name) => {
+			const lines = [`コンテナ ${name} が起動していません。`];
+			// compose に restart の指定が無いので、コンパイルエラーや Spring の起動失敗でもコンテナごと止まる。
+			// up -d を繰り返しても直らないので、原因を見に行かせる。
+			const exit = run('docker', ['inspect', '-f', '{{.State.ExitCode}}', name]);
+			if (exit.ok && exit.stdout !== '' && exit.stdout !== '0') {
+				const service = name.replace(/^raise-timeline-/, '');
+				lines.push(
+					`  終了コード ${exit.stdout} で止まっています。原因は docker compose logs ${service} で確かめてください（コンパイルエラーや起動の失敗でも止まります）。`,
+				);
+			}
+			return lines;
+		}),
 		'docker compose up -d を実行してから、もう一度実行してください。',
 	);
 }
@@ -83,7 +95,8 @@ function dockerExec(container, ...cmd) {
 const checks = [
 	{
 		name: 'backend (gradlew check)',
-		args: dockerExec(BACKEND, './gradlew', 'check', '--console=plain'),
+		// --continue: Gradle は既定で最初に失敗したタスクで止まる。Checkstyle とテストの指摘を1回で出し切る。
+		args: dockerExec(BACKEND, './gradlew', 'check', '--continue', '--console=plain'),
 		spotbugs: true,
 	},
 	{ name: 'frontend (lint)', args: dockerExec(FRONTEND, 'npm', 'run', 'lint') },
