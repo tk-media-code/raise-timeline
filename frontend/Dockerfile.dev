@@ -1,0 +1,15 @@
+# 開発専用イメージ。ソースはビルドインせず、docker-compose.yml 側でマウントして起動する
+FROM node:24
+WORKDIR /workspace
+
+# 先に依存解決に必要なファイルだけをCOPYし、イメージビルド時点でnode_modulesを作っておく
+# （起動時の初回インストール待ちを減らす。実体はマウントされたホストのファイルに置き換わる）。
+# package-lock.json込みでCOPYし、npm install ではなく npm ci を使うことで、
+# ロックファイルどおりの依存を再現よくインストールする（CIやDockerビルドでの定石）。
+COPY package.json package-lock.json ./
+RUN npm ci
+
+EXPOSE 5173
+# --host 0.0.0.0（vite.config.tsのserver.hostで設定済み）でコンテナ外からの接続を受け付け、
+# docker-compose.ymlのports設定でホストの5173番にフォワードする。
+CMD ["npm", "run", "dev"]

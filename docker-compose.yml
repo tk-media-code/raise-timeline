@@ -6,6 +6,20 @@
 # そのまま起動できる。変えたいときだけ、同じディレクトリに .env を作って上書きする
 # （.env はコミットしない）。変えられる変数は README.md にある。
 services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: raise-timeline-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/workspace
+      # ./frontend のマウントは /workspace/node_modules も覆ってしまい、イメージのビルドで入れた
+      # node_modules が見えなくなる。名前付きボリュームを重ねて、そこだけコンテナ側に置く。
+      - frontend-node-modules:/workspace/node_modules
+    # depends_on は付けない。frontend は起動時に backend へ接続しない。
+
   backend:
     build:
       context: ./backend
@@ -53,6 +67,7 @@ services:
       start_period: 10s
 
 volumes:
+  frontend-node-modules:
   gradle-home:
   gradle-project-cache:
   build-output:
