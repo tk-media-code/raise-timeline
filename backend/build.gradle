@@ -1,0 +1,81 @@
+plugins {
+	id 'java'
+	id 'checkstyle'
+	id 'org.springframework.boot' version '4.1.0'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.github.spotbugs' version '6.5.10'
+}
+
+group = 'com.tkmedia'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	// ソースの変更を検知してアプリだけを再起動する開発用の道具。本番の JAR には入らない。
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	runtimeOnly 'org.postgresql:postgresql'
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	// 失敗したテストの理由（期待した値と実際の値）まで出力する。
+	// push 時の品質チェックの出力が、そのまま直す材料になるため。
+	testLogging {
+		events 'failed'
+		exceptionFormat 'full'
+	}
+}
+
+// javac自身が持つ追加警告（未使用のimportやdeprecated APIの利用など）をすべて有効にする。
+// 追加の依存やダウンロードが不要な、コンパイラ標準の検査。
+tasks.withType(JavaCompile).configureEach {
+	options.compilerArgs << '-Xlint:all'
+}
+
+spotbugs {
+	toolVersion = '4.10.3'
+	// GroovyのDSLでは `effort = 'max'` のような文字列代入もできるが、Gradle 10で廃止予定の
+	// 非推奨機能（文字列→enumの暗黙変換）に依存してしまうため、valueOf(...)でenum定数を明示的に
+	// 解決してから.set()で渡す（`Effort.MAX`という書き方だとGroovyがKotlin実装の内部クラスと
+	// 誤認してConfigurationエラーになるため、あえてvalueOfを介す）。
+	// 解析時間が延びても、見落としを減らす側に倒す。
+	effort.set(com.github.spotbugs.snom.Effort.valueOf('MAX'))
+	reportLevel.set(com.github.spotbugs.snom.Confidence.valueOf('DEFAULT'))
+	// excludeFilter: 実装のコーディングスタイル上、意図的に許容しているパターンを除外する
+	// 設定ファイル。理由はconfig/spotbugs/exclude.xmlのコメントを参照。
+	excludeFilter = file('config/spotbugs/exclude.xml')
+}
+// レポートをHTML・text形式でも出力する（既定のXML形式は機械可読だが人が読みにくいため）。
+// text形式を追加しているのは、push前チェック（scripts/quality-check.cjs）が失敗時に
+// このファイルをコンテナ内から直接catして指摘内容をそのまま表示するため。
+// HTMLはブラウザでの閲覧向けで、この用途には向かない。
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+	reports {
+		html {
+			required = true
+		}
+		text {
+			required = true
+		}
+	}
+}
+
+checkstyle {
+	toolVersion = '13.9.0'
+	// テストコードも検査対象に含める。テストコードも「読んで意味が分かること」が重要な資産であり、
+	// 本体と同じ規約で保つ。
+	sourceSets = [sourceSets.main, sourceSets.test]
+}

@@ -1,0 +1,11 @@
+# 開発専用イメージ。ソースはビルドインせず、docker-compose.yml 側でマウントして起動する
+FROM node:24
+WORKDIR /workspace
+
+# ビルド時に node_modules を作っておく。compose の名前付きボリューム frontend-node-modules は、
+# 初めて作られるときにこの中身で埋まる。
+COPY package.json package-lock.json ./
+RUN npm ci
+
+EXPOSE 5173
+CMD ["npm", "run", "dev"]

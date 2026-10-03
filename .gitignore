@@ -1,0 +1,6 @@
+# 既定値を上書きするためのファイル。実際の値が入るのでコミットしない
+.env
+
+# Claude Code の個人設定と、サブエージェントが隔離作業に使う worktree
+.claude/settings.local.json
+.claude/worktrees/

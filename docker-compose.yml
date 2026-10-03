@@ -1,0 +1,74 @@
+# ローカル開発専用の構成。本番用のイメージやデプロイ先は、まだ用意していない。
+#
+# 起動: docker compose up -d --build
+#
+# ${変数名:-既定値} は「未設定なら既定値を使う」という書き方。既定値はローカル専用で、
+# そのまま起動できる。変えたいときだけ、同じディレクトリに .env を作って上書きする
+# （.env はコミットしない）。変えられる変数は README.md にある。
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: raise-timeline-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/workspace
+      # ./frontend のマウントは /workspace/node_modules も覆ってしまい、イメージのビルドで入れた
+      # node_modules が見えなくなる。名前付きボリュームを重ねて、そこだけコンテナ側に置く。
+      - frontend-node-modules:/workspace/node_modules
+    # depends_on は付けない。frontend は起動時に backend へ接続しない。
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: raise-timeline-backend
+    ports:
+      - "8080:8080"
+    environment:
+      # application.properties が ${DB_URL} などで参照する。ホスト名 db は下の db サービス。
+      # db サービスの POSTGRES_* と同じ変数・同じ既定値から組み立てる。ずれると接続できない。
+      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-raise_timeline}
+      DB_USERNAME: ${POSTGRES_USER:-raise_timeline}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only}
+    depends_on:
+      db:
+        # db が接続を受け付けるようになってから起動する。先に起動すると、接続に失敗して落ちる。
+        condition: service_healthy
+    volumes:
+      - ./backend:/workspace
+      - gradle-home:/root/.gradle # 依存のキャッシュ。再起動のたびにダウンロードし直さない
+      - gradle-project-cache:/workspace/.gradle
+      - build-output:/workspace/build # ビルド成果物（root 所有）をホスト側に書き出さない
+
+  db:
+    image: postgres:18
+    container_name: raise-timeline-db
+    environment:
+      # 公式イメージは「初回起動時だけ」この3つを読んで DB とユーザーを作る。あとから値を
+      # 変えても反映されない。変えるときは docker compose down -v でデータごと作り直す。
+      POSTGRES_DB: ${POSTGRES_DB:-raise_timeline}
+      POSTGRES_USER: ${POSTGRES_USER:-raise_timeline}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only}
+    # ports は公開しない。既定のパスワードがこのファイルに載っているので、ホストの外から届かせない。
+    volumes:
+      # postgres:18 からデータの置き場が変わった。マウント先は /var/lib/postgresql
+      # （/var/lib/postgresql/data ではない）。
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      # $$ は Compose に展開させず、コンテナの中のシェルに $ として渡す書き方。
+      # コンテナ自身が持つ上の環境変数を読むので、既定値を二重に書かずに済む。
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  frontend-node-modules:
+  gradle-home:
+  gradle-project-cache:
+  build-output:
+  postgres-data:

@@ -1,0 +1,2 @@
+/* Tailwind CSS v4 は、この1行だけで有効になる。コンパイルは vite.config.ts の @tailwindcss/vite が行う。 */
+@import "tailwindcss";

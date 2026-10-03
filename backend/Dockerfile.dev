@@ -1,0 +1,19 @@
+# 開発専用イメージ。ソースはビルドインせず、docker-compose.yml 側でマウントして起動する
+FROM eclipse-temurin:25-jdk
+WORKDIR /workspace
+
+# 先に依存解決に必要なファイルだけをCOPYし、イメージビルド時点で依存を温めておく
+# （起動時の初回ダウンロード待ちを減らす。実体はマウントされたホストのファイルに置き換わる）
+COPY gradlew settings.gradle build.gradle ./
+COPY gradle ./gradle
+RUN ./gradlew --no-daemon dependencies || true
+
+EXPOSE 8080
+# bootRun は起動したアプリのプロセスが終了するまでブロックし続けるタスクのため、
+# `bootRun --continuous` は「ビルド完了→変更待ち」というGradle継続ビルド本来のサイクルに
+# 入れず機能しない。そのため「コンパイルだけを継続監視するGradle」と「アプリを実行する
+# Gradle」を別プロセスとして並行稼働させる（Spring Boot公式が案内する構成）。
+# 1) `./gradlew -t classes` がソース変更のたびに増分コンパイルしてクラスファイルを更新
+# 2) `./gradlew bootRun` で起動した Spring Boot DevTools がそのクラスファイル更新を検知し、
+#    コンテナを再起動せずアプリだけを高速に再起動する
+CMD ["sh", "-c", "./gradlew -t classes & exec ./gradlew bootRun"]
