@@ -68,9 +68,11 @@ docker compose exec frontend npm install <パッケージ名>
 
 ## 品質チェック
 
-push のときに、hook が `scripts/harness-check.cjs`（ハーネス共通）と `scripts/quality-check.cjs`（このプロジェクト）を自動で走らせます。後者はコンテナの中で Gradle と npm を動かすので、コンテナが起動している必要があります。
+Claude Code から push するときは、hook（`.claude/hooks/guard.cjs`）が `scripts/harness-check.cjs`（ハーネス共通）と `scripts/quality-check.cjs`（このプロジェクト）を自動で走らせ、通らなければ push を止めます。
 
-手で確かめるときは次のとおりです。
+ターミナルから手で `git push` するときは、何も走りません。push の前に、次のコマンドで確かめてください。CI も静的解析とテストは走らせません。
+
+どちらの場合も、`scripts/quality-check.cjs` はコンテナの中で Gradle と npm を動かすので、コンテナが起動している必要があります。
 
 ```bash
 node scripts/quality-check.cjs
@@ -100,6 +102,6 @@ Issue を立て、ブランチを切り、Pull Request で変更を入れます�
 | --- | --- |
 | `backend/` | Spring Boot のアプリ |
 | `frontend/` | React のアプリ |
-| `scripts/` | push 時に走る品質チェック |
+| `scripts/` | 品質チェック |
 | `docs/` | 設計書 |
 | `docker-compose.yml` | ローカル開発用の構成（frontend / backend / db） |
