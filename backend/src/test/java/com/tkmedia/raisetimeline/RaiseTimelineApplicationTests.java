@@ -1,5 +1,6 @@
 package com.tkmedia.raisetimeline;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -24,6 +26,9 @@ class RaiseTimelineApplicationTests {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
 	@Test
 	@DisplayName("アプリ全体が起動し、本物の DB に届いた状態で GET / が 200 を返す")
 	void rootReturnsOkWithRealDatabase() throws Exception {
@@ -31,6 +36,15 @@ class RaiseTimelineApplicationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("UP"))
 				.andExpect(jsonPath("$.database").value("UP"));
+	}
+
+	@Test
+	@DisplayName("起動時に Flyway が走り、本物の DB に flyway_schema_history がある")
+	void flywayCreatesSchemaHistoryOnStartup() {
+		// to_regclass は、テーブルが無ければ例外ではなく NULL を返す。
+		String table = jdbcTemplate.queryForObject(
+				"SELECT to_regclass('flyway_schema_history')::text", String.class);
+		assertThat(table).isEqualTo("flyway_schema_history");
 	}
 
 }

@@ -22,8 +22,13 @@ repositories {
 dependencies {
 	// ソースの変更を検知してアプリだけを再起動する開発用の道具。本番の JAR には入らない。
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
-	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	// SQL を自分で書いて Java に結びつける道具。Spring Boot の依存管理に含まれないので版を明記する。
+	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
+	// 起動時に db/migration の SQL を順に流し、DB の構造を版管理する。版は Spring Boot が決める。
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	// Flyway 10 以降、PostgreSQL 対応は本体から分かれた。これが無いと PostgreSQL に繋げない。
+	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 	runtimeOnly 'org.postgresql:postgresql'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
