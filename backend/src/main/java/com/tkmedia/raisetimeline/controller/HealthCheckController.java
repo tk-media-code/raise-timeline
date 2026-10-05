@@ -26,7 +26,9 @@ public class HealthCheckController {
 			healthCheckMapper.ping();
 			return ResponseEntity.ok(new HealthCheckResponse("UP", "UP"));
 		} catch (DataAccessException e) {
-			// MyBatis の例外も、MyBatis-Spring が DataAccessException に変換して投げてくる。
+			// SQL の実行で起きた例外は、MyBatis-Spring が DataAccessException に変換して投げてくる。
+			// Mapper の定義の誤りによる BindingException は変換されず 500 になる。
+			// 設定の誤りは DB の停止と区別したいので、それでよい。
 			// 例外の文言には接続先などが入り得るので、ログにだけ残し、レスポンスには載せない。
 			log.warn("DB への問い合わせに失敗した", e);
 			return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
