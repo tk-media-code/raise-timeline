@@ -7,7 +7,7 @@
 | 区分 | 使うもの |
 | --- | --- |
 | フロントエンド | React 19 / TypeScript 6 / Vite 8 / Tailwind CSS 4 / React Router 8 |
-| バックエンド | Java 25 / Spring Boot 4 / Spring Data JPA |
+| バックエンド | Java 25 / Spring Boot 4 / MyBatis / Flyway |
 | データベース | PostgreSQL 18 |
 | 開発環境 | Docker Compose（frontend / backend / db の3サービス） |
 | 静的解析とテスト | フロントエンド: oxlint・Vitest／バックエンド: Checkstyle・SpotBugs・JUnit |
@@ -70,6 +70,12 @@ docker compose exec frontend npm install <パッケージ名>
 `frontend/node_modules`・`backend/build`・`backend/.gradle` はコンテナ用のボリュームのマウント先で、ホストからは root 所有になり書き込めません。ホストで `npm install` しても権限エラーで失敗するので、依存はコンテナの中で足します。
 
 `package-lock.json` が変わったブランチへ切り替えたあとは、引数なしの `docker compose exec frontend npm install` で `node_modules` を合わせます。
+
+## DB のスキーマと SQL
+
+- テーブルの変更は、`backend/src/main/resources/db/migration/` に `V<番号>__<内容>.sql` を足して行います。アプリの起動時に Flyway が当てます。
+- **一度当てたマイグレーションは書き換えません。** Flyway が記録したチェックサムと合わなくなり、起動に失敗します。直すときは、次の番号のファイルを足します。
+- SQL は `backend/src/main/resources/mapper/` の XML に書きます。Mapper インターフェースは `com.tkmedia.raisetimeline.mapper` に置き、`@Mapper` を付けます（`@MapperScan` は使いません。`@WebMvcTest` などで DB 無しの起動に失敗するためです）。
 
 ## 品質チェック
 
