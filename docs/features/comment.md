@@ -53,6 +53,7 @@
 - 一覧に新しい順で返る
 - 投稿のあと投稿を取り直すと `commentCount` が 1 増える
 - 本人が削除すると 204。一覧から消え、`commentCount` が減る
+- 削除が出来事 `comment.deleted` として利用者 id とコメント id 付きで残る（[logging-design.md](../logging-design.md) の 3 章）
 - 画面: 投稿した直後に自分のコメントが一覧の先頭に出る
 
 ### 入力の境界
