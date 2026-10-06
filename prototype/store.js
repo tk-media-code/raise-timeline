@@ -223,7 +223,7 @@
     const data = { users: [], posts: [], postImages: [], likes: [], comments: [], follows: [], nextId: 1 };
     const add = (list, row) => { row.id = data.nextId++; list.push(row); return row; };
 
-    const userCreated = iso(now - 120 * DAY);
+    const userCreated = iso(now - 700 * DAY); // 最古の投稿（600 日前）より前
     const idByName = {};
     MAIN_USERS.forEach(([username, displayName, bio, avatar]) => {
       const u = add(data.users, {
