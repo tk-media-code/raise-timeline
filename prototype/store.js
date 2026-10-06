@@ -25,7 +25,25 @@
   }
 
   // ---- 保存 ----
-  function load() { return JSON.parse(localStorage.getItem(DATA_KEY)); }
+  // 保存された JSON を読む。無い・壊れている・形が違うときは null
+  function readJson(key) {
+    try {
+      return JSON.parse(localStorage.getItem(key));
+    } catch (err) {
+      return null;
+    }
+  }
+  function isValidData(data) {
+    return !!data && typeof data === 'object' && Array.isArray(data.users);
+  }
+  // データが壊れていたら見本データを入れ直す（init() と load() の両方から通る）
+  function load() {
+    const data = readJson(DATA_KEY);
+    if (isValidData(data)) return data;
+    localStorage.removeItem(SESSION_KEY); // 古いセッションを、入れ直した別人のデータに結び付けない
+    seed();
+    return readJson(DATA_KEY);
+  }
   function save(data) { localStorage.setItem(DATA_KEY, JSON.stringify(data)); }
   function newId(data) { return data.nextId++; }
 
@@ -70,9 +88,10 @@
   }
 
   function currentUser() {
-    const session = JSON.parse(localStorage.getItem(SESSION_KEY));
-    if (!session) return null;
-    return publicUser(load().users.find((u) => u.id === session.userId));
+    const data = load(); // 先に読む。壊れていて入れ直したら、セッションも消える
+    const session = readJson(SESSION_KEY);
+    if (!session || typeof session !== 'object') return null;
+    return publicUser(data.users.find((u) => u.id === session.userId));
   }
 
   function setSession(userId) {
@@ -698,7 +717,7 @@
   }
 
   function init() {
-    if (!localStorage.getItem(DATA_KEY)) seed();
+    load();
   }
 
   function reset() {

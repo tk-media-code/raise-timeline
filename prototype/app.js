@@ -37,7 +37,12 @@
       const m = r.regex.exec(path);
       if (m) {
         const params = {};
-        r.keys.forEach((k, i) => { params[k] = decodeURIComponent(m[i + 1]); });
+        try {
+          r.keys.forEach((k, i) => { params[k] = decodeURIComponent(m[i + 1]); });
+        } catch (err) {
+          if (err instanceof URIError) return null; // '%' だけなど壊れた形は、無い URL として扱う
+          throw err;
+        }
         return { route: r, params };
       }
     }
@@ -56,22 +61,50 @@
   }
 
   function route() {
-    const ctx = parseHash(location.hash);
-    const found = matchRoute(ctx.path);
-    const user = RT.store.currentUser();
+    try {
+      const ctx = parseHash(location.hash);
+      const found = matchRoute(ctx.path);
+      const user = RT.store.currentUser();
 
-    if (found && found.route.access === 'auth' && !user) {
-      return navigate('#/login?next=' + encodeURIComponent(location.hash.slice(1) || '/'), { replace: true });
-    }
-    if (found && found.route.access === 'guest' && user) {
-      return navigate('#/', { replace: true });
-    }
+      if (found && found.route.access === 'auth' && !user) {
+        return navigate('#/login?next=' + encodeURIComponent(location.hash.slice(1) || '/'), { replace: true });
+      }
+      if (found && found.route.access === 'guest' && user) {
+        return navigate('#/', { replace: true });
+      }
 
-    const view = found && RT.views[found.route.view];
-    ctx.params = view ? found.params : {};
-    const { title, el: content } = (view || RT.views.notFound)(ctx);
-    const withNav = view && found.route.access === 'auth';
-    mount(withNav ? layout(content, { title }) : content, title);
+      const view = found && RT.views[found.route.view];
+      ctx.params = view ? found.params : {};
+      const { title, el: content } = (view || RT.views.notFound)(ctx);
+      const withNav = view && found.route.access === 'auth';
+      mount(withNav ? layout(content, { title }) : content, title);
+    } catch (err) {
+      console.error(err);
+      mount(errorScreen(), '問題が起きました');
+    }
+  }
+
+  // 描画そのものの例外（docs/error-handling-design.md 4 章）。ナビの無い画面で、再読み込みと見本データへの復旧を出す
+  function errorScreen() {
+    const reload = el('button', { type: 'button', class: 'btn btn-primary btn-block', text: '再読み込み' });
+    reload.addEventListener('click', () => location.reload());
+    const reset = el('button', { type: 'button', class: 'btn btn-block', text: '見本データに戻す' });
+    reset.addEventListener('click', () => {
+      try {
+        RT.store.reset();
+      } catch (err) {
+        console.error(err);
+        try { localStorage.clear(); } catch (e) { /* 何もできない */ }
+      }
+      location.hash = '#/login';
+      location.reload();
+    });
+    return el('div', { class: 'auth' },
+      el('div', { class: 'auth-card' },
+        el('p', { class: 'auth-logo', text: 'raise-timeline' }),
+        el('h1', { class: 'auth-title', text: '問題が起きました' }),
+        el('p', { class: 'auth-text', text: '再読み込みしてください' }),
+        el('div', { class: 'error-actions' }, reload, reset)));
   }
 
   function mount(node, title) {

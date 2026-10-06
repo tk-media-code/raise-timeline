@@ -4,6 +4,9 @@
 
   const { el, textField, delay } = RT.ui;
 
+  // アイコンは小さく縮めて保存する（投稿の画像は ui.js の既定 1280px）
+  const AVATAR_MAX_SIDE = 400;
+
   function focusFirstError(fields) {
     const first = fields.find((f) => f.input.getAttribute('aria-invalid'));
     if (first) first.input.focus();
@@ -117,6 +120,17 @@
       title: 'ページが見つかりません',
       el: authFrame('ページが見つかりません',
         el('p', { class: 'auth-text', text: 'お探しのページは存在しないか、移動した可能性があります。' }),
+        el('p', { class: 'auth-link' }, el('a', { href: '#/', text: 'ホームへ戻る' }))),
+    };
+  }
+
+  // 存在しない投稿・ユーザー（docs/error-handling-design.md 4 章の 404「見つかりません」の画面）。
+  // ログイン中に開くので、レイアウト（ナビ）の中に出す。見出しはレイアウトが title から出す
+  function notFoundResource() {
+    return {
+      title: '見つかりません',
+      el: el('div', { class: 'not-found' },
+        el('p', { class: 'auth-text', text: 'お探しの投稿やユーザーは見つかりませんでした' }),
         el('p', { class: 'auth-link' }, el('a', { href: '#/', text: 'ホームへ戻る' }))),
     };
   }
@@ -279,8 +293,8 @@
 
   function postDetail(ctx) {
     const id = ctx.params.id;
-    // 無い id は 404 の画面にする
-    if (!findPostOrNull(id)) return notFound();
+    // 無い id は「見つかりません」の画面にする
+    if (!findPostOrNull(id)) return notFoundResource();
 
     const box = el('div', { class: 'post-detail' }, el('div', { class: 'list-footer' }, RT.ui.spinner()));
     let card = null;
@@ -319,7 +333,7 @@
   // ---- いいねした人 ----
   function likers(ctx) {
     const id = ctx.params.id;
-    if (!findPostOrNull(id)) return notFound();
+    if (!findPostOrNull(id)) return notFoundResource();
 
     const list = RT.ui.infiniteList({
       load: async (cursor) => {
@@ -493,7 +507,7 @@
 
   function profile(ctx) {
     const first = findUserOrNull(ctx.params.username);
-    if (!first) return notFound();
+    if (!first) return notFoundResource();
 
     const box = el('div', { class: 'profile' }, el('div', { class: 'list-footer' }, RT.ui.spinner()));
     (async () => {
@@ -511,7 +525,7 @@
   // kind は 'followers' か 'following'。上部のタブで 2 つの一覧を行き来する
   function followList(kind, ctx) {
     const user = findUserOrNull(ctx.params.username);
-    if (!user) return notFound();
+    if (!user) return notFoundResource();
 
     const tabs = [
       { key: 'followers', label: 'フォロワー', empty: 'フォロワーはいません' },
@@ -599,7 +613,7 @@
       pick.disabled = true;
       refresh();
       try {
-        const dataUrl = await RT.ui.readImage(file).catch((err) => {
+        const dataUrl = await RT.ui.readImage(file, { maxSide: AVATAR_MAX_SIDE }).catch((err) => {
           console.error(err);
           avatarMessage.textContent = '画像を読み込めませんでした。別のファイルを選んでください';
           return null;
@@ -702,7 +716,7 @@
 
   window.RT = window.RT || {};
   window.RT.views = {
-    register, login, notFound, home, postDetail, likers, editPostDialog, deletePost,
+    register, login, notFound, notFoundResource, home, postDetail, likers, editPostDialog, deletePost,
     profile, followers, following, profileEdit, search,
   };
 })();

@@ -352,21 +352,22 @@
     });
   }
 
-  // localStorage に収まるよう、保存の前に長辺 1280px へ縮める（小さい画像は拡大しない）。
+  // localStorage に収まるよう、保存の前に長辺 maxSide（既定 1280px）へ縮める（小さい画像は拡大しない）。
   // JPEG と WebP は元の形式で品質 0.85、PNG は PNG、GIF は PNG にする（動きは失われる）。
   const MAX_SIDE = 1280;
   const OUTPUT_TYPE = { 'image/jpeg': 'image/jpeg', 'image/webp': 'image/webp', 'image/png': 'image/png', 'image/gif': 'image/png' };
 
-  async function readImage(file) {
+  // maxSide は長辺の上限。投稿の画像は既定の 1280px、アイコンは 400px で呼ぶ
+  async function readImage(file, { maxSide = MAX_SIDE } = {}) {
     const original = await readAsDataUrl(file);
     const img = await loadImage(original);
-    const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
     canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
     const shrunk = canvas.toDataURL(OUTPUT_TYPE[file.type], 0.85);
-    // 縮める必要が無く、作り直すと大きくなるときは元のまま（GIF は PNG にするので除く）
+    // 縮めていない（scale が 1）うえ、作り直すと大きくなるときだけ元のまま。縮めたときは必ず作り直した方を使う（GIF は PNG にするので除く）
     if (scale === 1 && file.type !== 'image/gif' && shrunk.length >= original.length) return original;
     return shrunk;
   }
