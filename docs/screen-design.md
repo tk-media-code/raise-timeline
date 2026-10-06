@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | 登録 | `/register` | 不要 | [auth](features/auth.md) |
 | ログイン | `/login`（`?next=<戻り先>`） | 不要 | auth |
-| ホーム（タイムライン） | `/`（タブは `?tab=following` / `?tab=all`。省くとフォロー中。Issue 2〜7 は「すべて」だけで、既定も「すべて」） | 要 | [timeline](features/timeline.md)、[post](features/post.md) |
+| ホーム（タイムライン） | `/`（タブは `?tab=following` / `?tab=all`。省くとフォロー中。Issue 3〜8 は「すべて」だけで、既定も「すべて」） | 要 | [timeline](features/timeline.md)、[post](features/post.md) |
 | 投稿詳細 | `/posts/:id` | 要 | post、[comment](features/comment.md) |
 | いいねした人 | `/posts/:id/likes` | 要 | [like](features/like.md) |
 | プロフィール | `/users/:username` | 要 | [profile](features/profile.md) |

@@ -3,7 +3,7 @@
 - 日付: 2026-10-06
 - 要件: [requirements.md](../requirements.md) の 3.2
 - 設計: [image-storage-design.md](../image-storage-design.md)（アイコン）、[screen-design.md](../screen-design.md)
-- Issue: 実装の順序の 3「プロフィールを作る」（表示と編集）、4「画像を扱う」（アイコン）
+- Issue: 実装の順序の 4「プロフィールを作る」（表示と編集）、5「画像を扱う」（アイコン）
 
 ## 1. 概要
 
@@ -20,7 +20,7 @@
 | 自己紹介 | 改行をそのまま表示。空なら出さない |
 | 登録日 | 「2026年10月に登録」 |
 | フォロー中 n、フォロワー n | 押すとそれぞれの一覧へ |
-| ボタン | 本人なら「プロフィールを編集」→ `/settings/profile`。他人ならフォローボタン。フォローボタンは Issue 8 で足す（[requirements.md](../requirements.md) の「Issue ごとの仮の振る舞い」） |
+| ボタン | 本人なら「プロフィールを編集」→ `/settings/profile`。他人ならフォローボタン。フォローボタンは Issue 9 で足す（[requirements.md](../requirements.md) の「Issue ごとの仮の振る舞い」） |
 | 投稿一覧 | その人の投稿を新しい順に無限スクロール。投稿カードを使う |
 
 - 存在しないユーザー名は「見つかりません」の画面
@@ -65,8 +65,8 @@
 ### 正常系
 
 - 自分のプロフィールを取ると `isMe` が true、`isFollowing` が false
-- 他人のプロフィールを取ると `isMe` が false。フォローしていれば `isFollowing` が true（`isFollowing` は Issue 8 で確かめる。それまでは false）
-- `followersCount` と `followingCount` が実際の数と一致する（Issue 8 で確かめる。それまでは 0）
+- 他人のプロフィールを取ると `isMe` が false。フォローしていれば `isFollowing` が true（`isFollowing` は Issue 9 で確かめる。それまでは false）
+- `followersCount` と `followingCount` が実際の数と一致する（Issue 9 で確かめる。それまでは 0）
 - 表示名と自己紹介を更新すると応答に反映され、`updated_at` が進む
 - アイコンを更新すると新しい `avatarUrl` が返り、`users.avatar_key` が新しいキーになり、古いキーが削除される
 - アイコンが未設定なら `avatarUrl` は null
@@ -87,7 +87,7 @@
 ### 異常系
 
 - S3 への保存が失敗したら 500 で、`avatar_key` は変わらない
-- 古い画像の削除が失敗しても 200 で、WARN ログが出る
+- 古い画像の削除が失敗しても 200 で、WARN の出来事 `image.delete_failed` が出る（[logging-design.md](../logging-design.md) の 3 章）
 - 存在しないユーザー名は 404
 - 画面: 保存に失敗しても入力は消えない
 

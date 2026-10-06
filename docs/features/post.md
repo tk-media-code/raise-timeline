@@ -3,7 +3,7 @@
 - 日付: 2026-10-06
 - 要件: [requirements.md](../requirements.md) の 3.3
 - 設計: [image-storage-design.md](../image-storage-design.md)、[screen-design.md](../screen-design.md)、[error-handling-design.md](../error-handling-design.md)
-- Issue: 実装の順序の 2「投稿とタイムラインを作る」（テキスト）、4「画像を扱う」（画像とビューア）
+- Issue: 実装の順序の 3「投稿とタイムラインを作る」（テキスト）、5「画像を扱う」（画像とビューア）
 
 ## 1. 概要
 
@@ -79,7 +79,7 @@ multipart/form-data。部品 `body`（テキスト）と `images`（ファイル
 ## 4. 処理の流れ
 
 画像付き投稿は [image-storage-design.md](../image-storage-design.md) の 4 章。先に S3 へ上げ、DB の書き込みが失敗したら消す。
-削除は DB を消してから S3 を消し、S3 の失敗は WARN で応答は 204。
+削除は DB を消してから S3 を消し、S3 の失敗は `image.delete_failed`（WARN）で応答は 204。
 
 ## 5. データ
 
@@ -89,14 +89,15 @@ multipart/form-data。部品 `body`（テキスト）と `images`（ファイル
 
 ### 正常系
 
-- 本文だけで投稿すると 201。`body`、`author`（自分）、`images` が空、`likeCount` と `commentCount` が 0、`likedByMe` が false、`edited` が false（`likeCount` と `commentCount` は Issue 6 と 7 で数えた値になる。それまでは 0）
+- 本文だけで投稿すると 201。`body`、`author`（自分）、`images` が空、`likeCount` と `commentCount` が 0、`likedByMe` が false、`edited` が false（`likeCount` と `commentCount` は Issue 7 と 8 で数えた値になる。それまでは 0）
 - 画像 1 枚で投稿すると 201。`images` に URL が 1 つ。S3 の代役に `posts/<uuid>.<拡張子>` のキーと正しい Content-Type で渡る
 - 画像 4 枚で投稿すると `images` が送った順に 4 つ。`position` が 0〜3
 - 本文が空で画像だけの投稿は 201
 - `GET` で同じ内容が返る
 - 本文を編集すると 200 で `body` が変わり、`edited` が true、`updated_at` が進む。`images` は変わらない
 - 削除すると 204。そのあと `GET` は 404。S3 の代役の `deleteAll` に画像のキーが渡る
-- 削除すると、その投稿の画像の行も消える（Mapper）。いいねとコメントが消えることは Issue 6 と 7 で確かめる
+- 削除すると、その投稿の画像の行も消える（Mapper）。いいねとコメントが消えることは Issue 7 と 8 で確かめる
+- 削除が出来事 `post.deleted` として利用者 id と投稿 id 付きで残る（[logging-design.md](../logging-design.md) の 3 章）
 
 ### 入力の境界
 
@@ -122,7 +123,7 @@ multipart/form-data。部品 `body`（テキスト）と `images`（ファイル
 - S3 への保存が 2 枚目で失敗したら 500。DB に行が無く、1 枚目のキーが削除される
 - DB の書き込みが失敗したら 500。上げた画像のキーがすべて削除される
 - S3 の設定が無い環境で画像付きで投稿すると 503 `IMAGE_STORAGE_UNAVAILABLE`。本文だけの投稿は通る
-- 削除で S3 の削除が失敗しても 204 で、WARN ログが出る
+- 削除で S3 の削除が失敗しても 204 で、WARN の出来事 `image.delete_failed` が出る
 - 画面: 投稿に失敗しても本文と選んだ画像は残る
 
 ### 重複と一意性

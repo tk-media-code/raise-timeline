@@ -3,7 +3,7 @@
 - 日付: 2026-10-06
 - 要件: [requirements.md](../requirements.md) の 3.8
 - 設計: [api-conventions.md](../api-conventions.md)、[database-design.md](../database-design.md) の 4〜5 章
-- Issue: 実装の順序の 9「ユーザー検索を作る」
+- Issue: 実装の順序の 10「ユーザー検索を作る」
 
 ## 1. 概要
 

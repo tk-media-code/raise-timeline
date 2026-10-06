@@ -3,12 +3,12 @@
 - 日付: 2026-10-06
 - 要件: [requirements.md](../requirements.md) の 3.1
 - 設計: [auth-design.md](../auth-design.md)、[error-handling-design.md](../error-handling-design.md)
-- Issue: 実装の順序の 1「認証の基盤を作る」。退会は 5「退会を作る」
+- Issue: 実装の順序の 2「認証の基盤を作る」。退会は 6「退会を作る」
 
 ## 1. 概要
 
-利用者がアカウントを作り、ログインし、ログアウトし、必要なら退会する。ログインの持続はアクセストークンとリフレッシュトークンで行う。退会は Issue 5 で作る。
-この Issue は認証の基盤でもあり、`users` と `refresh_tokens` のテーブル、エラー処理の共通部分、`/api/health` への移動、
+利用者がアカウントを作り、ログインし、ログアウトし、必要なら退会する。ログインの持続はアクセストークンとリフレッシュトークンで行う。退会は Issue 6 で作る。
+この Issue は認証の基盤でもあり、`users` と `refresh_tokens` のテーブル、Spring Security のエラー応答と利用者 id のログ（[logging-design.md](../logging-design.md) の 13 章）、
 Vite の proxy、フロントの API クライアント・認証状態・共通レイアウトも一緒に作る。
 
 ## 2. 画面
@@ -113,7 +113,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 
 ### `GET /api/health`
 
-今の `GET /` を移す。応答は変えない。
+ログ基盤の Issue（実装の順序 1）で `GET /` から `/api/health` へ移す。この Issue では変えない（[logging-design.md](../logging-design.md) の 13 章）。
 
 ## 4. 処理の流れ
 
@@ -125,8 +125,8 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 2. トランザクションを始め、`SELECT id FROM users WHERE id = #{me} FOR UPDATE` で利用者の行を押さえる。同じ人の進行中の投稿やアイコンの更新を待ち、新しい挿入を止めるため（押さえないと、キーを集めた後に入った画像が S3 に残る）
 3. 消す S3 のキー（`post_images` を `posts.user_id` でたどった投稿画像と、`users.avatar_key`）を集める
 4. `users` の行を消す。外部キーの `ON DELETE CASCADE` で、投稿・画像の行・いいね・コメント・フォロー関係・リフレッシュトークンが消える
-5. コミットしたあとに、集めたキーを S3 からまとめて消す。失敗は WARN（消せなかったキーを載せる）で、応答は 204
-6. Cookie を消して 204 を返す。退会は利用者 id 付きで INFO のログに残す
+5. コミットしたあとに、集めたキーを S3 からまとめて消す。失敗は `image.delete_failed`（WARN。消せなかったキーを載せる）で、応答は 204
+6. Cookie を消して 204 を返す。退会は出来事 `user.withdrew` として利用者 id 付きで残す（[logging-design.md](../logging-design.md) の 3 章）
 
 退会と同時に走った同じ人の投稿などが利用者への外部キー違反になったときは、401 `UNAUTHENTICATED` に変換する（[error-handling-design.md](../error-handling-design.md)）。
 
@@ -147,7 +147,6 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 - ログアウトのあと更新を呼ぶと 401
 - `accessToken` を付けて `GET /api/users/me` を呼ぶと 200
 - 応答の `user` にパスワードのハッシュが含まれない。DB のハッシュは `$2` で始まる（BCrypt）
-- `GET /api/health` が 200 を返す（移動後も同じ応答）
 
 ### 入力の境界
 
@@ -188,22 +187,22 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 ### その他
 
 - ログイン失敗の文言は、存在しないメールアドレスでも、パスワード違いでも同じ
-- ログの出力にパスワードとトークンが含まれない
+- ログの出力にパスワード・トークン・メールアドレスが含まれない（[logging-design.md](../logging-design.md) の 5 章）
 - ログイン失敗の応答時間が、メールアドレスの有無で変わらない（ダミーの照合をしている）
-- ログインの成功と失敗が利用者 id 付きで INFO のログに残る
+- 登録、ログインの成功と失敗、更新の失敗、ログアウトが、出来事 `auth.register` `auth.login.succeeded` `auth.login.failed` `auth.refresh.failed` `auth.logout` として残る。成功の行には利用者 id が付き、失敗の行にはメールアドレスの有無を示す値が無い（[logging-design.md](../logging-design.md) の 3 章）
 
 ### 退会
 
 - 正しいパスワードで退会すると 204。`users` にその行が無く、Cookie が消える
-- 退会すると、その人の投稿・画像の行・いいね・コメント・フォロー関係（両方向）・リフレッシュトークンが消える（Mapper。いいね・コメント・フォローは Issue 6〜8 で確かめる）
+- 退会すると、その人の投稿・画像の行・いいね・コメント・フォロー関係（両方向）・リフレッシュトークンが消える（Mapper。いいね・コメント・フォローは Issue 7〜9 で確かめる）
 - S3 の代役の `deleteAll` に、その人の投稿画像とアイコンのキーがすべて渡る
 - 退会したあと、同じユーザー名とメールアドレスで再び登録できる
 - 他の利用者の投稿・いいね・コメント・フォロー関係は残る。自分の投稿に他人が付けたいいね・コメントは消える
 - パスワードが空なら 422。違えば 401 `INVALID_PASSWORD` で、何も消えない
 - 未ログインは 401
 - 退会のあと、古いアクセストークンで `GET /api/users/me` を呼ぶと 401 `UNAUTHENTICATED`。同じユーザー名で再登録した後も、古いトークン（別の id）は 401 のまま
-- S3 の削除が失敗しても 204 で、WARN ログが出る
-- 退会が利用者 id 付きで INFO のログに残る
+- S3 の削除が失敗しても 204 で、WARN の出来事 `image.delete_failed` に消せなかったキーが載る
+- 退会が出来事 `user.withdrew` として利用者 id 付きで残る
 - 画面: ダイアログの文言が表のとおり。パスワード違いで入力欄の下に文言が出てダイアログは閉じない。成功で通知が出て `/login` へ移る
 
 ## 7. 手動確認の手順
