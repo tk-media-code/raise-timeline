@@ -9,6 +9,10 @@
   class AuthError extends Error {
     constructor(message) { super(message); this.name = 'AuthError'; }
   }
+  // ログインしていない（セッションが無い・消えた）。本物の 401 に当たる。パスワードの誤りの AuthError と見分ける
+  class NotLoggedInError extends AuthError {
+    constructor() { super('ログインが必要です'); this.name = 'NotLoggedInError'; }
+  }
   class ValidationError extends Error {
     // errors: { 項目名: 文言 }
     constructor(errors) { super('入力に誤りがあります'); this.name = 'ValidationError'; this.errors = errors; }
@@ -229,7 +233,7 @@
 
   function requireUser() {
     const user = currentUser();
-    if (!user) throw new AuthError('ログインが必要です');
+    if (!user) throw new NotLoggedInError();
     return user;
   }
 
@@ -748,7 +752,7 @@
 
   window.RT = window.RT || {};
   window.RT.store = {
-    AuthError, ValidationError, ConflictError, ForbiddenError, NotFoundError,
+    AuthError, NotLoggedInError, ValidationError, ConflictError, ForbiddenError, NotFoundError,
     MAX_POST_CHARS, MAX_IMAGES, MAX_IMAGE_BYTES,
     load, save, newId,
     init, reset, seed,

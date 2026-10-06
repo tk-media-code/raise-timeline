@@ -678,9 +678,16 @@
       el('div', { class: 'dialog-actions' }, cancel, submit));
     const dialog = el('dialog', { class: 'dialog', 'aria-labelledby': 'delete-account-title' }, form);
 
-    cancel.addEventListener('click', () => dialog.close());
+    // 送信中（200 ms の待ちのあいだ）は閉じさせない。閉じても処理が続いて退会が済んでしまうため
+    let sending = false;
+    cancel.addEventListener('click', () => {
+      if (!sending) dialog.close();
+    });
     dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) dialog.close();
+      if (e.target === dialog && !sending) dialog.close();
+    });
+    dialog.addEventListener('cancel', (e) => { // Esc
+      if (sending) e.preventDefault();
     });
     dialog.addEventListener('close', () => dialog.remove());
     field.input.addEventListener('input', () => field.setError(''));
@@ -694,14 +701,19 @@
         field.input.focus();
         return;
       }
+      sending = true;
       submit.disabled = true;
+      cancel.disabled = true;
       let done = false;
+      let loggedOut = false;
       try {
         await delay();
         RT.store.deleteAccount(password);
         done = true;
       } catch (err) {
-        if (err instanceof RT.store.AuthError) {
+        if (err instanceof RT.store.NotLoggedInError) {
+          loggedOut = true; // 別のタブでログアウトした。docs/error-handling-design.md 4 章の 401 と同じく、ログイン画面へ
+        } else if (err instanceof RT.store.AuthError) {
           field.setError(err.message);
           field.input.focus();
         } else {
@@ -709,11 +721,16 @@
           RT.ui.toast(RT.ui.describeSaveError(err, '退会に失敗しました。もう一度お試しください'));
         }
       } finally {
+        sending = false;
         submit.disabled = false;
+        cancel.disabled = false;
       }
       if (done) {
         dialog.close();
         onDeleted();
+      } else if (loggedOut) {
+        dialog.close();
+        RT.app.navigate('#/login');
       }
     });
 
@@ -808,11 +825,28 @@
       }));
     }
 
-    input.addEventListener('input', () => {
+    // 日本語の変換中は検索しない。確定（compositionend）してから 400 ms で、確定した文字列を検索する
+    let composing = false;
+    function scheduleRun() {
       clearTimeout(timer);
       timer = setTimeout(() => {
         if (root.isConnected) run(input.value, { reflect: true });
       }, SEARCH_DEBOUNCE_MS);
+    }
+    input.addEventListener('compositionstart', () => {
+      composing = true;
+      clearTimeout(timer);
+    });
+    input.addEventListener('compositionend', () => {
+      composing = false;
+      scheduleRun();
+    });
+    input.addEventListener('input', (e) => {
+      if (composing || e.isComposing) {
+        clearTimeout(timer);
+        return;
+      }
+      scheduleRun();
     });
     form.addEventListener('submit', (e) => {
       e.preventDefault();
