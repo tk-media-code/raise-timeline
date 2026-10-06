@@ -140,7 +140,7 @@ flowchart TB
 | --- | --- | --- |
 | React | 画面。ルーティングは React Router。API の呼び出し・応答のキャッシュ・一覧の無限スクロールは TanStack Query で扱う | `@tanstack/react-query` |
 | nginx | 静的ファイルの配信、圧縮、`/api` の転送、未知のパスを `index.html` に戻す、セキュリティヘッダー、ログイン・登録・退会の回数制限、ALB の後ろで利用者の IP を復元する | 本番用 Dockerfile と `nginx.conf` |
-| Spring Boot | `/api` の REST API。認証認可は Spring Security と JWT。入力検証。S3 への保存 | `spring-boot-starter-security`、`spring-boot-starter-security-oauth2-resource-server`（JWT の発行と検証。追加の JWT ライブラリは入れない）、`spring-boot-starter-validation`、AWS SDK for Java v2 の `s3`、Apache Commons Imaging（JPEG の GPS 情報の除去。1.0 系の版が alpha のままなら、採る版と使用の可否を Issue 4 の計画で確かめる）。テスト用に `spring-boot-starter-security-test` |
+| Spring Boot | `/api` の REST API。認証認可は Spring Security と JWT。入力検証。S3 への保存 | `spring-boot-starter-security`、`spring-boot-starter-security-oauth2-resource-server`（JWT の発行と検証。追加の JWT ライブラリは入れない）、`spring-boot-starter-validation`、AWS SDK for Java v2 の `s3`、Apache Commons Imaging（JPEG の GPS 情報の除去。1.0 系の版が alpha のままなら、採る版と使用の可否を Issue 5 の計画で確かめる）。テスト用に `spring-boot-starter-security-test` |
 | PostgreSQL | データ。スキーマは Flyway、SQL は MyBatis の XML | なし |
 | S3 | 画像 | なし |
 

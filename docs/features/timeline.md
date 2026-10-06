@@ -3,7 +3,7 @@
 - 日付: 2026-10-06
 - 要件: [requirements.md](../requirements.md) の 3.4
 - 設計: [api-conventions.md](../api-conventions.md) の 2 章（カーソル）、[database-design.md](../database-design.md) の 5 章
-- Issue: 実装の順序の 2「投稿とタイムラインを作る」（すべて）、8「フォローを作る」（フォロー中）
+- Issue: 実装の順序の 3「投稿とタイムラインを作る」（すべて）、9「フォローを作る」（フォロー中）
 
 ## 1. 概要
 
@@ -23,7 +23,7 @@
 - タブを切り替えると URL が変わり、リロードしてもタブが保たれる
 - 投稿すると、表示中のタブの先頭に新しい投稿が出る
 - タブごとに TanStack Query のキー（`['timeline', 'following']` / `['timeline', 'all']`）を分け、切り替えで読み直さない
-- Issue 2〜7 のあいだは「すべて」のタブだけで、既定も「すべて」。「フォロー中」は Issue 8 で足す（[requirements.md](../requirements.md) の「Issue ごとの仮の振る舞い」）
+- Issue 3〜8 のあいだは「すべて」のタブだけで、既定も「すべて」。「フォロー中」は Issue 9 で足す（[requirements.md](../requirements.md) の「Issue ごとの仮の振る舞い」）
 
 ## 3. API
 
@@ -37,7 +37,7 @@
 ## 4. 処理の流れ
 
 1. 投稿者を結合した本体の SQL で `limit + 1` 件を取る（[database-design.md](../database-design.md) の 5 章）
-2. 投稿 id の集合に対して、画像・いいね数・コメント数・自分がいいね済みかを、それぞれ 1 本の問い合わせでまとめて取る（投稿ごとに取りに行かない。1 ページあたり 5 本で固定）。Issue 2〜5 では `likeCount` と `commentCount` を 0、`likedByMe` を false で返す
+2. 投稿 id の集合に対して、画像・いいね数・コメント数・自分がいいね済みかを、それぞれ 1 本の問い合わせでまとめて取る（投稿ごとに取りに行かない。1 ページあたり 5 本で固定）。Issue 3〜6 では `likeCount` と `commentCount` を 0、`likedByMe` を false で返す
 3. 画像のキーを URL に変換する
 4. 余分な 1 件があれば `nextCursor` に `limit` 件目の id を入れる
 

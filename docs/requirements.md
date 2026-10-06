@@ -115,13 +115,13 @@
 | 安全 | 通信は HTTPS のみ。パスワードは BCrypt で保存。トークンはサーバー側で無効化できる。入力はサーバーで検証する。秘密情報はリポジトリに置かない |
 | 対応環境 | 最新の Chrome / Safari / Firefox / Edge。スマホ幅（360px〜）から PC 幅まで |
 | 言語と時刻 | UI は日本語のみ。日時は UTC で保存し、日本時間で表示する |
-| 運用 | アプリのログは CloudWatch Logs に集め、リクエストごとの ID で追える |
+| 運用 | アプリと nginx のログを 1 行 1 JSON で CloudWatch Logs に集め、リクエストごとの ID で追える。ERROR、5xx の急増、ログイン失敗の急増、ヘルスチェックの失敗はメールで通知する（[logging-design.md](logging-design.md)） |
 | 費用 | 本番は月 $70 前後を上限の目安にする（公開 IPv4 アドレスの料金を含む） |
 | 保守 | すべての変更は Issue → ブランチ → PR。push 時に静的解析とテストが自動で走る |
 
 ## 5. 範囲外（今回は作らない）
 
-通知、リポスト・引用、ハッシュタグ、DM、ブックマーク、投稿の検索、鍵アカウント、ブロック・ミュート、管理者機能、メール確認、パスワードの変更・再設定、ユーザー名とメールアドレスの変更、動画の投稿、コメントへの返信、コメントへのいいね、コメントの編集、X の右カラム（トレンド、おすすめ）、退会の取り消し・猶予期間・退会理由の入力・メールでの確認。
+通知、リポスト・引用、ハッシュタグ、DM、ブックマーク、投稿の検索、鍵アカウント、ブロック・ミュート、管理者機能、メール確認、パスワードの変更・再設定、ユーザー名とメールアドレスの変更、動画の投稿、コメントへの返信、コメントへのいいね、コメントの編集、X の右カラム（トレンド、おすすめ）、ブラウザで起きた問題のサーバーへの報告、ログのダッシュボード、退会の取り消し・猶予期間・退会理由の入力・メールでの確認。
 
 必要になったら、それぞれを新しい Issue として起こす。
 
@@ -132,18 +132,19 @@
 | 順 | Issue | 中身 | 主な設計書 |
 | --- | --- | --- | --- |
 | 0 | 要件定義書と設計書を整備する | この文書一式 | すべて |
-| 1 | 認証の基盤を作る | Spring Security ＋ JWT、`users` と `refresh_tokens`、エラー処理の共通部分、`/api/health` への移動、Vite の proxy、フロントの API クライアント・認証状態・共通レイアウト・登録とログインの画面 | [features/auth.md](features/auth.md) と横断文書 |
-| 2 | 投稿とタイムラインを作る | テキストのみの投稿、編集、削除、投稿詳細、タイムラインの「すべて」、無限スクロールの部品 | [features/post.md](features/post.md)、[features/timeline.md](features/timeline.md) |
-| 3 | プロフィールを作る | 表示、編集（表示名と自己紹介）、その人の投稿一覧 | [features/profile.md](features/profile.md) |
-| 4 | 画像を扱う | S3 連携、投稿画像、アイコン、画像ビューア | [image-storage-design.md](image-storage-design.md)、post.md、profile.md |
-| 5 | 退会を作る | `DELETE /api/users/me`、連鎖削除、S3 の画像の削除、認証時の存在確認、編集画面の退会の節 | [features/auth.md](features/auth.md) |
-| 6 | いいねを作る | いいねの付け外し、いいねした人の一覧 | [features/like.md](features/like.md) |
-| 7 | コメントを作る | 投稿と削除、一覧 | [features/comment.md](features/comment.md) |
-| 8 | フォローを作る | フォローと解除、フォロワーとフォロー中の一覧、タイムラインの「フォロー中」 | [features/follow.md](features/follow.md)、timeline.md |
-| 9 | ユーザー検索を作る | 検索画面と API | [features/user-search.md](features/user-search.md) |
-| 10 | 本番環境に出す | 本番用 Dockerfile と nginx、本番用 compose、AWS の構築手順、デプロイ手順 | [architecture.md](architecture.md) |
+| 1 | ログの基盤を作る | JSON の構造化ログ、requestId と要求ログ、Problem Details と例外ハンドラの共通部分、`/api/health` への移動、README のログの読み方 | [logging-design.md](logging-design.md)、[error-handling-design.md](error-handling-design.md) |
+| 2 | 認証の基盤を作る | Spring Security ＋ JWT、`users` と `refresh_tokens`、Spring Security のエラー応答と利用者 id のログ、Vite の proxy、フロントの API クライアント・認証状態・共通レイアウト・登録とログインの画面 | [features/auth.md](features/auth.md) と横断文書 |
+| 3 | 投稿とタイムラインを作る | テキストのみの投稿、編集、削除、投稿詳細、タイムラインの「すべて」、無限スクロールの部品 | [features/post.md](features/post.md)、[features/timeline.md](features/timeline.md) |
+| 4 | プロフィールを作る | 表示、編集（表示名と自己紹介）、その人の投稿一覧 | [features/profile.md](features/profile.md) |
+| 5 | 画像を扱う | S3 連携、投稿画像、アイコン、画像ビューア | [image-storage-design.md](image-storage-design.md)、post.md、profile.md |
+| 6 | 退会を作る | `DELETE /api/users/me`、連鎖削除、S3 の画像の削除、認証時の存在確認、編集画面の退会の節 | [features/auth.md](features/auth.md) |
+| 7 | いいねを作る | いいねの付け外し、いいねした人の一覧 | [features/like.md](features/like.md) |
+| 8 | コメントを作る | 投稿と削除、一覧 | [features/comment.md](features/comment.md) |
+| 9 | フォローを作る | フォローと解除、フォロワーとフォロー中の一覧、タイムラインの「フォロー中」 | [features/follow.md](features/follow.md)、timeline.md |
+| 10 | ユーザー検索を作る | 検索画面と API | [features/user-search.md](features/user-search.md) |
+| 11 | 本番環境に出す | 本番用 Dockerfile と nginx、本番用 compose、AWS の構築手順、デプロイ手順 | [architecture.md](architecture.md) |
 
-画像を 4 番目にしたのは、投稿とプロフィールの両方に関わるので、両方のテキスト版が揃ってからまとめて入れる方が小さく済むため。退会を 5 番目にしたのは、S3 の画像の削除が要るため。
+画像を 5 番目にしたのは、投稿とプロフィールの両方に関わるので、両方のテキスト版が揃ってからまとめて入れる方が小さく済むため。退会を 6 番目にしたのは、S3 の画像の削除が要るため。
 
 ### Issue ごとの仮の振る舞い
 
@@ -151,15 +152,15 @@
 
 | Issue | 仮の振る舞い |
 | --- | --- |
-| 2〜5（投稿、プロフィール、画像、退会） | Post の `likeCount` と `commentCount` は 0、`likedByMe` は false を返す。`likes` と `comments` ができたら数えた値に変える |
-| 2〜7 | ホームは「すべて」のタブだけ。「フォロー中」のタブと `GET /api/timeline/following` は Issue 8 で足す。それまでホームの既定は「すべて」 |
-| 3〜7（プロフィール） | `followersCount` と `followingCount` は 0、`isFollowing` は false を返す。`follows` ができたら数えた値に変える |
-| 2 | 「投稿を削除するといいねとコメントも消える」は、Issue 6 と 7 でそれぞれ確かめる |
-| 5（退会） | いいね・コメント・フォローの表はまだ無いので、退会で消えるのは利用者・投稿・画像・リフレッシュトークンだけ。後の Issue で表を作るときに `ON DELETE CASCADE` を付けるので、自動的に対象になる。「いいね・コメント・フォローも消える」は Issue 6〜8 でそれぞれ確かめる |
-| 1 | テスト用の DB（[test-strategy.md](test-strategy.md) の 3 章）はこの Issue で用意する |
-| 4 | JPEG の GPS 情報の除去もこの Issue で入れる |
-| 6〜7（いいねした人の一覧） | `isFollowing` は false を返す。SQL の `EXISTS (SELECT 1 FROM follows ...)` は Issue 8 で足す |
-| 3〜7 | プロフィールとユーザーカードのフォローボタンは出さない。Issue 8 で足す |
+| 3〜6（投稿、プロフィール、画像、退会） | Post の `likeCount` と `commentCount` は 0、`likedByMe` は false を返す。`likes` と `comments` ができたら数えた値に変える |
+| 3〜8 | ホームは「すべて」のタブだけ。「フォロー中」のタブと `GET /api/timeline/following` は Issue 9 で足す。それまでホームの既定は「すべて」 |
+| 4〜8（プロフィール） | `followersCount` と `followingCount` は 0、`isFollowing` は false を返す。`follows` ができたら数えた値に変える |
+| 3 | 「投稿を削除するといいねとコメントも消える」は、Issue 7 と 8 でそれぞれ確かめる |
+| 6（退会） | いいね・コメント・フォローの表はまだ無いので、退会で消えるのは利用者・投稿・画像・リフレッシュトークンだけ。後の Issue で表を作るときに `ON DELETE CASCADE` を付けるので、自動的に対象になる。「いいね・コメント・フォローも消える」は Issue 7〜9 でそれぞれ確かめる |
+| 2 | テスト用の DB（[test-strategy.md](test-strategy.md) の 3 章）はこの Issue で用意する |
+| 5 | JPEG の GPS 情報の除去もこの Issue で入れる |
+| 7〜8（いいねした人の一覧） | `isFollowing` は false を返す。SQL の `EXISTS (SELECT 1 FROM follows ...)` は Issue 9 で足す |
+| 4〜8 | プロフィールとユーザーカードのフォローボタンは出さない。Issue 9 で足す |
 
 ## 7. 決めたこと（人の判断）
 
@@ -186,3 +187,7 @@
 | 画像の公開範囲 | 画像だけは、推測できない URL を知っていれば未ログインでも見られる（「すべてログイン必須」の例外） | 署名付き URL で画像もログイン必須にする |
 | 写真の位置情報 | JPEG の GPS の情報を保存の前に取り除く（向きの情報は残す） | 範囲外にして、画面で注意を出す |
 | 費用の目安 | 月 $70 前後（公開 IPv4 アドレスの料金を含む） | $50〜60 のままにして、本番構築で構成を見直す |
+| ログの形式 | ローカルも本番も 1 行 1 JSON の ECS 形式（Spring Boot 組み込み）。項目名は ECS の辞書に合わせる | Logstash 形式／自作の整形器／ローカルだけ人向けのテキスト |
+| 本番で問題に気づく仕組み | CloudWatch のメトリクスフィルタとアラーム、SNS のメール通知 | 通知を入れない／Lambda で Slack へ送る／外部の監視サービス |
+| ブラウザで起きた問題の報告 | 範囲外。画面のエラー通知に requestId を添えるだけにする | ブラウザからサーバーへ報告する口を作る |
+| ログ基盤の置き場 | 認証より先に独立した Issue「ログの基盤を作る」にする | 認証の Issue に含める |

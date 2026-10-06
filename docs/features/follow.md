@@ -3,7 +3,7 @@
 - 日付: 2026-10-06
 - 要件: [requirements.md](../requirements.md) の 3.7
 - 設計: [api-conventions.md](../api-conventions.md)、[database-design.md](../database-design.md)
-- Issue: 実装の順序の 8「フォローを作る」
+- Issue: 実装の順序の 9「フォローを作る」
 
 ## 1. 概要
 
