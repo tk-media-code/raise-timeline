@@ -37,6 +37,7 @@
 | Web 層 | 各 API のステータスと Problem Details の形。401・403・422 の変換。JSON の入出力 | `@WebMvcTest` ＋ `MockMvc`。サービスは `@MockitoBean`。Spring Security の設定を読み込む | 要らない |
 | Mapper | SQL が意図どおりの行を返すこと。一意制約、連鎖削除、カーソルの絞り込み | `@SpringBootTest` ＋ `@Transactional`。テスト用の DB `raise_timeline_test`（`db` サービスの初期化スクリプトが作り、`DB_URL_TEST` で渡す。テストでは `src/test/resources/application-test.properties` と `@ActiveProfiles("test")` で `spring.datasource.url=${DB_URL_TEST}` だけを上書きする。本体の `application.properties` と同じ名前のファイルをテスト側に置くと、本体の設定がまるごと読まれなくなるので置かない）に対して実行し、各テストの終わりに巻き戻す。Flyway が先にスキーマを作る。開発用の DB とは分けるので、手動確認で作った行の影響を受けず、「0 件なら空」「20 件ちょうどなら null」のような全件を前提にした期待も成り立つ | 要る（コンテナの中で走る） |
 | 認証 | トークンの発行と検証、期限切れ、リフレッシュトークンの差し替えとログアウト後の拒否 | 上の層にまたがる | 一部要る |
+| ログ | 要求ログの項目が揃うこと、500 で ERROR が 1 回だけ出ること、全項目を載せた 1 行が JSON として読めること（[logging-design.md](logging-design.md) の 12 章） | `OutputCaptureExtension` で標準出力を捕まえ、1 行ずつ JSON として読む | 要らない |
 | 全体 | アプリが起動し、`GET /api/health` が 200 を返す | `@SpringBootTest` | 要る（テスト用の DB） |
 
 - `HealthCheckControllerTest` が Web 層の、`RaiseTimelineApplicationTests` が全体の雛形
