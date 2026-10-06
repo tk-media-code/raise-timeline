@@ -658,8 +658,14 @@
       }
     }
 
+    // 押した直後は、ポインタが離れるかフォーカスが外れるまで「解除」を出さない（CSS が見る）
+    const settle = () => button.classList.remove('follow-btn-just-toggled');
+    button.addEventListener('mouseleave', settle);
+    button.addEventListener('blur', settle);
+
     button.addEventListener('click', () => {
       following = !following;
+      button.classList.add('follow-btn-just-toggled');
       render();
       if (onChanged) onChanged({ isFollowing: following });
       if (!syncing) sync();

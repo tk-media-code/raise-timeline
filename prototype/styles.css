@@ -434,9 +434,12 @@ img { max-width: 100%; }
 /* ---- フォローボタン ---- */
 .follow-btn { min-width: 104px; padding: 0 16px; font-size: 14px; }
 .follow-label-hover { display: none; }
-.follow-btn-on:hover, .follow-btn-on:focus-visible { border-color: var(--danger); background: #fdeceb; color: var(--danger); }
-.follow-btn-on:hover .follow-label, .follow-btn-on:focus-visible .follow-label { display: none; }
-.follow-btn-on:hover .follow-label-hover, .follow-btn-on:focus-visible .follow-label-hover { display: inline; }
+/* 「解除」はマウスを載せたときだけ。押した直後（follow-btn-just-toggled）とタッチ端末では出さない */
+@media (hover: hover) {
+  .follow-btn-on:not(.follow-btn-just-toggled):hover { border-color: var(--danger); background: #fdeceb; color: var(--danger); }
+  .follow-btn-on:not(.follow-btn-just-toggled):hover .follow-label { display: none; }
+  .follow-btn-on:not(.follow-btn-just-toggled):hover .follow-label-hover { display: inline; }
+}
 
 /* ---- プロフィール ---- */
 .profile-head { padding: 16px; border-bottom: 1px solid var(--border); }
