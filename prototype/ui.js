@@ -104,6 +104,12 @@
     return `${t.year}/${pad(t.month)}/${pad(t.day)} ${t.hour}:${t.minute}`;
   }
 
+  // 「2026年10月に登録」（日本時間の年月）
+  function formatJoined(iso) {
+    const t = jstParts(new Date(iso));
+    return `${t.year}年${t.month}月に登録`;
+  }
+
   // ラベル、入力欄、誤りの表示をひとまとめにする。el.input と el.setError を持つ。
   function textField({ id, label, type, value, error, autocomplete }) {
     const input = el('input', {
@@ -287,10 +293,10 @@
   }
 
   // ---- 本文の入力欄 ----
-  // 入力欄、「残り n 文字」、誤りの表示。投稿フォームと編集ダイアログで使う。
+  // 入力欄、「残り n 文字」、誤りの表示。投稿フォームと編集ダイアログとプロフィール編集で使う。
+  // max は文字数の上限（既定は投稿の 280）。showLabel を付けるとラベルを見える形で出す。
   // field.textarea / field.count() / field.setError(text) / field.onInput(fn)
-  function bodyField({ id, label, value }) {
-    const max = RT.store.MAX_POST_CHARS;
+  function bodyField({ id, label, value, max = RT.store.MAX_POST_CHARS, showLabel }) {
     const textarea = el('textarea', {
       id, name: id, class: 'input textarea', rows: 3, 'aria-describedby': id + '-counter ' + id + '-error',
     });
@@ -312,7 +318,7 @@
     refresh();
 
     const field = el('div', { class: 'field body-field' },
-      el('label', { for: id, class: 'sr-only', text: label }),
+      el('label', { for: id, class: showLabel ? false : 'sr-only', text: label }),
       textarea,
       el('div', { class: 'body-field-foot' }, message, counter));
     return Object.assign(field, {
@@ -597,8 +603,72 @@
     return el('span', { class: 'like-group' }, button, likersLink);
   }
 
+  // ---- フォローボタン ----
+  // 押した瞬間に見た目を変え（楽観的更新）、遅れて保存する。連打しても要求は 1 つずつ送り、最後に押した状態へ収束する。
+  // 失敗したら保存済みの状態に戻す。見た目が変わるたびに onChanged({ isFollowing }) を呼ぶ（戻したときも）。
+  // 自分には出さない（null を返す）
+  function followButton(user, { onChanged } = {}) {
+    const me = RT.store.currentUser();
+    if (user.isMe || (me && me.id === user.id)) return null;
+
+    let following = Boolean(user.isFollowing); // 画面に出している状態
+    let saved = following; // 保存できた状態
+    let syncing = false;
+
+    const button = el('button', { type: 'button', class: 'btn follow-btn' },
+      el('span', { class: 'follow-label' }),
+      el('span', { class: 'follow-label-hover', 'aria-hidden': 'true', text: '解除' }));
+    const label = button.firstElementChild;
+
+    const render = () => {
+      label.textContent = following ? 'フォロー中' : 'フォロー';
+      button.classList.toggle('follow-btn-on', following);
+      button.classList.toggle('btn-primary', !following);
+      button.setAttribute('aria-label', following
+        ? `${user.displayName}さんをフォロー中（押すと解除）`
+        : `${user.displayName}さんをフォロー`);
+    };
+    render();
+
+    async function sync() {
+      syncing = true;
+      let failure = null;
+      while (following !== saved && !failure) {
+        const target = following;
+        try {
+          await delay();
+          if (target) RT.store.follow(user.username);
+          else RT.store.unfollow(user.username);
+          saved = target;
+        } catch (err) {
+          failure = { err, target };
+        }
+      }
+      syncing = false;
+      if (!failure) return;
+      const { err, target } = failure;
+      following = saved;
+      render();
+      if (onChanged) onChanged({ isFollowing: following });
+      if (err instanceof RT.store.NotFoundError) {
+        toast('ユーザーが見つかりません');
+      } else {
+        console.error(err);
+        toast(describeSaveError(err, target ? 'フォローに失敗しました。もう一度お試しください' : 'フォローの解除に失敗しました。もう一度お試しください'));
+      }
+    }
+
+    button.addEventListener('click', () => {
+      following = !following;
+      render();
+      if (onChanged) onChanged({ isFollowing: following });
+      if (!syncing) sync();
+    });
+    return button;
+  }
+
   // ---- ユーザーカード ----
-  // 利用者 1 人の行。.user-card-action はフォローボタンの置き場（Task 4 が埋める）
+  // 利用者 1 人の行。右端に（自分以外には）フォローボタンを出す
   function userCard(user) {
     const profileHref = '#/users/' + encodeURIComponent(user.username);
     return el('article', { class: 'user-card', 'data-user-id': user.id },
@@ -608,7 +678,7 @@
           el('div', { class: 'user-card-names' },
             el('a', { class: 'post-name', href: profileHref, text: user.displayName }),
             el('a', { class: 'post-username', href: profileHref, text: '@' + user.username })),
-          el('div', { class: 'user-card-action' })),
+          el('div', { class: 'user-card-action' }, followButton(user))),
         user.bio ? el('p', { class: 'user-card-bio', text: user.bio }) : null));
   }
 
@@ -669,7 +739,7 @@
 
   window.RT = window.RT || {};
   window.RT.ui = {
-    el, delay, toast, confirm, describeSaveError, readImage, avatar, spinner, formatRelative, formatAbsolute, textField,
-    linkify, imageGrid, imageViewer, infiniteList, bodyField, composeForm, postCard, userCard, commentItem,
+    el, delay, toast, confirm, describeSaveError, readImage, avatar, spinner, formatRelative, formatAbsolute, formatJoined, textField,
+    linkify, imageGrid, imageViewer, infiniteList, bodyField, composeForm, postCard, followButton, userCard, commentItem,
   };
 })();

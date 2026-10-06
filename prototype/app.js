@@ -128,7 +128,7 @@
     return [
       { label: 'ホーム', href: '#/', icon: '⌂', match: (p) => p === '/' },
       { label: '検索', href: '#/search', icon: '⌕', match: (p) => p === '/search' },
-      { label: 'プロフィール', href: '#/users/' + encodeURIComponent(user.username), icon: '☺', match: (p) => p.startsWith('/users/') && p.split('/')[2] === encodeURIComponent(user.username) },
+      { label: 'プロフィール', href: '#/users/' + encodeURIComponent(user.username), icon: '☺', match: (p) => p.startsWith('/users/') && p.split('/')[2].toLowerCase() === encodeURIComponent(user.username).toLowerCase() },
     ];
   }
 

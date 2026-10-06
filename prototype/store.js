@@ -149,7 +149,8 @@
   function validateImageFile(file, maxBytes) {
     if (!IMAGE_TYPES.includes(file.type)) return 'JPEG、PNG、GIF、WebP の画像を選んでください';
     if (file.size === 0) return '空のファイルは選べません';
-    if (file.size > (maxBytes || MAX_IMAGE_BYTES)) return '画像は 5 MB 以内にしてください';
+    const max = maxBytes || MAX_IMAGE_BYTES;
+    if (file.size > max) return `画像は ${Math.floor(max / 1048576)} MB 以内にしてください`;
     return null;
   }
 
@@ -370,6 +371,155 @@
     save(data);
   }
 
+  // ---- プロフィール ----
+  const MAX_DISPLAY_NAME = 50;
+  const MAX_BIO = 160;
+  const MAX_AVATAR_BYTES = 2097152;
+  const MAX_SEARCH_CHARS = 50;
+
+  // 戻り値は { displayName?, bio? }。誤りが無ければ空。表示名は前後の空白を除いて数え、自己紹介は CRLF を LF に直して数える
+  function validateProfile(values) {
+    const errors = {};
+    const nameLength = countCodePoints(String(values.displayName == null ? '' : values.displayName).trim());
+    if (nameLength < 1 || nameLength > MAX_DISPLAY_NAME) errors.displayName = '1〜50 文字で入力してください';
+    if (countCodePoints(normalizeBody(values.bio)) > MAX_BIO) errors.bio = '160 文字以内で入力してください';
+    return errors;
+  }
+
+  function findUserByName(data, username) {
+    const key = String(username).toLowerCase();
+    const user = data.users.find((u) => u.username.toLowerCase() === key);
+    if (!user) throw new NotFoundError();
+    return user;
+  }
+
+  // UserDetail の形（docs/api-conventions.md 3 章）
+  function toUserDetail(data, user, meId) {
+    return {
+      ...toUserCard(data, user, meId),
+      followersCount: data.follows.filter((f) => f.followeeId === user.id).length,
+      followingCount: data.follows.filter((f) => f.followerId === user.id).length,
+      createdAt: user.createdAt,
+      isMe: user.id === meId,
+    };
+  }
+
+  function getUser(username) {
+    const me = requireUser();
+    const data = load();
+    return toUserDetail(data, findUserByName(data, username), me.id);
+  }
+
+  // 自分の UserDetail に email を足した形
+  function me() {
+    const user = requireUser();
+    const data = load();
+    const row = data.users.find((u) => u.id === user.id);
+    return { ...toUserDetail(data, row, row.id), email: row.email };
+  }
+
+  function updateProfile({ displayName, bio }) {
+    const user = requireUser();
+    const errors = validateProfile({ displayName, bio });
+    if (Object.keys(errors).length > 0) throw new ValidationError(errors);
+
+    const data = load();
+    const row = data.users.find((u) => u.id === user.id);
+    row.displayName = displayName.trim();
+    row.bio = normalizeBody(bio);
+    save(data);
+    return me();
+  }
+
+  // 画像の形式と大きさの検査は画面側（validateImageFile）で済ませてから呼ぶ
+  function updateAvatar(dataUrl) {
+    const user = requireUser();
+    const data = load();
+    data.users.find((u) => u.id === user.id).avatarDataUrl = dataUrl;
+    save(data);
+    return { avatarUrl: dataUrl };
+  }
+
+  // ---- フォロー ----
+  // どちらも既にその状態でも成功する（2 回押しても 1 行）
+  function follow(username) {
+    const user = requireUser();
+    const data = load();
+    const target = findUserByName(data, username);
+    if (target.id === user.id) throw new ValidationError({ username: '自分自身はフォローできません' });
+    if (!data.follows.some((f) => f.followerId === user.id && f.followeeId === target.id)) {
+      data.follows.push({ id: newId(data), followerId: user.id, followeeId: target.id, createdAt: new Date().toISOString() });
+      save(data);
+    }
+  }
+
+  function unfollow(username) {
+    const user = requireUser();
+    const data = load();
+    const target = findUserByName(data, username);
+    const rest = data.follows.filter((f) => !(f.followerId === user.id && f.followeeId === target.id));
+    if (rest.length !== data.follows.length) {
+      data.follows = rest;
+      save(data);
+    }
+  }
+
+  // 並びとカーソルは follows の id（項目の id は利用者の id）。otherSide は一覧に出す側の列名
+  function pageFollows(data, rows, cursor, otherSide, meId) {
+    const sorted = rows
+      .filter((f) => cursor == null || f.id < cursor)
+      .sort((a, b) => b.id - a.id)
+      .slice(0, PAGE_SIZE + 1);
+    const page = sorted.slice(0, PAGE_SIZE);
+    return {
+      items: page.map((f) => toUserCard(data, data.users.find((u) => u.id === f[otherSide]), meId)),
+      nextCursor: sorted.length > PAGE_SIZE ? page[page.length - 1].id : null,
+    };
+  }
+
+  function followers(username, cursor) {
+    const user = requireUser();
+    const data = load();
+    const target = findUserByName(data, username);
+    return pageFollows(data, data.follows.filter((f) => f.followeeId === target.id), cursor, 'followerId', user.id);
+  }
+
+  function following(username, cursor) {
+    const user = requireUser();
+    const data = load();
+    const target = findUserByName(data, username);
+    return pageFollows(data, data.follows.filter((f) => f.followerId === target.id), cursor, 'followeeId', user.id);
+  }
+
+  // ---- ユーザー検索 ----
+  // 戻り値は誤りの文言。通れば null。前後の空白を除いてから 1〜50 文字
+  function validateSearchQuery(q) {
+    const n = countCodePoints(String(q == null ? '' : q).trim());
+    if (n < 1) return '検索する語を入力してください';
+    if (n > MAX_SEARCH_CHARS) return '50 文字以内で入力してください';
+    return null;
+  }
+
+  // ユーザー名か表示名に q を含む人。大文字小文字は区別せず、正規表現は使わない（% _ . もそのままの文字）
+  function searchUsers(q, cursor) {
+    const user = requireUser();
+    const problem = validateSearchQuery(q);
+    if (problem) throw new ValidationError({ q: problem });
+
+    const data = load();
+    const key = String(q).trim().toLowerCase();
+    const sorted = data.users
+      .filter((u) => (cursor == null || u.id < cursor)
+        && (u.username.toLowerCase().includes(key) || u.displayName.toLowerCase().includes(key)))
+      .sort((a, b) => b.id - a.id)
+      .slice(0, PAGE_SIZE + 1);
+    const page = sorted.slice(0, PAGE_SIZE);
+    return {
+      items: page.map((u) => toUserCard(data, u, user.id)),
+      nextCursor: sorted.length > PAGE_SIZE ? page[page.length - 1].id : null,
+    };
+  }
+
   // ---- 見本データ ----
   function svgDataUrl(svg) {
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
@@ -567,5 +717,8 @@
     validateRegister, validateLogin, validatePostBody, validateComment, validateImageFile, countCodePoints,
     timeline, userPosts, getPost, createPost, updatePost, deletePost,
     like, unlike, likers, comments, addComment, deleteComment,
+    MAX_BIO, MAX_AVATAR_BYTES,
+    validateProfile, validateSearchQuery, getUser, me, updateProfile, updateAvatar,
+    follow, unfollow, followers, following, searchUsers,
   };
 })();

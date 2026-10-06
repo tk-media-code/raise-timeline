@@ -431,6 +431,278 @@
     onChanged({ type: 'delete', post });
   }
 
+  // ---- プロフィール ----
+  // ユーザー名の人が居なければ null（呼び出し側が 404 の画面にする）
+  function findUserOrNull(username) {
+    try {
+      return RT.store.getUser(username);
+    } catch (err) {
+      if (err instanceof RT.store.NotFoundError) return null;
+      throw err;
+    }
+  }
+
+  function userHref(username, suffix) {
+    return '#/users/' + encodeURIComponent(username) + (suffix || '');
+  }
+
+  // アイコン、名前、自己紹介、登録月、数、ボタン。フォローを押すとフォロワー数だけ差し替える
+  function profileHeader(user) {
+    const followersCount = el('strong', { text: String(user.followersCount) });
+    const others = user.followersCount - (user.isFollowing ? 1 : 0); // 自分以外のフォロワー数
+    const action = user.isMe
+      ? el('a', { class: 'btn', href: '#/settings/profile', text: 'プロフィールを編集' })
+      : RT.ui.followButton(user, {
+        onChanged: ({ isFollowing }) => { followersCount.textContent = String(others + (isFollowing ? 1 : 0)); },
+      });
+
+    return el('section', { class: 'profile-head', 'aria-label': 'プロフィール' },
+      el('div', { class: 'profile-head-top' },
+        RT.ui.avatar(user, 80),
+        el('div', { class: 'profile-action' }, action)),
+      el('h2', { class: 'profile-name', text: user.displayName }),
+      el('p', { class: 'profile-username', text: '@' + user.username }),
+      user.bio ? el('p', { class: 'profile-bio', text: user.bio }) : null,
+      el('p', { class: 'profile-joined', text: RT.ui.formatJoined(user.createdAt) }),
+      el('p', { class: 'profile-counts' },
+        el('a', { href: userHref(user.username, '/following') }, 'フォロー中 ', el('strong', { text: String(user.followingCount) })),
+        el('a', { href: userHref(user.username, '/followers') }, 'フォロワー ', followersCount)));
+  }
+
+  function profilePosts(user) {
+    const onChanged = ({ type, post }) => {
+      if (type === 'delete') list.remove(post.id);
+      else list.update(post);
+    };
+    const list = RT.ui.infiniteList({
+      load: async (cursor) => {
+        await delay();
+        try {
+          return RT.store.userPosts(user.username, cursor);
+        } catch (err) {
+          if (!(err instanceof RT.store.NotFoundError)) throw err;
+          RT.app.route(); // 人が消えている。404 の画面にする
+          return { items: [], nextCursor: null };
+        }
+      },
+      renderItem: (post) => RT.ui.postCard(post, { onChanged }),
+      emptyText: 'まだ投稿がありません',
+    });
+    return list;
+  }
+
+  function profile(ctx) {
+    const first = findUserOrNull(ctx.params.username);
+    if (!first) return notFound();
+
+    const box = el('div', { class: 'profile' }, el('div', { class: 'list-footer' }, RT.ui.spinner()));
+    (async () => {
+      await delay();
+      if (!box.isConnected) return;
+      const user = findUserOrNull(ctx.params.username);
+      if (!user) return RT.app.route();
+      box.replaceChildren(profileHeader(user), profilePosts(user));
+    })();
+
+    return { title: first.displayName, el: box };
+  }
+
+  // ---- フォロワー・フォロー中 ----
+  // kind は 'followers' か 'following'。上部のタブで 2 つの一覧を行き来する
+  function followList(kind, ctx) {
+    const user = findUserOrNull(ctx.params.username);
+    if (!user) return notFound();
+
+    const tabs = [
+      { key: 'followers', label: 'フォロワー', empty: 'フォロワーはいません' },
+      { key: 'following', label: 'フォロー中', empty: '誰もフォローしていません' },
+    ];
+    const current = tabs.find((t) => t.key === kind);
+    const nav = el('nav', { class: 'timeline-tabs', 'aria-label': 'フォロワーとフォロー中' },
+      ...tabs.map((t) => el('a', {
+        class: 'timeline-tab', href: userHref(user.username, '/' + t.key), 'aria-current': t === current ? 'page' : false, text: t.label,
+      })));
+
+    const list = RT.ui.infiniteList({
+      load: async (cursor) => {
+        await delay();
+        try {
+          return RT.store[kind](user.username, cursor);
+        } catch (err) {
+          if (!(err instanceof RT.store.NotFoundError)) throw err;
+          RT.app.route(); // 人が消えている。404 の画面にする
+          return { items: [], nextCursor: null };
+        }
+      },
+      renderItem: (item) => RT.ui.userCard(item),
+      emptyText: current.empty,
+    });
+    return { title: user.displayName, el: el('div', { class: 'follow-list' }, nav, list) };
+  }
+
+  function followers(ctx) { return followList('followers', ctx); }
+  function following(ctx) { return followList('following', ctx); }
+
+  // ---- プロフィール編集 ----
+  function profileEditForm(user) {
+    const { validateProfile, MAX_BIO, MAX_AVATAR_BYTES } = RT.store;
+
+    // アイコン。選んだ時点で縮めて保存し、プレビューを差し替える（「保存」とは別の要求）
+    const preview = el('div', { class: 'avatar-preview' }, RT.ui.avatar(user, 80));
+    const avatarMessage = el('p', { class: 'field-error', role: 'alert' });
+    const fileInput = el('input', {
+      type: 'file', class: 'sr-only', id: 'profile-avatar', tabindex: '-1', 'aria-label': 'アイコンの画像',
+      accept: 'image/jpeg,image/png,image/gif,image/webp',
+    });
+    const pick = el('button', { type: 'button', class: 'btn btn-small', text: '画像を変更' });
+    const avatarField = el('div', { class: 'field', role: 'group', 'aria-labelledby': 'profile-avatar-caption' },
+      el('p', { id: 'profile-avatar-caption', class: 'field-caption', text: 'アイコン' }),
+      el('div', { class: 'avatar-edit' }, preview, el('div', { class: 'avatar-edit-side' }, pick, fileInput, avatarMessage)));
+
+    const nameField = textField({ id: 'displayName', label: '表示名', value: user.displayName, autocomplete: 'nickname' });
+    const bioField = RT.ui.bodyField({ id: 'bio', label: '自己紹介', value: user.bio, max: MAX_BIO, showLabel: true });
+    const usernameField = textField({ id: 'profile-username', label: 'ユーザー名', value: user.username });
+    const emailField = textField({ id: 'profile-email', label: 'メールアドレス', type: 'email', value: user.email });
+    usernameField.input.disabled = true;
+    emailField.input.disabled = true;
+
+    const save = el('button', { type: 'submit', class: 'btn btn-primary', text: '保存' });
+    const form = el('form', { class: 'form profile-form', novalidate: true },
+      avatarField, nameField, bioField, usernameField, emailField,
+      el('div', { class: 'form-actions' }, save));
+
+    const values = () => ({ displayName: nameField.input.value, bio: bioField.textarea.value });
+    let sending = false;
+    let avatarBusy = false;
+    const refresh = () => {
+      const errors = validateProfile(values());
+      nameField.setError(errors.displayName);
+      bioField.setError(errors.bio);
+      save.disabled = sending || avatarBusy || Object.keys(errors).length > 0;
+    };
+    nameField.input.addEventListener('input', refresh);
+    bioField.onInput(refresh);
+    refresh();
+
+    pick.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      fileInput.value = '';
+      if (!file) return;
+      avatarMessage.textContent = '';
+      const problem = RT.store.validateImageFile(file, MAX_AVATAR_BYTES);
+      if (problem) {
+        avatarMessage.textContent = problem;
+        return;
+      }
+      avatarBusy = true;
+      pick.disabled = true;
+      refresh();
+      try {
+        const dataUrl = await RT.ui.readImage(file).catch((err) => {
+          console.error(err);
+          avatarMessage.textContent = '画像を読み込めませんでした。別のファイルを選んでください';
+          return null;
+        });
+        if (!dataUrl) return;
+        await delay();
+        RT.store.updateAvatar(dataUrl);
+        preview.replaceChildren(RT.ui.avatar({ ...user, avatarUrl: dataUrl }, 80));
+      } catch (err) {
+        console.error(err);
+        RT.ui.toast(RT.ui.describeSaveError(err, '画像の変更に失敗しました。もう一度お試しください'));
+      } finally {
+        avatarBusy = false;
+        pick.disabled = false;
+        refresh();
+      }
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (save.disabled) return;
+      sending = true;
+      refresh();
+      let saved = false;
+      try {
+        await delay();
+        RT.store.updateProfile(values());
+        saved = true;
+      } catch (err) {
+        if (err instanceof RT.store.ValidationError) {
+          nameField.setError(err.errors.displayName);
+          bioField.setError(err.errors.bio);
+        } else {
+          console.error(err);
+          RT.ui.toast(RT.ui.describeSaveError(err, '保存に失敗しました。もう一度お試しください'));
+        }
+      } finally {
+        sending = false;
+        refresh();
+      }
+      if (saved) {
+        RT.ui.toast('保存しました');
+        RT.app.navigate(userHref(user.username));
+      }
+    });
+    return form;
+  }
+
+  function profileEdit() {
+    const box = el('div', { class: 'profile-edit' }, el('div', { class: 'list-footer' }, RT.ui.spinner()));
+    (async () => {
+      await delay();
+      if (!box.isConnected) return;
+      box.replaceChildren(profileEditForm(RT.store.me()));
+    })();
+    return { title: 'プロフィールを編集', el: box };
+  }
+
+  // ---- 検索 ----
+  // 検索語は #/search?q= に持たせる。送信するとハッシュを変えて画面を作り直す（戻るで前の検索に戻れる）
+  function search(ctx) {
+    const q = ctx.query.q == null ? '' : ctx.query.q;
+    const text = q.trim();
+    const problem = text ? RT.store.validateSearchQuery(text) : null;
+
+    const input = el('input', {
+      id: 'search-q', type: 'search', name: 'q', class: 'input', value: q, autocomplete: 'off',
+      'aria-describedby': 'search-q-error',
+    });
+    if (problem) input.setAttribute('aria-invalid', 'true');
+    const message = el('p', { id: 'search-q-error', class: 'field-error', role: 'alert', text: problem });
+    const form = el('form', { class: 'search-form', role: 'search', novalidate: true },
+      el('label', { for: 'search-q', class: 'sr-only', text: 'ユーザー名か表示名' }),
+      input,
+      el('button', { type: 'submit', class: 'btn btn-primary', text: '検索' }));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const typed = input.value.trim();
+      if (!typed) return; // 空や空白だけは検索しない
+      RT.app.navigate('#/search?q=' + encodeURIComponent(typed));
+    });
+
+    let results;
+    if (!text) {
+      results = el('p', { class: 'placeholder', text: 'ユーザー名か表示名で探せます' });
+    } else if (problem) {
+      results = null;
+    } else {
+      results = RT.ui.infiniteList({
+        load: async (cursor) => {
+          await delay();
+          return RT.store.searchUsers(text, cursor);
+        },
+        renderItem: (user) => RT.ui.userCard(user),
+        emptyText: '該当するユーザーがいません',
+      });
+    }
+    return { title: '検索', el: el('div', { class: 'search' }, form, message, results) };
+  }
+
   window.RT = window.RT || {};
-  window.RT.views = { register, login, notFound, home, postDetail, likers, editPostDialog, deletePost };
+  window.RT.views = {
+    register, login, notFound, home, postDetail, likers, editPostDialog, deletePost,
+    profile, followers, following, profileEdit, search,
+  };
 })();
