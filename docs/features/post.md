@@ -89,14 +89,14 @@ multipart/form-data。部品 `body`（テキスト）と `images`（ファイル
 
 ### 正常系
 
-- 本文だけで投稿すると 201。`body`、`author`（自分）、`images` が空、`likeCount` と `commentCount` が 0、`likedByMe` が false、`edited` が false（`likeCount` と `commentCount` は Issue 5 と 6 で数えた値になる。それまでは 0）
+- 本文だけで投稿すると 201。`body`、`author`（自分）、`images` が空、`likeCount` と `commentCount` が 0、`likedByMe` が false、`edited` が false（`likeCount` と `commentCount` は Issue 6 と 7 で数えた値になる。それまでは 0）
 - 画像 1 枚で投稿すると 201。`images` に URL が 1 つ。S3 の代役に `posts/<uuid>.<拡張子>` のキーと正しい Content-Type で渡る
 - 画像 4 枚で投稿すると `images` が送った順に 4 つ。`position` が 0〜3
 - 本文が空で画像だけの投稿は 201
 - `GET` で同じ内容が返る
 - 本文を編集すると 200 で `body` が変わり、`edited` が true、`updated_at` が進む。`images` は変わらない
 - 削除すると 204。そのあと `GET` は 404。S3 の代役の `deleteAll` に画像のキーが渡る
-- 削除すると、その投稿の画像の行も消える（Mapper）。いいねとコメントが消えることは Issue 5 と 6 で確かめる
+- 削除すると、その投稿の画像の行も消える（Mapper）。いいねとコメントが消えることは Issue 6 と 7 で確かめる
 
 ### 入力の境界
 

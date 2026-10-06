@@ -9,6 +9,10 @@
   class AuthError extends Error {
     constructor(message) { super(message); this.name = 'AuthError'; }
   }
+  // ログインしていない（セッションが無い・消えた）。本物の 401 に当たる。パスワードの誤りの AuthError と見分ける
+  class NotLoggedInError extends AuthError {
+    constructor() { super('ログインが必要です'); this.name = 'NotLoggedInError'; }
+  }
   class ValidationError extends Error {
     // errors: { 項目名: 文言 }
     constructor(errors) { super('入力に誤りがあります'); this.name = 'ValidationError'; this.errors = errors; }
@@ -142,6 +146,26 @@
     return publicUser(user);
   }
 
+  // ---- 退会 ----
+  // 本人のパスワードを確かめ、ユーザーとその人に紐づくものをすべて消してセッションも捨てる。
+  // 消えたあとはユーザー名もメールアドレスも、もう一度登録できる
+  function deleteAccount(password) {
+    const user = requireUser();
+    const data = load();
+    const row = data.users.find((u) => u.id === user.id);
+    if (!row || row.password !== password) throw new AuthError('パスワードが違います');
+
+    const ownPostIds = new Set(data.posts.filter((p) => p.userId === user.id).map((p) => p.id));
+    data.posts = data.posts.filter((p) => !ownPostIds.has(p.id));
+    data.postImages = data.postImages.filter((i) => !ownPostIds.has(i.postId));
+    data.likes = data.likes.filter((l) => l.userId !== user.id && !ownPostIds.has(l.postId));
+    data.comments = data.comments.filter((c) => c.userId !== user.id && !ownPostIds.has(c.postId));
+    data.follows = data.follows.filter((f) => f.followerId !== user.id && f.followeeId !== user.id);
+    data.users = data.users.filter((u) => u.id !== user.id);
+    save(data);
+    localStorage.removeItem(SESSION_KEY);
+  }
+
   // ---- 投稿 ----
   const PAGE_SIZE = 20;
   const MAX_POST_CHARS = 280;
@@ -209,7 +233,7 @@
 
   function requireUser() {
     const user = currentUser();
-    if (!user) throw new AuthError('ログインが必要です');
+    if (!user) throw new NotLoggedInError();
     return user;
   }
 
@@ -728,11 +752,11 @@
 
   window.RT = window.RT || {};
   window.RT.store = {
-    AuthError, ValidationError, ConflictError, ForbiddenError, NotFoundError,
+    AuthError, NotLoggedInError, ValidationError, ConflictError, ForbiddenError, NotFoundError,
     MAX_POST_CHARS, MAX_IMAGES, MAX_IMAGE_BYTES,
     load, save, newId,
     init, reset, seed,
-    currentUser, login, logout, register,
+    currentUser, login, logout, register, deleteAccount,
     validateRegister, validateLogin, validatePostBody, validateComment, validateImageFile, countCodePoints,
     timeline, userPosts, getPost, createPost, updatePost, deletePost,
     like, unlike, likers, comments, addComment, deleteComment,

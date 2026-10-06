@@ -159,6 +159,7 @@ erDiagram
 - 外部キー: `post_id → posts.id`、`user_id → users.id`（どちらも CASCADE）
 - 一意: `(post_id, user_id)`。1 人 1 回を DB でも守る
 - 索引: `(post_id, id)`。いいねした人の一覧
+- 索引: `(user_id)`。退会の連鎖削除で、その人の行を探すため
 
 ### comments（コメント）
 
@@ -173,6 +174,7 @@ erDiagram
 - 外部キー: `post_id → posts.id`、`user_id → users.id`（どちらも CASCADE）
 - チェック: `length(body) >= 1`
 - 索引: `(post_id, id)`
+- 索引: `(user_id)`。退会の連鎖削除で、その人の行を探すため
 
 ### follows（フォロー関係）
 
@@ -196,12 +198,13 @@ erDiagram
 | --- | --- | --- |
 | `posts (user_id, id)` | その人の投稿を新しい順に（プロフィール）。フォロー相手の投稿を新しい順に（フォロー中タイムライン）。`user_id` でまとめ、その中が `id` 順なので、並べ替えなしに末尾から読める | `user_id` 単独の索引は要らない。2 列の索引は先頭の列だけの検索にも使える |
 | `likes (post_id, user_id)`（一意制約） | 「自分がいいね済みか」「投稿のいいね数」 | |
-| `likes (post_id, id)` | いいねした人の一覧を新しい順に | `user_id` から引く索引は無い。「このユーザーがいいねした投稿の一覧」は範囲外のため |
-| `comments (post_id, id)` | 投稿のコメント一覧を新しい順に。コメント数 | `user_id` から引く索引は無い。「このユーザーのコメント一覧」は範囲外のため。削除の認可は主キーで 1 行引いてから `user_id` を見るだけ |
+| `likes (post_id, id)` | いいねした人の一覧を新しい順に | |
+| `likes (user_id)`、`comments (user_id)` | 退会で `users` の行を消すときの連鎖削除で、その人の行を探す | 「このユーザーがいいねした投稿の一覧」などの機能は無いが、連鎖削除のために要る |
+| `comments (post_id, id)` | 投稿のコメント一覧を新しい順に。コメント数 | 削除の認可は主キーで 1 行引いてから `user_id` を見るだけなので、それ用の索引は要らない |
 | `follows (followee_id, id)` と `(follower_id, id)` | フォロワー一覧とフォロー中一覧。逆方向から引く機能が両方あるので 2 本 | |
 | `users lower(username)`、`lower(email)` | 一意性の保証。プロフィール URL とログインの完全一致の検索 | 部分一致のユーザー検索には使えない。数百人なら全件走査で十分。数万人になったら `pg_trgm` を足す |
 
-退会（ユーザーの削除）を将来足すときは、連鎖削除で `likes` と `comments` の行を探すために `user_id` の索引も一緒に足す。
+退会で `users` の行を消すと、外部キーの連鎖で投稿・画像の行・いいね・コメント・フォロー関係・リフレッシュトークンが消える。S3 のオブジェクトはアプリが消す（[image-storage-design.md](image-storage-design.md)）。
 
 ## 5. 代表的な問い合わせ
 
@@ -230,7 +233,7 @@ SELECT post_id FROM likes WHERE user_id = #{me} AND post_id IN (<foreach>);
 
 コメント数も同じ形で `comments` を数える。
 
-いいねした人の一覧。`EXISTS` の副問い合わせは `follows` ができる Issue 7 で足す。それまでは `is_following` を false で返す。並びとカーソルは `likes.id` で、項目は利用者。各行の「ログイン中の利用者がその人をフォローしているか」は `EXISTS` で取る。フォロワーとフォロー中の一覧も同じ形（`follows.id` で並べる）。
+いいねした人の一覧。`EXISTS` の副問い合わせは `follows` ができる Issue 8 で足す。それまでは `is_following` を false で返す。並びとカーソルは `likes.id` で、項目は利用者。各行の「ログイン中の利用者がその人をフォローしているか」は `EXISTS` で取る。フォロワーとフォロー中の一覧も同じ形（`follows.id` で並べる）。
 
 ```sql
 SELECT l.id AS cursor_id, u.id, u.username, u.display_name, u.avatar_key, u.bio,
@@ -287,3 +290,4 @@ LIMIT 21;
 | 論理削除（`deleted_at`） | すべての問い合わせに「消えていない」条件が要る。復元の要件が無い |
 | 「編集済み」の列を持つ | `updated_at > created_at` で分かる |
 | `comments` に投稿の持ち主を持つ | `posts.user_id` で分かる。同じ情報を 2 か所に持たない |
+| 退会で内容を「削除されたユーザー」として残す | 投稿やコメントに持ち主の無い行が残り、全画面でその扱いが要る。学習用の規模では全部消すほうが単純で、個人情報の削除の観点でも素直 |

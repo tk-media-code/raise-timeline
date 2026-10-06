@@ -85,6 +85,7 @@
 | 自分 | `GET /api/users/me` | | Me | [profile](features/profile.md) |
 | プロフィール更新 | `PATCH /api/users/me` | displayName, bio | Me | profile |
 | アイコン更新 | `PUT /api/users/me/avatar` | multipart: file | 200 { avatarUrl } | profile |
+| 退会 | `DELETE /api/users/me` | password | 204。Cookie を消す | auth |
 | プロフィール | `GET /api/users/{username}` | | UserDetail | profile |
 | その人の投稿 | `GET /api/users/{username}/posts` | cursor, limit | Post の一覧 | profile |
 | フォロワー | `GET /api/users/{username}/followers` | cursor, limit | UserCard の一覧 | [follow](features/follow.md) |

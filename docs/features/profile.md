@@ -20,7 +20,7 @@
 | 自己紹介 | 改行をそのまま表示。空なら出さない |
 | 登録日 | 「2026年10月に登録」 |
 | フォロー中 n、フォロワー n | 押すとそれぞれの一覧へ |
-| ボタン | 本人なら「プロフィールを編集」→ `/settings/profile`。他人ならフォローボタン。フォローボタンは Issue 7 で足す（[requirements.md](../requirements.md) の「Issue ごとの仮の振る舞い」） |
+| ボタン | 本人なら「プロフィールを編集」→ `/settings/profile`。他人ならフォローボタン。フォローボタンは Issue 8 で足す（[requirements.md](../requirements.md) の「Issue ごとの仮の振る舞い」） |
 | 投稿一覧 | その人の投稿を新しい順に無限スクロール。投稿カードを使う |
 
 - 存在しないユーザー名は「見つかりません」の画面
@@ -37,6 +37,7 @@
 - ボタン「保存」。表示名と自己紹介は `PATCH /api/users/me`、アイコンは選んだ時点で `PUT /api/users/me/avatar` を呼ぶ（別の要求）
 - 成功したら通知「保存しました」を出し、プロフィールへ戻る
 - ユーザー名とメールアドレスは表示するが変えられない。メールアドレスは `GET /api/users/me`（Me）から取る
+- 画面の末尾に「退会」の節を置く（[auth.md](auth.md) の 2 章）
 
 ## 3. API
 
@@ -64,8 +65,8 @@
 ### 正常系
 
 - 自分のプロフィールを取ると `isMe` が true、`isFollowing` が false
-- 他人のプロフィールを取ると `isMe` が false。フォローしていれば `isFollowing` が true（`isFollowing` は Issue 7 で確かめる。それまでは false）
-- `followersCount` と `followingCount` が実際の数と一致する（Issue 7 で確かめる。それまでは 0）
+- 他人のプロフィールを取ると `isMe` が false。フォローしていれば `isFollowing` が true（`isFollowing` は Issue 8 で確かめる。それまでは false）
+- `followersCount` と `followingCount` が実際の数と一致する（Issue 8 で確かめる。それまでは 0）
 - 表示名と自己紹介を更新すると応答に反映され、`updated_at` が進む
 - アイコンを更新すると新しい `avatarUrl` が返り、`users.avatar_key` が新しいキーになり、古いキーが削除される
 - アイコンが未設定なら `avatarUrl` は null
