@@ -49,6 +49,8 @@ img { max-width: 100%; }
 .btn:hover { background: var(--bg-soft); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover { background: var(--accent-dark); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:hover { background: #8c1d18; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-block { width: 100%; }
 
@@ -197,7 +199,7 @@ img { max-width: 100%; }
 .menu-item:hover { background: var(--bg-soft); }
 
 .main { padding-bottom: calc(var(--tabbar-h) + 16px); }
-.column { width: 100%; max-width: 600px; margin: 0 auto; }
+.column { width: 100%; max-width: 800px; margin: 0 auto; }
 
 .tabbar {
   position: fixed;
@@ -455,7 +457,7 @@ img { max-width: 100%; }
 .profile-counts a:hover { text-decoration: underline; }
 
 /* ---- プロフィール編集 ---- */
-.profile-form { padding: 16px 16px 80px; } /* 右下の＋ボタンが「保存」に重ならない余白 */
+.profile-form { padding: 16px; }
 .field-caption { display: block; margin: 0 0 4px; font-weight: 700; }
 .profile-form .field > label { margin-bottom: 4px; }
 .avatar-edit { display: flex; align-items: center; gap: 16px; }
@@ -463,10 +465,13 @@ img { max-width: 100%; }
 .avatar-edit-side .field-error { margin: 0; }
 .input:disabled { background: var(--bg-soft); color: var(--muted); cursor: not-allowed; }
 .form-actions { display: flex; justify-content: flex-end; }
+.danger-zone { margin: 0 16px; padding: 16px 0 80px; border-top: 1px solid var(--border); } /* 下の余白は、右下の＋ボタンが「退会する」に重ならないため */
+.danger-zone-title { margin: 0 0 8px; font-size: 18px; }
+.danger-zone-text { margin: 0 0 16px; color: var(--muted); }
 
 /* ---- 検索 ---- */
-.search-form { display: flex; gap: 8px; padding: 12px 16px; }
-.search-form .input { flex: 1; min-width: 0; }
+.search-form { padding: 12px 16px; }
+.search-form .input { width: 100%; }
 .search > .field-error { margin: 0; padding: 0 16px 8px; }
 
 /* ---- レイアウト（PC） ---- */
@@ -486,7 +491,7 @@ img { max-width: 100%; }
     font-size: 20px;
   }
   .main { padding-bottom: 0; }
-  .profile-form { padding-bottom: 16px; }
+  .danger-zone { padding-bottom: 16px; }
   .column { min-height: 100vh; border-right: 1px solid var(--border); border-left: 1px solid var(--border); }
   .toast-region { bottom: 24px; }
 

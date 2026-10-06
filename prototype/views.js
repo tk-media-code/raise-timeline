@@ -662,56 +662,165 @@
     return form;
   }
 
+  // ---- 退会 ----
+  const DELETE_ACCOUNT_WARNING = '退会すると、投稿・コメント・いいね・フォロー・画像がすべて消え、元に戻せません。';
+
+  // 退会の確認。ui.confirm と同じ作りで、パスワード欄が付く。取り消しが既定。Esc と背景のクリックは取り消し。
+  // 成功したらダイアログを閉じて onDeleted() を呼ぶ
+  function deleteAccountDialog(onDeleted) {
+    const field = textField({ id: 'delete-password', label: 'パスワード', type: 'password', autocomplete: 'current-password' });
+    const cancel = el('button', { type: 'button', class: 'btn', autofocus: true, text: '取り消し' });
+    const submit = el('button', { type: 'submit', class: 'btn btn-danger', text: '退会する' });
+    const form = el('form', { class: 'dialog-body', novalidate: true },
+      el('h2', { id: 'delete-account-title', class: 'dialog-title', text: '本当に退会しますか？' }),
+      el('p', { class: 'dialog-text', text: DELETE_ACCOUNT_WARNING }),
+      field,
+      el('div', { class: 'dialog-actions' }, cancel, submit));
+    const dialog = el('dialog', { class: 'dialog', 'aria-labelledby': 'delete-account-title' }, form);
+
+    cancel.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+    dialog.addEventListener('close', () => dialog.remove());
+    field.input.addEventListener('input', () => field.setError(''));
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (submit.disabled) return;
+      const password = field.input.value;
+      if (!password) {
+        field.setError('入力してください');
+        field.input.focus();
+        return;
+      }
+      submit.disabled = true;
+      let done = false;
+      try {
+        await delay();
+        RT.store.deleteAccount(password);
+        done = true;
+      } catch (err) {
+        if (err instanceof RT.store.AuthError) {
+          field.setError(err.message);
+          field.input.focus();
+        } else {
+          console.error(err);
+          RT.ui.toast(RT.ui.describeSaveError(err, '退会に失敗しました。もう一度お試しください'));
+        }
+      } finally {
+        submit.disabled = false;
+      }
+      if (done) {
+        dialog.close();
+        onDeleted();
+      }
+    });
+
+    document.getElementById('dialogs').append(dialog);
+    dialog.showModal();
+    return dialog;
+  }
+
+  // プロフィール編集の最後の区画。押すと確認ダイアログが開く
+  function deleteAccountSection() {
+    const button = el('button', { type: 'button', class: 'btn btn-danger', text: '退会する' });
+    button.addEventListener('click', () => {
+      deleteAccountDialog(() => {
+        RT.ui.toast('退会しました');
+        RT.app.navigate('#/login');
+      });
+    });
+    return el('section', { class: 'danger-zone', 'aria-labelledby': 'danger-zone-title' },
+      el('h2', { id: 'danger-zone-title', class: 'danger-zone-title', text: '退会' }),
+      el('p', { class: 'danger-zone-text', text: DELETE_ACCOUNT_WARNING }),
+      button);
+  }
+
   function profileEdit() {
     const box = el('div', { class: 'profile-edit' }, el('div', { class: 'list-footer' }, RT.ui.spinner()));
     (async () => {
       await delay();
       if (!box.isConnected) return;
-      box.replaceChildren(profileEditForm(RT.store.me()));
+      box.replaceChildren(profileEditForm(RT.store.me()), deleteAccountSection());
     })();
     return { title: 'プロフィールを編集', el: box };
   }
 
   // ---- 検索 ----
-  // 検索語は #/search?q= に持たせる。送信するとハッシュを変えて画面を作り直す（戻るで前の検索に戻れる）
+  // 入力が 400 ms 止まったら自動で検索し、Enter なら即時に検索する（検索ボタンは無い）。
+  // 検索語は #/search?q= に持たせるが、入力のたびに履歴を積まないよう replaceState で書き換える
+  // （replaceState は hashchange を起こさないので、この画面が自分で結果を描き直す）。
+  // 開いたときにハッシュに q があれば、すぐに検索する
+  const SEARCH_DEBOUNCE_MS = 400;
+
   function search(ctx) {
-    const q = ctx.query.q == null ? '' : ctx.query.q;
-    const text = q.trim();
-    const problem = text ? RT.store.validateSearchQuery(text) : null;
+    const initial = ctx.query.q == null ? '' : ctx.query.q;
 
     const input = el('input', {
-      id: 'search-q', type: 'search', name: 'q', class: 'input', value: q, autocomplete: 'off',
-      'aria-describedby': 'search-q-error',
+      id: 'search-q', type: 'search', name: 'q', class: 'input', value: initial, autocomplete: 'off',
+      'aria-label': 'ユーザー名か表示名', placeholder: 'ユーザー名か表示名で探す', 'aria-describedby': 'search-q-error',
     });
-    if (problem) input.setAttribute('aria-invalid', 'true');
-    const message = el('p', { id: 'search-q-error', class: 'field-error', role: 'alert', text: problem });
-    const form = el('form', { class: 'search-form', role: 'search', novalidate: true },
-      el('label', { for: 'search-q', class: 'sr-only', text: 'ユーザー名か表示名' }),
-      input,
-      el('button', { type: 'submit', class: 'btn btn-primary', text: '検索' }));
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const typed = input.value.trim();
-      if (!typed) return; // 空や空白だけは検索しない
-      RT.app.navigate('#/search?q=' + encodeURIComponent(typed));
-    });
+    const message = el('p', { id: 'search-q-error', class: 'field-error', role: 'alert' });
+    const form = el('form', { class: 'search-form', role: 'search', novalidate: true }, input);
+    const results = el('div', { class: 'search-results' });
+    const root = el('div', { class: 'search' }, form, message, results);
 
-    let results;
-    if (!text) {
-      results = el('p', { class: 'placeholder', text: 'ユーザー名か表示名で探せます' });
-    } else if (problem) {
-      results = null;
-    } else {
-      results = RT.ui.infiniteList({
+    let timer = null;
+    let seq = 0; // 新しい検索が始まるたびに増やす。古い検索の結果は捨てる
+
+    function writeHash(text) {
+      try {
+        history.replaceState(null, '', text ? '#/search?q=' + encodeURIComponent(text) : '#/search');
+      } catch (err) {
+        console.error(err); // file:// の一部のブラウザなど。URL が変わらないだけで検索はできる
+      }
+    }
+
+    function run(raw, { reflect }) {
+      clearTimeout(timer);
+      timer = null;
+      const mine = ++seq;
+      const text = raw.trim();
+      if (reflect) writeHash(text);
+
+      message.textContent = '';
+      input.removeAttribute('aria-invalid');
+      results.replaceChildren();
+
+      if (!text) {
+        results.append(el('p', { class: 'placeholder', text: 'ユーザー名か表示名で探せます' }));
+        return;
+      }
+      if (RT.store.validateSearchQuery(text)) {
+        message.textContent = '50 文字以内で入力してください';
+        input.setAttribute('aria-invalid', 'true');
+        return;
+      }
+      results.append(RT.ui.infiniteList({
         load: async (cursor) => {
           await delay();
+          if (mine !== seq) return { items: [], nextCursor: null };
           return RT.store.searchUsers(text, cursor);
         },
         renderItem: (user) => RT.ui.userCard(user),
         emptyText: '該当するユーザーがいません',
-      });
+      }));
     }
-    return { title: '検索', el: el('div', { class: 'search' }, form, message, results) };
+
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (root.isConnected) run(input.value, { reflect: true });
+      }, SEARCH_DEBOUNCE_MS);
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      run(input.value, { reflect: true });
+    });
+
+    run(initial, { reflect: false });
+    return { title: '検索', el: root };
   }
 
   window.RT = window.RT || {};

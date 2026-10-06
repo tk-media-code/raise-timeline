@@ -142,6 +142,26 @@
     return publicUser(user);
   }
 
+  // ---- 退会 ----
+  // 本人のパスワードを確かめ、ユーザーとその人に紐づくものをすべて消してセッションも捨てる。
+  // 消えたあとはユーザー名もメールアドレスも、もう一度登録できる
+  function deleteAccount(password) {
+    const user = requireUser();
+    const data = load();
+    const row = data.users.find((u) => u.id === user.id);
+    if (!row || row.password !== password) throw new AuthError('パスワードが違います');
+
+    const ownPostIds = new Set(data.posts.filter((p) => p.userId === user.id).map((p) => p.id));
+    data.posts = data.posts.filter((p) => !ownPostIds.has(p.id));
+    data.postImages = data.postImages.filter((i) => !ownPostIds.has(i.postId));
+    data.likes = data.likes.filter((l) => l.userId !== user.id && !ownPostIds.has(l.postId));
+    data.comments = data.comments.filter((c) => c.userId !== user.id && !ownPostIds.has(c.postId));
+    data.follows = data.follows.filter((f) => f.followerId !== user.id && f.followeeId !== user.id);
+    data.users = data.users.filter((u) => u.id !== user.id);
+    save(data);
+    localStorage.removeItem(SESSION_KEY);
+  }
+
   // ---- 投稿 ----
   const PAGE_SIZE = 20;
   const MAX_POST_CHARS = 280;
@@ -732,7 +752,7 @@
     MAX_POST_CHARS, MAX_IMAGES, MAX_IMAGE_BYTES,
     load, save, newId,
     init, reset, seed,
-    currentUser, login, logout, register,
+    currentUser, login, logout, register, deleteAccount,
     validateRegister, validateLogin, validatePostBody, validateComment, validateImageFile, countCodePoints,
     timeline, userPosts, getPost, createPost, updatePost, deletePost,
     like, unlike, likers, comments, addComment, deleteComment,
