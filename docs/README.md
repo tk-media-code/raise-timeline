@@ -20,7 +20,7 @@ raise-timeline は、X（旧 Twitter）を模した学習用の SNS アプリで
 | 7 | [image-storage-design.md](image-storage-design.md) | 画像保存設計。S3 のバケットとキー、アップロードの流れ、権限 |
 | 8 | [screen-design.md](screen-design.md) | 画面設計の横断部分。画面一覧、遷移、共通レイアウト、共通部品 |
 | 9 | [test-strategy.md](test-strategy.md) | テスト方針。確かめる観点、層ごとの道具、代役の使い分け |
-| 10 | [features/auth.md](features/auth.md) | 登録・ログイン・ログアウト |
+| 10 | [features/auth.md](features/auth.md) | 登録・ログイン・ログアウト・退会 |
 | 11 | [features/profile.md](features/profile.md) | プロフィールの表示と更新、アイコン画像 |
 | 12 | [features/post.md](features/post.md) | 投稿の作成・編集・削除、画像添付 |
 | 13 | [features/timeline.md](features/timeline.md) | タイムライン（フォロー中／すべて） |

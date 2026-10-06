@@ -37,6 +37,7 @@ HTTP の標準である RFC 9457「Problem Details」に従う。Spring Boot が
 | 401 | `UNAUTHENTICATED` | アクセストークンが無い・期限切れ・改ざん | ログインが必要です |
 | 401 | `INVALID_CREDENTIALS` | ログインのメールアドレスかパスワードが違う。どちらが違うかは言わない | メールアドレスまたはパスワードが違います |
 | 401 | `INVALID_REFRESH_TOKEN` | リフレッシュトークンが無い・期限切れ・ログアウト済み | ログインの有効期限が切れました |
+| 401 | `INVALID_PASSWORD` | 退会の確認で入力したパスワードが違う | パスワードが違います |
 | 403 | `FORBIDDEN` | 他人の投稿・コメントを変えようとした | この操作はできません |
 | 404 | `NOT_FOUND` | ユーザー・投稿・コメントが無い。存在しない URL | 見つかりません |
 | 405 | `METHOD_NOT_ALLOWED` | メソッドが違う | この操作は受け付けていません |
@@ -58,7 +59,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 ### 例外の変換
 
 - 例外の変換は `@RestControllerAdvice` の 1 クラス（`ApiExceptionHandler`）に集める。`ResponseEntityExceptionHandler` を継承し、Spring が投げる例外（JSON の構文エラー、`@Valid` の失敗、multipart の超過など）も同じ形にする
-- 業務の例外はサービス層が投げる。`NotFoundException`（404）、`ForbiddenException`（403）、`ConflictException`（409、どの項目かを持つ）、`InvalidCredentialsException`（401）、`InvalidRefreshTokenException`（401）、`UnsupportedImageTypeException`（415）、`FileTooLargeException`（413。アイコンの 2 MB 超のように、要求全体の上限より小さい上限はアプリで検査する）、`ValidationException`（422。サービス層で検証するテーブルをまたぐ規則）、`ImageStorageUnavailableException`（503）
+- 業務の例外はサービス層が投げる。`NotFoundException`（404）、`ForbiddenException`（403）、`ConflictException`（409、どの項目かを持つ）、`InvalidCredentialsException`（401）、`InvalidRefreshTokenException`（401）、`InvalidPasswordException`（401。退会の確認）、`UnsupportedImageTypeException`（415）、`FileTooLargeException`（413。アイコンの 2 MB 超のように、要求全体の上限より小さい上限はアプリで検査する）、`ValidationException`（422。サービス層で検証するテーブルをまたぐ規則）、`ImageStorageUnavailableException`（503）
 - いいねやコメントを付けようとした投稿が同時に消されて外部キー違反になったときは、404 `NOT_FOUND` に変換する（`ON CONFLICT DO NOTHING` は一意制約にしか効かない）
 - Spring Security の 401 と 403 は、例外ハンドラに届く前に止まる。`AuthenticationEntryPoint` と `AccessDeniedHandler` を差し替えて、同じ Problem Details を書き出す
 - 存在しない URL（`NoResourceFoundException`）は 404 `NOT_FOUND` にする
@@ -83,7 +84,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 | --- | --- | --- |
 | ERROR | 500 | スタックトレース付き |
 | WARN | 503、S3 の削除失敗、想定外だが継続できた事象 | 要点と原因 |
-| INFO | 4xx | メソッド、パス、ステータス、code。本文は書かない。ログインの成功と失敗（利用者 id、失敗はメールアドレスの有無を書かない）、投稿とコメントの削除（利用者 id と対象 id）も INFO で残す |
+| INFO | 4xx | メソッド、パス、ステータス、code。本文は書かない。ログインの成功と失敗（利用者 id、失敗はメールアドレスの有無を書かない）、投稿とコメントの削除（利用者 id と対象 id）、退会（利用者 id）も INFO で残す |
 | DEBUG | 開発時のみ | SQL など |
 
 - すべてのログ行に `requestId` を付ける。`OncePerRequestFilter` が要求ヘッダー `X-Request-Id`（本番は nginx が `$request_id` で付ける）を読み、`^[A-Za-z0-9-]{1,64}$` に合えば使い、合わなければ生成して MDC に入れる。応答ヘッダーにも返す
@@ -109,6 +110,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 | 状況 | 画面の動き |
 | --- | --- |
 | 401（更新も失敗） | ログアウト状態にしてログイン画面へ移る。ログイン後に元の画面へ戻す |
+| 401 `INVALID_PASSWORD` | 退会のダイアログの入力欄の下に文言を出す。ダイアログは閉じない |
 | 403 | 通知で「この操作はできません」。画面の状態は変えない |
 | 404（画面そのものの読み込み） | 投稿詳細やプロフィールなら「見つかりません」の画面 |
 | 404（操作） | 通知で伝え、一覧を読み直す（消された投稿へのいいねなど） |
