@@ -148,6 +148,7 @@
   // 戻り値は誤りの文言。通れば null
   function validateImageFile(file, maxBytes) {
     if (!IMAGE_TYPES.includes(file.type)) return 'JPEG、PNG、GIF、WebP の画像を選んでください';
+    if (file.size === 0) return '空のファイルは選べません';
     if (file.size > (maxBytes || MAX_IMAGE_BYTES)) return '画像は 5 MB 以内にしてください';
     return null;
   }

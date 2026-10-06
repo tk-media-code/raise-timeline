@@ -337,6 +337,40 @@
     });
   }
 
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('画像を開けませんでした'));
+      img.src = src;
+    });
+  }
+
+  // localStorage に収まるよう、保存の前に長辺 1280px へ縮める（小さい画像は拡大しない）。
+  // JPEG と WebP は元の形式で品質 0.85、PNG は PNG、GIF は PNG にする（動きは失われる）。
+  const MAX_SIDE = 1280;
+  const OUTPUT_TYPE = { 'image/jpeg': 'image/jpeg', 'image/webp': 'image/webp', 'image/png': 'image/png', 'image/gif': 'image/png' };
+
+  async function readImage(file) {
+    const original = await readAsDataUrl(file);
+    const img = await loadImage(original);
+    const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    const shrunk = canvas.toDataURL(OUTPUT_TYPE[file.type], 0.85);
+    // 縮める必要が無く、作り直すと大きくなるときは元のまま（GIF は PNG にするので除く）
+    if (scale === 1 && file.type !== 'image/gif' && shrunk.length >= original.length) return original;
+    return shrunk;
+  }
+
+  // 保存の失敗（localStorage の容量超過か、それ以外か）を、利用者に見せる文言にする
+  function describeSaveError(err, fallback) {
+    const quota = err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014);
+    return quota ? 'プロトタイプの保存容量を超えました。小さい画像を選ぶか、見本データに戻してください' : fallback;
+  }
+
   // 投稿フォーム。成功したら onPosted(post) を呼んでフォームを空にする。form.focusBody() で入力欄へ
   function composeForm({ onPosted }) {
     const { MAX_IMAGES, MAX_IMAGE_BYTES } = RT.store;
@@ -403,7 +437,7 @@
       refresh();
       await Promise.all(added.map(async ([entry, file]) => {
         try {
-          entry.dataUrl = await readAsDataUrl(file);
+          entry.dataUrl = await readImage(file);
         } catch (err) {
           console.error(err);
           images.splice(images.indexOf(entry), 1);
@@ -444,7 +478,7 @@
           imageMessage.textContent = err.errors.images || '';
         } else {
           console.error(err);
-          toast('投稿に失敗しました。もう一度お試しください');
+          toast(describeSaveError(err, '投稿に失敗しました。もう一度お試しください'));
         }
       } finally {
         sending = false;
@@ -533,7 +567,7 @@
 
   window.RT = window.RT || {};
   window.RT.ui = {
-    el, delay, toast, confirm, avatar, spinner, formatRelative, formatAbsolute, textField,
+    el, delay, toast, confirm, describeSaveError, readImage, avatar, spinner, formatRelative, formatAbsolute, textField,
     linkify, imageGrid, imageViewer, infiniteList, bodyField, composeForm, postCard,
   };
 })();

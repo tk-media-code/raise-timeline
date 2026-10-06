@@ -241,7 +241,7 @@
           RT.ui.toast('この操作はできません');
         } else {
           console.error(err);
-          RT.ui.toast('保存に失敗しました。もう一度お試しください');
+          RT.ui.toast(RT.ui.describeSaveError(err, '保存に失敗しました。もう一度お試しください'));
         }
       } finally {
         sending = false;
