@@ -3,7 +3,7 @@
 - 日付: 2026-10-06
 - 要件: [requirements.md](../requirements.md) の 3.5
 - 設計: [api-conventions.md](../api-conventions.md)、[database-design.md](../database-design.md)
-- Issue: 実装の順序の 5「いいねを作る」
+- Issue: 実装の順序の 6「いいねを作る」
 
 ## 1. 概要
 
@@ -49,7 +49,7 @@
 - 付けると 204。投稿を取り直すと `likeCount` が 1 増え、`likedByMe` が true
 - 外すと 204。`likeCount` が戻り、`likedByMe` が false
 - 自分の投稿にも付けられる
-- いいねした人の一覧に、付けた人が新しい順に UserCard で返る。`isFollowing` が付く（`isFollowing` は Issue 7 で確かめる。それまでは false）
+- いいねした人の一覧に、付けた人が新しい順に UserCard で返る。`isFollowing` が付く（`isFollowing` は Issue 8 で確かめる。それまでは false）
 
 ### 入力の境界
 

@@ -129,14 +129,14 @@ flowchart TB
 | AWS アカウントのプラン | 2025 年 7 月 15 日以降に作ったアカウントは、無料枠が「最大 $200 のクレジットを 6 か月」の方式。本番公開には有料プランへの切り替えが要る |
 | インスタンスの大きさ | t3.small と db.t4g.micro から始め、足りなければ上げる |
 | バケット名 | 全世界で一意。`raise-timeline-prod-<接尾辞>` の形 |
-| 回数制限の値 | ログインと登録は 1 IP あたり毎分 20 回、バースト 20 から始める。教室の同じ NAT から一斉に登録しても詰まらない値に調整する |
+| 回数制限の値 | ログイン・登録・退会は 1 IP あたり毎分 20 回、バースト 20 から始める。教室の同じ NAT から一斉に登録しても詰まらない値に調整する |
 
 ## 4. 部品の役割と、新しく足す依存
 
 | 部品 | 役割 | 足す依存 |
 | --- | --- | --- |
 | React | 画面。ルーティングは React Router。API の呼び出し・応答のキャッシュ・一覧の無限スクロールは TanStack Query で扱う | `@tanstack/react-query` |
-| nginx | 静的ファイルの配信、圧縮、`/api` の転送、未知のパスを `index.html` に戻す、セキュリティヘッダー、ログインと登録の回数制限、ALB の後ろで利用者の IP を復元する | 本番用 Dockerfile と `nginx.conf` |
+| nginx | 静的ファイルの配信、圧縮、`/api` の転送、未知のパスを `index.html` に戻す、セキュリティヘッダー、ログイン・登録・退会の回数制限、ALB の後ろで利用者の IP を復元する | 本番用 Dockerfile と `nginx.conf` |
 | Spring Boot | `/api` の REST API。認証認可は Spring Security と JWT。入力検証。S3 への保存 | `spring-boot-starter-security`、`spring-boot-starter-security-oauth2-resource-server`（JWT の発行と検証。追加の JWT ライブラリは入れない）、`spring-boot-starter-validation`、AWS SDK for Java v2 の `s3`、Apache Commons Imaging（JPEG の GPS 情報の除去。1.0 系の版が alpha のままなら、採る版と使用の可否を Issue 4 の計画で確かめる）。テスト用に `spring-boot-starter-security-test` |
 | PostgreSQL | データ。スキーマは Flyway、SQL は MyBatis の XML | なし |
 | S3 | 画像 | なし |
@@ -181,7 +181,7 @@ AWS SDK は認証情報を標準の探索順（環境変数 → インスタン�
 | --- | --- |
 | HTTPS | ALB で終端。HTTP は 443 へリダイレクト。本番の Cookie に `Secure` を付ける |
 | セキュリティヘッダー | nginx が `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: strict-origin-when-cross-origin`、`Strict-Transport-Security: max-age=31536000` を返す |
-| 総当たり対策 | nginx の `limit_req` で、ログインと登録の API を 1 IP あたり毎分 20 回（バースト 20）に制限する。ALB の後ろでは接続元が ALB の IP になるので、`set_real_ip_from <VPC の CIDR>`、`real_ip_header X-Forwarded-For`、`real_ip_recursive on` で利用者の IP を復元してから数える。復元しないと全員で 1 つの枠を分け合い、復元を無条件にすると偽装で抜けられる |
+| 総当たり対策 | nginx の `limit_req` で、ログインと登録の API と退会（`DELETE /api/users/me`。パスワードの再入力を総当たりで試せる口になるため）を 1 IP あたり毎分 20 回（バースト 20）に制限する。退会はメソッドが DELETE のときだけ数える（`map $request_method` で鍵を切り替える）。ALB の後ろでは接続元が ALB の IP になるので、`set_real_ip_from <VPC の CIDR>`、`real_ip_header X-Forwarded-For`、`real_ip_recursive on` で利用者の IP を復元してから数える。復元しないと全員で 1 つの枠を分け合い、復元を無条件にすると偽装で抜けられる |
 | パスワード | BCrypt で保存。平文はログにも残さない |
 | 認可 | すべての変更系 API で、ログイン中のユーザーが資源の持ち主かを確かめる（[auth-design.md](auth-design.md)） |
 | 入力検証 | サーバーで必ず検証する。画面の検証は入力中に伝えるためのもの |

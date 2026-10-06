@@ -151,7 +151,7 @@
 
 | Issue | 仮の振る舞い |
 | --- | --- |
-| 2〜4（投稿、プロフィール、画像） | Post の `likeCount` と `commentCount` は 0、`likedByMe` は false を返す。`likes` と `comments` ができたら数えた値に変える |
+| 2〜5（投稿、プロフィール、画像、退会） | Post の `likeCount` と `commentCount` は 0、`likedByMe` は false を返す。`likes` と `comments` ができたら数えた値に変える |
 | 2〜7 | ホームは「すべて」のタブだけ。「フォロー中」のタブと `GET /api/timeline/following` は Issue 8 で足す。それまでホームの既定は「すべて」 |
 | 3〜7（プロフィール） | `followersCount` と `followingCount` は 0、`isFollowing` は false を返す。`follows` ができたら数えた値に変える |
 | 2 | 「投稿を削除するといいねとコメントも消える」は、Issue 6 と 7 でそれぞれ確かめる |

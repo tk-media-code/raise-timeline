@@ -233,7 +233,7 @@ SELECT post_id FROM likes WHERE user_id = #{me} AND post_id IN (<foreach>);
 
 コメント数も同じ形で `comments` を数える。
 
-いいねした人の一覧。`EXISTS` の副問い合わせは `follows` ができる Issue 7 で足す。それまでは `is_following` を false で返す。並びとカーソルは `likes.id` で、項目は利用者。各行の「ログイン中の利用者がその人をフォローしているか」は `EXISTS` で取る。フォロワーとフォロー中の一覧も同じ形（`follows.id` で並べる）。
+いいねした人の一覧。`EXISTS` の副問い合わせは `follows` ができる Issue 8 で足す。それまでは `is_following` を false で返す。並びとカーソルは `likes.id` で、項目は利用者。各行の「ログイン中の利用者がその人をフォローしているか」は `EXISTS` で取る。フォロワーとフォロー中の一覧も同じ形（`follows.id` で並べる）。
 
 ```sql
 SELECT l.id AS cursor_id, u.id, u.username, u.display_name, u.avatar_key, u.bio,

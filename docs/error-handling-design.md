@@ -47,7 +47,7 @@ HTTP の標準である RFC 9457「Problem Details」に従う。Spring Boot が
 | 415 | `UNSUPPORTED_IMAGE_TYPE` | JPEG / PNG / GIF / WebP 以外。中身の先頭バイトで判定 | JPEG、PNG、GIF、WebP の画像を選んでください |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | JSON の API に JSON 以外の Content-Type で送った | 要求の形式が正しくありません |
 | 422 | `VALIDATION_ERROR` | 文字数・必須・形式の誤り、画像 5 枚以上、本文も画像も無い投稿、自分自身のフォロー | 入力内容に誤りがあります（`errors` に項目ごとの文言） |
-| 429 | （nginx が返す。本文は Problem Details ではない） | ログイン・登録の回数制限 | — |
+| 429 | （nginx が返す。本文は Problem Details ではない） | ログイン・登録・退会の回数制限 | — |
 | 500 | `INTERNAL_ERROR` | 想定外の例外 | 問題が起きました。時間をおいて再試行してください |
 | 503 | （ヘルスチェックのみ。本文は `{"status":"DOWN","database":"DOWN"}`） | DB に届かない | — |
 | 503 | `IMAGE_STORAGE_UNAVAILABLE` | S3 の設定が無い環境で画像を操作した | 画像の保存が設定されていません |
@@ -60,7 +60,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 
 - 例外の変換は `@RestControllerAdvice` の 1 クラス（`ApiExceptionHandler`）に集める。`ResponseEntityExceptionHandler` を継承し、Spring が投げる例外（JSON の構文エラー、`@Valid` の失敗、multipart の超過など）も同じ形にする
 - 業務の例外はサービス層が投げる。`NotFoundException`（404）、`ForbiddenException`（403）、`ConflictException`（409、どの項目かを持つ）、`InvalidCredentialsException`（401）、`InvalidRefreshTokenException`（401）、`InvalidPasswordException`（401。退会の確認）、`UnsupportedImageTypeException`（415）、`FileTooLargeException`（413。アイコンの 2 MB 超のように、要求全体の上限より小さい上限はアプリで検査する）、`ValidationException`（422。サービス層で検証するテーブルをまたぐ規則）、`ImageStorageUnavailableException`（503）
-- いいねやコメントを付けようとした投稿が同時に消されて外部キー違反になったときは、404 `NOT_FOUND` に変換する（`ON CONFLICT DO NOTHING` は一意制約にしか効かない）
+- いいねやコメントを付けようとした投稿が同時に消されて外部キー違反になったときは、404 `NOT_FOUND` に変換する（`ON CONFLICT DO NOTHING` は一意制約にしか効かない）。退会と同時に走った投稿などが利用者への外部キー違反になったときは 401 `UNAUTHENTICATED` に変換する
 - Spring Security の 401 と 403 は、例外ハンドラに届く前に止まる。`AuthenticationEntryPoint` と `AccessDeniedHandler` を差し替えて、同じ Problem Details を書き出す
 - 存在しない URL（`NoResourceFoundException`）は 404 `NOT_FOUND` にする
 - 想定外の例外（`Exception`）は 500 `INTERNAL_ERROR`。`detail` は固定文言
