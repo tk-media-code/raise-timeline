@@ -115,4 +115,5 @@ Issue を立て、ブランチを切り、Pull Request で変更を入れます�
 | `frontend/` | React のアプリ |
 | `scripts/` | 品質チェック |
 | `docs/` | 設計書 |
+| `prototype/` | 仕様確認用のプロトタイプ（HTML / CSS / JavaScript のみ）。開き方は `prototype/README.md` |
 | `docker-compose.yml` | ローカル開発用の構成（frontend / backend / db） |
