@@ -270,6 +270,106 @@
     save(data);
   }
 
+  // ---- いいね ----
+  // 付ける・外すはどちらも、既にその状態でも成功する（2 回押しても 1 件）
+  function like(postId) {
+    const me = requireUser();
+    const data = load();
+    const post = findPost(data, postId);
+    if (!data.likes.some((l) => l.postId === post.id && l.userId === me.id)) {
+      data.likes.push({ id: newId(data), postId: post.id, userId: me.id, createdAt: new Date().toISOString() });
+      save(data);
+    }
+  }
+
+  function unlike(postId) {
+    const me = requireUser();
+    const data = load();
+    const post = findPost(data, postId);
+    const rest = data.likes.filter((l) => !(l.postId === post.id && l.userId === me.id));
+    if (rest.length !== data.likes.length) {
+      data.likes = rest;
+      save(data);
+    }
+  }
+
+  // UserCard の形（docs/api-conventions.md 3 章）
+  function toUserCard(data, user, meId) {
+    return {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      avatarUrl: user.avatarDataUrl,
+      bio: user.bio,
+      isFollowing: data.follows.some((f) => f.followerId === meId && f.followeeId === user.id),
+    };
+  }
+
+  // 並びとカーソルは likes の id（項目の id は利用者の id）
+  function likers(postId, cursor) {
+    const me = requireUser();
+    const data = load();
+    const post = findPost(data, postId);
+    const rows = data.likes
+      .filter((l) => l.postId === post.id && (cursor == null || l.id < cursor))
+      .sort((a, b) => b.id - a.id)
+      .slice(0, PAGE_SIZE + 1);
+    const page = rows.slice(0, PAGE_SIZE);
+    return {
+      items: page.map((l) => toUserCard(data, data.users.find((u) => u.id === l.userId), me.id)),
+      nextCursor: rows.length > PAGE_SIZE ? page[page.length - 1].id : null,
+    };
+  }
+
+  // ---- コメント ----
+  // 戻り値は { body? }。誤りが無ければ空。空白だけも誤り
+  function validateComment(body) {
+    const text = normalizeBody(body);
+    const n = countCodePoints(text);
+    return n < 1 || n > MAX_POST_CHARS || text.trim() === '' ? { body: '1〜280 文字で入力してください' } : {};
+  }
+
+  // Comment の形（docs/api-conventions.md 3 章）
+  function toComment(data, row) {
+    return { id: row.id, author: authorOf(data, row.userId), body: row.body, createdAt: row.createdAt };
+  }
+
+  function comments(postId, cursor) {
+    requireUser();
+    const data = load();
+    const post = findPost(data, postId);
+    const rows = data.comments
+      .filter((c) => c.postId === post.id && (cursor == null || c.id < cursor))
+      .sort((a, b) => b.id - a.id)
+      .slice(0, PAGE_SIZE + 1);
+    const items = rows.slice(0, PAGE_SIZE).map((c) => toComment(data, c));
+    return { items, nextCursor: rows.length > PAGE_SIZE ? items[items.length - 1].id : null };
+  }
+
+  function addComment(postId, body) {
+    const me = requireUser();
+    const data = load();
+    const post = findPost(data, postId);
+    const errors = validateComment(body);
+    if (Object.keys(errors).length > 0) throw new ValidationError(errors);
+
+    const row = { id: newId(data), postId: post.id, userId: me.id, body: normalizeBody(body), createdAt: new Date().toISOString() };
+    data.comments.push(row);
+    save(data);
+    return toComment(data, row);
+  }
+
+  // 投稿の持ち主でも、他人のコメントは消せない
+  function deleteComment(id) {
+    const me = requireUser();
+    const data = load();
+    const row = data.comments.find((c) => c.id === Number(id));
+    if (!row) throw new NotFoundError();
+    if (row.userId !== me.id) throw new ForbiddenError();
+    data.comments = data.comments.filter((c) => c.id !== row.id);
+    save(data);
+  }
+
   // ---- 見本データ ----
   function svgDataUrl(svg) {
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
@@ -464,7 +564,8 @@
     load, save, newId,
     init, reset, seed,
     currentUser, login, logout, register,
-    validateRegister, validateLogin, validatePostBody, validateImageFile, countCodePoints,
+    validateRegister, validateLogin, validatePostBody, validateComment, validateImageFile, countCodePoints,
     timeline, userPosts, getPost, createPost, updatePost, deletePost,
+    like, unlike, likers, comments, addComment, deleteComment,
   };
 })();

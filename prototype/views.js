@@ -155,28 +155,151 @@
     };
   }
 
-  // ---- 投稿詳細（コメントは Task 3） ----
+  // ---- 投稿詳細 ----
+  // id が不正か投稿が無ければ null（呼び出し側が 404 の画面にする）
+  function findPostOrNull(id) {
+    if (!/^\d+$/.test(id)) return null;
+    try {
+      return RT.store.getPost(id);
+    } catch (err) {
+      if (err instanceof RT.store.NotFoundError) return null;
+      throw err;
+    }
+  }
+
+  // コメントフォーム。送信に成功したら onPosted(comment)、投稿が消えていたら onGone()
+  function commentForm({ postId, onPosted, onGone }) {
+    const field = RT.ui.bodyField({ id: 'comment-body', label: 'コメント' });
+    field.textarea.placeholder = 'コメントを入力';
+    const submit = el('button', { type: 'submit', class: 'btn btn-primary', text: 'コメントする' });
+    const form = el('form', { class: 'comment-form', novalidate: true }, field,
+      el('div', { class: 'comment-form-actions' }, submit));
+
+    let touched = false; // 入力を始めたあとで空になったときだけ誤りを出す
+    let sending = false;
+    const refresh = () => {
+      const errors = RT.store.validateComment(field.textarea.value);
+      const empty = field.count() === 0;
+      field.setError(empty && !touched ? '' : errors.body);
+      submit.disabled = sending || Boolean(errors.body);
+    };
+    field.onInput(() => { touched = true; refresh(); });
+    refresh();
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (submit.disabled) return;
+      sending = true;
+      refresh();
+      let posted = null;
+      try {
+        await delay();
+        posted = RT.store.addComment(postId, field.textarea.value);
+        field.textarea.value = '';
+        field.refresh();
+        touched = false;
+      } catch (err) {
+        if (err instanceof RT.store.ValidationError) {
+          field.setError(err.errors.body);
+        } else if (err instanceof RT.store.NotFoundError) {
+          RT.ui.toast('投稿が見つかりません');
+          onGone();
+        } else {
+          console.error(err);
+          RT.ui.toast(RT.ui.describeSaveError(err, 'コメントに失敗しました。もう一度お試しください'));
+        }
+      } finally {
+        sending = false;
+        refresh();
+      }
+      if (posted) onPosted(posted);
+    });
+    return form;
+  }
+
+  // 投稿カードの下にコメントフォームと一覧を並べる。currentCard().setCommentCount で数を合わせる
+  function commentSection(post, currentCard) {
+    let count = post.commentCount;
+    const deleting = new Set();
+
+    const onDelete = async (comment) => {
+      if (deleting.has(comment.id)) return;
+      const ok = await RT.ui.confirm({
+        title: 'このコメントを削除しますか？',
+        confirmLabel: '削除',
+        cancelLabel: '取り消し',
+      });
+      if (!ok) return;
+      deleting.add(comment.id);
+      try {
+        await delay();
+        RT.store.deleteComment(comment.id);
+        list.remove(comment.id);
+        currentCard().setCommentCount(--count);
+        RT.ui.toast('コメントを削除しました');
+      } catch (err) {
+        if (err instanceof RT.store.NotFoundError) {
+          RT.ui.toast('コメントが見つかりません');
+          list.remove(comment.id);
+        } else if (err instanceof RT.store.ForbiddenError) {
+          RT.ui.toast('この操作はできません');
+        } else {
+          console.error(err);
+          RT.ui.toast('削除に失敗しました。もう一度お試しください');
+        }
+      } finally {
+        deleting.delete(comment.id);
+      }
+    };
+
+    const list = RT.ui.infiniteList({
+      load: async (cursor) => {
+        await delay();
+        try {
+          return RT.store.comments(post.id, cursor);
+        } catch (err) {
+          if (!(err instanceof RT.store.NotFoundError)) throw err;
+          RT.app.route(); // 投稿が消えている。404 の画面にする
+          return { items: [], nextCursor: null };
+        }
+      },
+      renderItem: (comment) => RT.ui.commentItem(comment, { onDelete }),
+      emptyText: 'まだコメントがありません',
+    });
+    const form = commentForm({
+      postId: post.id,
+      onPosted: (comment) => {
+        list.prepend(comment);
+        currentCard().setCommentCount(++count);
+      },
+      onGone: () => RT.app.route(),
+    });
+    return el('section', { class: 'comments', 'aria-label': 'コメント' }, form, list);
+  }
+
   function postDetail(ctx) {
     const id = ctx.params.id;
     // 無い id は 404 の画面にする
-    if (!/^\d+$/.test(id)) return notFound();
-    try {
-      RT.store.getPost(id);
-    } catch (err) {
-      if (err instanceof RT.store.NotFoundError) return notFound();
-      throw err;
-    }
+    if (!findPostOrNull(id)) return notFound();
 
     const box = el('div', { class: 'post-detail' }, el('div', { class: 'list-footer' }, RT.ui.spinner()));
+    let card = null;
     const render = (post) => {
-      const card = RT.ui.postCard(post, {
+      card = RT.ui.postCard(post, {
         absoluteTime: true,
+        showLikersLink: true,
         onChanged: ({ type, post: changed }) => {
           if (type === 'delete') RT.app.navigate('#/');
           else render(changed);
         },
       });
-      box.replaceChildren(card);
+      // 編集のあとで描き直すときも、コメントの一覧は読み直さずに残す
+      const section = box.querySelector('.comments');
+      if (section) {
+        box.firstElementChild.replaceWith(card);
+      } else {
+        box.replaceChildren(card, commentSection(post, () => card));
+      }
     };
 
     (async () => {
@@ -191,6 +314,28 @@
     })();
 
     return { title: '投稿', el: box };
+  }
+
+  // ---- いいねした人 ----
+  function likers(ctx) {
+    const id = ctx.params.id;
+    if (!findPostOrNull(id)) return notFound();
+
+    const list = RT.ui.infiniteList({
+      load: async (cursor) => {
+        await delay();
+        try {
+          return RT.store.likers(id, cursor);
+        } catch (err) {
+          if (!(err instanceof RT.store.NotFoundError)) throw err;
+          RT.app.route(); // 投稿が消えている。404 の画面にする
+          return { items: [], nextCursor: null };
+        }
+      },
+      renderItem: (user) => RT.ui.userCard(user),
+      emptyText: 'まだいいねがありません',
+    });
+    return { title: 'いいねした人', el: list };
   }
 
   // ---- 投稿の編集と削除 ----
@@ -287,5 +432,5 @@
   }
 
   window.RT = window.RT || {};
-  window.RT.views = { register, login, notFound, home, postDetail, editPostDialog, deletePost };
+  window.RT.views = { register, login, notFound, home, postDetail, likers, editPostDialog, deletePost };
 })();

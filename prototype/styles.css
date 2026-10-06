@@ -356,6 +356,10 @@ img { max-width: 100%; }
 }
 .like-btn { cursor: pointer; }
 .like-btn[aria-pressed="true"] { color: #d6336c; }
+.like-group { display: inline-flex; align-items: center; }
+.like-count-link { display: inline-flex; align-items: center; min-width: 32px; min-height: 44px; margin: -8px 0 -8px -8px; color: var(--muted); font-size: 14px; text-decoration: none; }
+.like-count-link:hover { text-decoration: underline; }
+.like-group .like-btn { min-width: 44px; justify-content: center; }
 
 .image-grid { display: grid; gap: 2px; margin-top: 8px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; aspect-ratio: 16 / 9; }
 .image-grid-1 { grid-template-columns: 1fr; }
@@ -397,6 +401,34 @@ img { max-width: 100%; }
 .viewer-btn:focus-visible { outline-color: #fff; }
 
 .post-detail .post-card { border-bottom: 1px solid var(--border); }
+
+/* ---- コメント ---- */
+.comment-form { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.comment-form-actions { display: flex; justify-content: flex-end; }
+.comment-item { padding: 12px 16px; }
+.comment-delete {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.comment-delete:hover { color: var(--danger); text-decoration: underline; }
+
+/* ---- ユーザーカード ---- */
+.user-card { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.user-card-body { flex: 1; min-width: 0; }
+.user-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.user-card-names { display: flex; flex-direction: column; min-width: 0; line-height: 1.4; }
+.user-card-action:empty { display: none; }
+.user-card-bio { margin: 4px 0 0; white-space: pre-wrap; }
 
 /* ---- レイアウト（PC） ---- */
 @media (min-width: 768px) {

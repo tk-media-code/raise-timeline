@@ -493,8 +493,9 @@
   }
 
   // ---- 投稿カード ----
-  // onChanged({ type: 'update' | 'delete', post })。absoluteTime は投稿詳細用
-  function postCard(post, { onChanged, absoluteTime } = {}) {
+  // onChanged({ type: 'update' | 'delete', post })。absoluteTime と showLikersLink は投稿詳細用
+  // card.setCommentCount(n) でコメント数の表示だけ差し替える
+  function postCard(post, { onChanged, absoluteTime, showLikersLink } = {}) {
     const me = RT.store.currentUser();
     const author = post.author;
     const profileHref = '#/users/' + encodeURIComponent(author.username);
@@ -512,14 +513,16 @@
       el('a', { class: 'post-time', href: detailHref }, time),
       post.edited ? el('span', { class: 'post-edited', text: '編集済み' }) : null);
 
-    const actions = el('div', { class: 'post-actions' },
-      el('button', {
-        type: 'button', class: 'like-btn', 'aria-pressed': String(post.likedByMe), 'aria-label': `いいね ${post.likeCount} 件`,
-      }, el('span', { 'aria-hidden': 'true', text: post.likedByMe ? '♥' : '♡' }),
-      el('span', { class: 'like-count', 'aria-hidden': 'true', text: String(post.likeCount) })),
-      el('a', { class: 'comment-link', href: detailHref, 'aria-label': `コメント ${post.commentCount} 件` },
-        el('span', { 'aria-hidden': 'true', text: '💬' }),
-        el('span', { 'aria-hidden': 'true', text: String(post.commentCount) })));
+    const like = likeControl(post, { showLikersLink, onChanged });
+    const commentCount = el('span', { 'aria-hidden': 'true' });
+    const commentLink = el('a', { class: 'comment-link', href: detailHref },
+      el('span', { 'aria-hidden': 'true', text: '💬' }), commentCount);
+    const setCommentCount = (n) => {
+      commentCount.textContent = String(n);
+      commentLink.setAttribute('aria-label', `コメント ${n} 件`);
+    };
+    setCommentCount(post.commentCount);
+    const actions = el('div', { class: 'post-actions' }, like, commentLink);
 
     const content = el('div', { class: 'post-content' },
       head,
@@ -531,7 +534,106 @@
       el('a', { href: profileHref, 'aria-hidden': 'true', tabindex: '-1' }, avatar(author, 44)),
       content);
     if (me && me.id === author.id) card.append(postMenu(post, onChanged));
-    return card;
+    return Object.assign(card, { setCommentCount });
+  }
+
+  // いいねボタン。押した瞬間に見た目と数を変え（楽観的更新）、遅れて保存する。
+  // 連打しても要求は 1 つずつ送り、最後に押した状態へ収束する。失敗したら保存済みの状態に戻す。
+  // showLikersLink のときは数を「いいねした人」への link にして、ボタンはハートだけにする
+  function likeControl(post, { showLikersLink, onChanged }) {
+    const others = post.likeCount - (post.likedByMe ? 1 : 0); // 自分以外のいいね数
+    let liked = post.likedByMe; // 画面に出している状態
+    let saved = post.likedByMe; // 保存できた状態
+    let syncing = false;
+
+    const heart = el('span', { 'aria-hidden': 'true' });
+    const count = el('span', { class: 'like-count', 'aria-hidden': 'true' });
+    const button = el('button', { type: 'button', class: 'like-btn' }, heart, showLikersLink ? null : count);
+    const likersLink = showLikersLink ? el('a', { class: 'like-count-link', href: `#/posts/${post.id}/likes` }, count) : null;
+
+    const render = () => {
+      const n = others + (liked ? 1 : 0);
+      heart.textContent = liked ? '♥' : '♡';
+      count.textContent = String(n);
+      button.setAttribute('aria-pressed', String(liked));
+      button.setAttribute('aria-label', `いいね ${n} 件`);
+      if (likersLink) likersLink.setAttribute('aria-label', `いいねした人を見る（${n} 件）`);
+    };
+    render();
+
+    async function sync() {
+      syncing = true;
+      let failure = null;
+      while (liked !== saved && !failure) {
+        const target = liked;
+        try {
+          await delay();
+          if (target) RT.store.like(post.id);
+          else RT.store.unlike(post.id);
+          saved = target;
+        } catch (err) {
+          failure = { err, target };
+        }
+      }
+      syncing = false;
+      if (!failure) return;
+      const { err, target } = failure;
+      liked = saved;
+      render();
+      if (err instanceof RT.store.NotFoundError) {
+        toast('投稿が見つかりません');
+        if (onChanged) onChanged({ type: 'delete', post });
+      } else {
+        console.error(err);
+        toast(describeSaveError(err, target ? 'いいねに失敗しました。もう一度お試しください' : 'いいねの取り消しに失敗しました。もう一度お試しください'));
+      }
+    }
+
+    button.addEventListener('click', () => {
+      liked = !liked;
+      render();
+      if (!syncing) sync();
+    });
+    return el('span', { class: 'like-group' }, button, likersLink);
+  }
+
+  // ---- ユーザーカード ----
+  // 利用者 1 人の行。.user-card-action はフォローボタンの置き場（Task 4 が埋める）
+  function userCard(user) {
+    const profileHref = '#/users/' + encodeURIComponent(user.username);
+    return el('article', { class: 'user-card', 'data-user-id': user.id },
+      el('a', { href: profileHref, 'aria-hidden': 'true', tabindex: '-1' }, avatar(user, 44)),
+      el('div', { class: 'user-card-body' },
+        el('div', { class: 'user-card-head' },
+          el('div', { class: 'user-card-names' },
+            el('a', { class: 'post-name', href: profileHref, text: user.displayName }),
+            el('a', { class: 'post-username', href: profileHref, text: '@' + user.username })),
+          el('div', { class: 'user-card-action' })),
+        user.bio ? el('p', { class: 'user-card-bio', text: user.bio }) : null));
+  }
+
+  // ---- コメント ----
+  // onDelete(comment) は本人のコメントの「削除」を押したとき。確認と削除は呼び出し側が行う
+  function commentItem(comment, { onDelete } = {}) {
+    const me = RT.store.currentUser();
+    const author = comment.author;
+    const profileHref = '#/users/' + encodeURIComponent(author.username);
+    const head = el('div', { class: 'post-head' },
+      el('a', { class: 'post-name', href: profileHref, text: author.displayName }),
+      el('a', { class: 'post-username', href: profileHref, text: '@' + author.username }),
+      el('span', { class: 'post-dot', 'aria-hidden': 'true', text: '·' }),
+      el('time', { class: 'post-time', datetime: comment.createdAt, title: formatAbsolute(comment.createdAt), text: formatRelative(comment.createdAt) }));
+    const item = el('article', { class: 'post-card comment-item', 'data-comment-id': comment.id },
+      el('a', { href: profileHref, 'aria-hidden': 'true', tabindex: '-1' }, avatar(author, 36)),
+      el('div', { class: 'post-content' },
+        head,
+        el('div', { class: 'post-body' }, linkify(comment.body))));
+    if (me && me.id === author.id && onDelete) {
+      const del = el('button', { type: 'button', class: 'comment-delete', 'aria-label': 'このコメントを削除', text: '削除' });
+      del.addEventListener('click', () => onDelete(comment));
+      item.append(del);
+    }
+    return item;
   }
 
   // 本人だけの「…」メニュー（編集／削除）
@@ -568,6 +670,6 @@
   window.RT = window.RT || {};
   window.RT.ui = {
     el, delay, toast, confirm, describeSaveError, readImage, avatar, spinner, formatRelative, formatAbsolute, textField,
-    linkify, imageGrid, imageViewer, infiniteList, bodyField, composeForm, postCard,
+    linkify, imageGrid, imageViewer, infiniteList, bodyField, composeForm, postCard, userCard, commentItem,
   };
 })();
