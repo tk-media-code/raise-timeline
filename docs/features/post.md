@@ -79,7 +79,7 @@ multipart/form-data。部品 `body`（テキスト）と `images`（ファイル
 ## 4. 処理の流れ
 
 画像付き投稿は [image-storage-design.md](../image-storage-design.md) の 4 章。先に S3 へ上げ、DB の書き込みが失敗したら消す。
-削除は DB を消してから S3 を消し、S3 の失敗は WARN で応答は 204。
+削除は DB を消してから S3 を消し、S3 の失敗は `image.delete_failed`（WARN）で応答は 204。
 
 ## 5. データ
 

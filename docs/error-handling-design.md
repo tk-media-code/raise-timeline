@@ -113,7 +113,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 | 409 / 422 | `errors` を入力欄の下に項目ごとに表示する。項目に紐付かないものはフォームの上部に `detail` を表示する。入力中の内容は消さない |
 | 413 / 415 | ファイル選択の時点で画面側でも同じ検査（拡張子と大きさ）をして先に伝える。すり抜けた場合は `detail` を表示する |
 | 429 | 「しばらく待ってから再試行してください」 |
-| 500 | 通知で `detail` と requestId を表示する。「問題が起きました（ID: a1b2c3d4）」の形で、Problem Details の `requestId` をそのまま出す（[logging-design.md](logging-design.md) の 6 章）。入力中の内容は消さない |
+| 500 | 通知で `detail` と requestId を表示する。「問題が起きました（ID: <requestId>）」の形で、Problem Details の `requestId` を省略せず全桁出す（[logging-design.md](logging-design.md) の 6 章）。入力中の内容は消さない |
 | 503 `IMAGE_STORAGE_UNAVAILABLE` | 「画像の保存が設定されていません」。開発環境で S3 を設定していないときだけ起きる |
 | 通信失敗（応答なし） | 「通信に失敗しました」。一覧なら「再試行」ボタンを出す |
 | 楽観的更新の失敗（いいね、フォロー） | 見た目を元に戻し、通知で伝える |

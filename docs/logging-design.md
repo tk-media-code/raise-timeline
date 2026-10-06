@@ -30,7 +30,7 @@
 | レベル | 基準 | 本番での扱い |
 | --- | --- | --- |
 | ERROR | 人が対応しないと直らない。想定外の例外で 500 を返した、起動に失敗した、設定が欠けている | 1 件でもメール通知。必ず調べる |
-| WARN | 処理は続けられたが、放置すると問題になる。S3 の削除失敗、1 秒を超えた応答、外部サービスの一時的な失敗 | 通知しない。数の推移を週に 1 度見る |
+| WARN | 処理は続けられたが、放置すると問題になる。S3 の削除失敗、ヘルスチェックで DB に届かない（503）、1 秒を超えた応答 | 通知しない。数の推移を週に 1 度見る |
 | INFO | 正常な出来事の記録。要求 1 件につき 1 行、業務上の出来事、起動完了 | 保存するだけ |
 | DEBUG | 開発者が追うための詳細。SQL とその引数、トークン検証の内訳 | 出さない。ローカルでは環境変数 `LOG_LEVEL_APP=DEBUG` で有効にする |
 | TRACE | 使わない | |
@@ -38,26 +38,28 @@
 ### 3 つの規則
 
 1. **1 つの事象は 1 回だけ書く。** 例外は、捕まえた場所で記録して握りつぶすか、記録せずに投げ直すかのどちらかにする。両方やると同じ失敗が 2 行になり、数えたときに水増しされる。500 は例外ハンドラが 1 回だけ ERROR で書く
-2. **4xx は別の行にしない。** 要求ログ（3 章）に status と code が載るので、それで足りる。ログイン失敗や期限切れのトークンは利用者の操作として起きる想定内の失敗なので、ERROR にも WARN にもしない。攻撃の兆候は 1 件の重さではなく「数」で捉え、通知の条件にする（9 章）
+2. **4xx は別の行にしない（3 章の表にある出来事を除く）。** 要求ログ（3 章）に status と code が載るので、それで足りる。ログイン失敗や期限切れのトークンは利用者の操作として起きる想定内の失敗なので、ERROR にも WARN にもしない。攻撃の兆候は 1 件の重さではなく「数」で捉え、通知の条件にする（9 章）
 3. **業務上の出来事として残すのは、取り返しがつかない操作と、セキュリティに関わる出来事だけ。** 投稿の作成や編集は要求ログに `POST /api/posts 201` と利用者 id が残るので足りる
 
 ## 3. 残す出来事
 
-`event.action` は出来事の名前で、検索と集計の鍵になる。利用者 id と requestId は 4 章の仕組みで全行に自動で付くので、表の「付ける値」はそれ以外。
+`event.action` は出来事の名前で、検索と集計の鍵になる。requestId と利用者 id は 4 章の MDC で全行に自動で付くので、表の「付ける値」には入れない（同じ名前を行の項目にも入れると行が壊れる。4 章の約束 2）。
+登録・ログイン成功・ログアウトは未ログインの要求で、MDC に `user.id` が無い。この 3 つは、出来事の行を書く前にサービスが利用者 id を MDC に置く（既にあれば上書き）。
 
 | event.action | レベル | 付ける値 | いつ |
 | --- | --- | --- | --- |
-| `http.request` | INFO。1 秒を超えたら WARN | メソッド、パス、クエリ、status、所要時間、エラー応答の code | 要求 1 件が終わるたび。`GET /api/health` の 200 だけは DEBUG に落とす。ALB が 30 秒ごとに叩くため |
+| `http.request` | INFO。1 秒を超えたら WARN | メソッド、パス、クエリ、status、所要時間、エラー応答の code | 要求 1 件が終わるたび。`GET /api/health` の 200 だけは DEBUG に落とす。ALB が 30 秒ごとに叩くため。画像のアップロードは 1 秒を超えやすいが、まずはそのまま数え、WARN の集計で多ければ上限を分ける |
 | `http.request.failed` | ERROR | 例外の種類・文言・スタックトレース、code | 想定外の例外で 500 を返した |
-| `auth.register` | INFO | 利用者 id | 登録 |
-| `auth.login.succeeded` | INFO | 利用者 id | ログイン成功 |
+| `auth.register` | INFO | 無し。行を書く前に `user.id` を MDC に置く | 登録 |
+| `auth.login.succeeded` | INFO | 無し。行を書く前に `user.id` を MDC に置く | ログイン成功 |
 | `auth.login.failed` | INFO | 無し。メールアドレスの有無も書かない | ログイン失敗 |
-| `auth.refresh.failed` | INFO | 無し | リフレッシュトークンが無い・期限切れ・ログアウト済み |
-| `auth.logout` | INFO | 利用者 id | ログアウト |
-| `user.withdrew` | INFO | 利用者 id | 退会 |
-| `post.deleted` | INFO | 利用者 id、投稿 id | 投稿の削除 |
-| `comment.deleted` | INFO | 利用者 id、コメント id | コメントの削除 |
+| `auth.refresh.failed` | INFO | 無し | リフレッシュトークンが無い・期限切れ・ログアウト済み・使用済み（再利用） |
+| `auth.logout` | INFO | 無し。リフレッシュトークンの行から利用者が分かれば、行を書く前に `user.id` を MDC に置く | ログアウト |
+| `user.withdrew` | INFO | 無し（`user.id` は MDC にある） | 退会 |
+| `post.deleted` | INFO | 投稿 id（`app.post.id`） | 投稿の削除 |
+| `comment.deleted` | INFO | コメント id（`app.comment.id`） | コメントの削除 |
 | `image.delete_failed` | WARN | 消せなかった S3 のキー | S3 の削除失敗。応答は成功のまま（[error-handling-design.md](error-handling-design.md)） |
+| `health.db_unreachable` | WARN | 例外 | `GET /api/health` で DB に届かず 503 を返した。今の `HealthCheckController` の WARN に名前を付けるもの |
 
 機能別文書に書かれている「WARN で残す」「INFO で残す」は、この表が正本で、文書からはここを参照する。
 
@@ -86,7 +88,7 @@ Spring Boot が自動で付ける項目と、このプロジェクトが足す�
 | --- | --- | --- |
 | `@timestamp` `log.level` `log.logger` `process.pid` `process.thread.name` `service.name` `service.environment` `message` `ecs.version` | Spring Boot | 時刻は UTC。`service.environment` は `local` か `production`。`service.version` は jar の版が取れるときだけ付く |
 | `error.type` `error.message` `error.stack_trace` | Spring Boot | 例外を渡した行にだけ付く。根本原因（cause）を先頭にする設定にする |
-| `http.request.id` `client.ip` `user.id` | MDC。要求の間ずっと | requestId、接続元の IP、ログイン中の利用者 id。要求の間に出るすべての行に付く。`user.id` は認証フィルタがトークンを検証したあとに置くので、未ログインの要求には付かない |
+| `http.request.id` `client.ip` `user.id` | MDC。要求の間ずっと | requestId、接続元の IP、ログイン中の利用者 id。要求の間に出るすべての行に付く。`user.id` は認証フィルタがトークンを検証したあとに置くので、未ログインの要求には付かない。登録・ログイン成功・ログアウトでは、サービスが出来事を書く前に置く（3 章） |
 | `http.request.method` `url.path` `url.query` `http.response.status_code` `event.duration` | 要求ログ | 所要時間はナノ秒。ECS と Datadog の両方がナノ秒を標準にしている |
 | `event.action` `event.code` | 出来事の行 | 出来事の名前（3 章）と、エラー応答の `code`（[error-handling-design.md](error-handling-design.md) の分類表） |
 | `app.post.id` `app.comment.id` `app.image.keys` | 出来事の行 | 辞書に無い、このアプリ固有の値。`app.image.keys` は文字列の配列 |
@@ -95,6 +97,8 @@ Spring Boot が自動で付ける項目と、このプロジェクトが足す�
 
 MDC は「要求の間ずっと付く値」を置く仕組み。要求の最初に値を置き、要求の最後に消すと、その間にどこで書いたログにも自動で載る。
 MyBatis が出す SQL のログにも利用者 id が付くので、「この人のこの操作で流れた SQL」を requestId でまとめて追える。
+
+MDC はスレッドごとの値なので、別のスレッドで走らせる処理（画像の並行アップロード）には引き継がれない。その中ではログを書かないか、`TaskDecorator` で MDC を写す。どちらにするかは画像の Issue で決める。
 
 `client.ip` は `HttpServletRequest#getRemoteAddr()` の値。本番は nginx が利用者の IP を `X-Forwarded-For` に入れて渡し、Spring Boot は
 `server.forward-headers-strategy=native`（Tomcat の RemoteIpValve。私設アドレスからの `X-Forwarded-For` だけを信用する）で復元する。
@@ -129,6 +133,7 @@ Spring Boot に nginx 以外から届く経路は無い（Compose のネット�
 | `spring.main.banner-mode=off` | 起動時の ASCII アートを消し、JSON 以外の出力を無くす |
 | `logging.level.com.tkmedia.raisetimeline=${LOG_LEVEL_APP:INFO}` | ローカルで DEBUG にする口。MyBatis の SQL も Mapper のパッケージの下で出る |
 | `server.forward-headers-strategy=native` | 本番で `client.ip` を利用者の IP にする（上の MDC の節） |
+| `logging.level.org.springframework.web.servlet.PageNotFound=ERROR` | 405 などの 4xx で Spring MVC が出す WARN を止める（2 章の規則 2） |
 
 MDC のキー名は ECS の `http.request.id`。API の応答に入る `requestId`（ヘッダー `X-Request-Id` と Problem Details の `requestId`）は変えない。
 
@@ -138,8 +143,8 @@ MDC のキー名は ECS の `http.request.id`。API の応答に入る `requestI
 | --- | --- |
 | パスワード、アクセストークン、リフレッシュトークン、`Authorization` ヘッダー、`Cookie` | 漏れたらなりすましに直結する。要求ヘッダーと本文は DEBUG でも書かない |
 | JWT の秘密鍵、DB のパスワード、S3 の認証情報 | 起動時の設定ログにも出ないよう、設定値を文字列にしてログに渡さない |
-| メールアドレス | ログイン失敗の行に限らず、どの行にも書かない。利用者を指すときは利用者 id を使う |
-| 投稿・コメント・自己紹介の本文、画像の中身 | 利用者の内容物。不具合の調査に要るときは id で DB を引く |
+| メールアドレス | ログイン失敗の行に限らず、どの行にも書かない。利用者を指すときは利用者 id を使う。例外はローカルの DEBUG で出る SQL の引数だけ（本番では DEBUG を出さない） |
+| 投稿・コメント・自己紹介の本文、画像の中身 | 利用者の内容物。不具合の調査に要るときは id で DB を引く。例外は同じくローカルの DEBUG の SQL の引数 |
 | 要求本文と応答本文そのもの | 上のどれかを含みうる。項目を選んで書く |
 
 書くものは、利用者 id、投稿やコメントの id、接続元の IP アドレス。IP アドレスは個人情報に当たるので、保持期間（8 章）を決めて消す。
@@ -150,7 +155,7 @@ MDC のキー名は ECS の `http.request.id`。API の応答に入る `requestI
 ## 6. 画面での扱い
 
 ブラウザからの報告は作らない（1 章の範囲外）。代わりに、500 の通知に requestId を小さく添える。
-「問題が起きました（ID: a1b2c3d4）」の形で、Problem Details の `requestId` をそのまま出す。利用者がこの ID を伝えれば、その 1 件を本番のログから引ける。
+「問題が起きました（ID: <requestId>）」の形で、Problem Details の `requestId` を省略せず全桁出す（10 章の検索は完全一致）。利用者がこの ID を伝えれば、その 1 件を本番のログから引ける。
 通信失敗は応答が無いので requestId も無く、文言だけ出す。
 
 ## 7. ローカルでの読み方
@@ -163,8 +168,8 @@ docker compose logs --no-log-prefix backend --since 10m | jq -R -r 'fromjson? //
 
 | したいこと | やり方 |
 | --- | --- |
-| 1 つの要求だけ読む | 上のコマンドの `fromjson? // empty` の後ろに `| select(.http.request.id == "<requestId>")` を足す |
-| ERROR だけ読む | 同じく `| select(.log.level == "ERROR")` を足す。スタックトレースは `.error.stack_trace` に入っている |
+| 1 つの要求だけ読む | 上のコマンドの `fromjson? // empty` の後ろに `\| select(.http.request.id == "<requestId>")` を足す |
+| ERROR だけ読む | 同じく `\| select(.log.level == "ERROR")` を足す。スタックトレースは `.error.stack_trace` に入っている |
 | SQL まで見る | `.env` に `LOG_LEVEL_APP=DEBUG` を書き、`docker compose up -d` で backend を作り直す |
 
 AI も同じコマンドを使う。これらは README の「よく使うコマンド」にも書く。
@@ -173,7 +178,7 @@ AI も同じコマンドを使う。これらは README の「よく使うコマ
 
 | 項目 | 決めること |
 | --- | --- |
-| 送り方 | Docker の `awslogs` ログドライバ。コンテナの標準出力をそのまま CloudWatch Logs へ送る。アプリは何もしない。`compose.prod.yml` の各サービスに `logging.driver: awslogs` と `awslogs-region` `awslogs-group` を書く |
+| 送り方 | Docker の `awslogs` ログドライバ。コンテナの標準出力をそのまま CloudWatch Logs へ送る。アプリは何もしない。`compose.prod.yml` の各サービスに `logging.driver: awslogs` と `awslogs-region` `awslogs-group` を書く。ログドライバは既定の blocking モードのまま使う（`mode: non-blocking` にしない）。1 件の上限は 256 KB で、4 章の `max-length=65536` はその中 |
 | ロググループ | `/raise-timeline/backend` と `/raise-timeline/web` の 2 つ。混ぜると検索の条件が増える |
 | ログクラス | Standard。安い方の Infrequent Access はメトリクスフィルタが使えず、通知が作れない。作成後に変えられないので最初から Standard |
 | 保持期間 | 90 日。IP アドレスを含むので無期限にしない。この規模なら月 100 MB 前後の見込みで、取り込みも保存も無料枠（月 5 GB）の中 |
@@ -184,12 +189,14 @@ AI も同じコマンドを使う。これらは README の「よく使うコマ
 nginx はブラウザからの全要求を最初に受けるので、Spring Boot に届く前に止めた 413 や 429、静的ファイルの要求はここにだけ残る。
 `log_format` に `escape=json` を付けて 1 行 1 JSON にし、項目名は backend と揃える。公式イメージはアクセスログを標準出力に出すので、`awslogs` でそのまま届く。
 
+JSON は backend と同じ入れ子にする（`{"http":{"response":{"status_code":$status}}}` の形）。平らな `"http.response.status_code"` にすると 9 章のフィルタが効かない。数値（`$status` `$body_bytes_sent` `$request_time`）は引用符を付けない。引用符付きは文字列になり、`>= 500` の比較に掛からない。`GET /api/health` は `access_log off` で web のログから除く。ALB が 30 秒ごとに叩き、失敗は backend の `health.db_unreachable` に残るため。
+
 | 項目 | nginx の変数 |
 | --- | --- |
 | `@timestamp` | `$time_iso8601` |
 | `event.action` | 固定で `http.request` |
 | `http.request.id` | `$request_id`。同じ値を `proxy_set_header X-Request-Id $request_id` で backend に渡すので、両方のログを 1 つの ID で突き合わせられる |
-| `http.request.method` `url.path` `url.query` `http.response.status_code` `http.response.body.bytes` | `$request_method` `$uri` `$args` `$status` `$body_bytes_sent` |
+| `http.request.method` `url.path` `url.query` `http.response.status_code` `http.response.body.bytes` | `$request_method`、`$request_uri` から `?` より前を `map` で切り出した値（`$uri` は `try_files` の内部リダイレクトで `/index.html` に変わるため）、`$args` `$status` `$body_bytes_sent` |
 | `client.ip` `user_agent.original` | `$remote_addr`（ALB の後ろで復元した利用者の IP。[architecture.md](architecture.md)）、`$http_user_agent` |
 | `app.request_time_s` `app.upstream_time_s` | `$request_time` `$upstream_response_time`。nginx は掛け算ができずナノ秒にできないので、秒のまま `app` に置く。`$upstream_response_time` は `-` やカンマ区切りになることがあるので文字列 |
 
@@ -257,7 +264,7 @@ CloudWatch のメトリクスフィルタで「条件に合う行を数える」
 | `client.ip` | `network.client.ip` |
 | `event.duration` | `duration`（どちらもナノ秒） |
 
-OpenTelemetry で送りたくなったときは、Spring Boot の `management.opentelemetry.logging.export` の設定と Logback の appender の依存を足すだけでよい。
+OpenTelemetry で送りたくなったときは、`management.opentelemetry.logging.export` の設定と Logback の appender の依存に加えて、起動時に appender へ OpenTelemetry を渡す数行のコードが要る。出来事の書き方と項目名は変えない。
 
 ## 12. テストの期待一覧
 
@@ -270,13 +277,14 @@ OpenTelemetry で送りたくなったときは、Spring Boot の `management.op
 5. 想定外の例外で 500 を返したとき、ERROR が 1 回だけ出て、`error.stack_trace` と `event.code` が付き、要求ログの status が 500 になる
 6. 予定している全項目を載せた 1 行が JSON として読める（4 章の約束の検証）
 7. ログイン失敗の行にメールアドレスとパスワードが無い（認証の Issue で確かめる）
+8. ヘルスチェックを `/api/health` に移しても、応答は 200 の `{"status":"UP","database":"UP"}`（DB に届かなければ 503）のまま
 
 ## 13. 実装の置き場
 
 | Issue | 担当 |
 | --- | --- |
-| ログの基盤を作る（実装の順序 1） | 4 章の設定、`RequestLogFilter`、`LogFields`、Problem Details と `ApiExceptionHandler` のうち Spring Security に依らない部分（500 の ERROR 出力と `event.code` の受け渡しを含む）、ヘルスチェックの `GET /` から `GET /api/health` への移動（応答は変えない）、README のログの読み方、`.claude/rules/` の指示、12 章の 1〜6 |
-| 認証の基盤を作る（実装の順序 2） | 認証フィルタが `user.id` を MDC に置く。Spring Security のハンドラが `event.code` を置く。`auth.*` の出来事。12 章の 7 |
+| ログの基盤を作る（実装の順序 1） | 4 章の設定、`RequestLogFilter`、`LogFields`、Problem Details と `ApiExceptionHandler` のうち Spring Security に依らない部分（500 の ERROR 出力と `event.code` の受け渡しを含む）、ヘルスチェックの `GET /` から `GET /api/health` への移動（応答は変えない）、README のログの読み方、`docker-compose.yml` で `LOG_LEVEL_APP` と `APP_ENV` を backend に渡す、`.claude/rules/` の指示、12 章の 1〜6 と 8 |
+| 認証の基盤を作る（実装の順序 2） | 認証フィルタが `user.id` を MDC に置く。Spring Security のハンドラが `event.code` を置く。`auth.*` の出来事。画面の 500 の通知に requestId を添える（6 章）。12 章の 7 |
 | 各機能の Issue | 3 章の表の出来事を、その機能で書く |
 | 本番環境に出す（実装の順序 11） | 8 章と 9 章のすべて。10 章の保存する検索の登録 |
 
@@ -296,3 +304,5 @@ OpenTelemetry で送りたくなったときは、Spring Boot の `management.op
 | WARN も通知する | S3 の削除失敗や遅い応答は 1 件ずつ対応するものではない。数の推移を週に 1 度見れば足りる |
 | 実装の順序に「0.5」のような番号で割り込ませる | 読む人が引っかかる。1 番にして以降をずらす |
 | MDC のキーを `requestId` のままにする | ECS の `http.request.id` に揃えると、nginx のログと同じ名前で突き合わせられる。API の応答の `requestId` は契約なので変えない |
+| 503 を一律に WARN にする（以前のエラーハンドリング設計） | 503 のうち `IMAGE_STORAGE_UNAVAILABLE` は S3 の設定が無い開発環境でだけ起きる想定内の応答。WARN にするのはヘルスチェックの DB 失敗だけにし、`health.db_unreachable` として残す |
+| 画像のアップロードだけ 1 秒の上限を変える | まず実測する。WARN の集計で多ければ分ける |

@@ -113,7 +113,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 
 ### `GET /api/health`
 
-今の `GET /` を移す。応答は変えない。
+ログ基盤の Issue（実装の順序 1）で `GET /` から `/api/health` へ移す。この Issue では変えない（[logging-design.md](../logging-design.md) の 13 章）。
 
 ## 4. 処理の流れ
 
@@ -125,7 +125,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 2. トランザクションを始め、`SELECT id FROM users WHERE id = #{me} FOR UPDATE` で利用者の行を押さえる。同じ人の進行中の投稿やアイコンの更新を待ち、新しい挿入を止めるため（押さえないと、キーを集めた後に入った画像が S3 に残る）
 3. 消す S3 のキー（`post_images` を `posts.user_id` でたどった投稿画像と、`users.avatar_key`）を集める
 4. `users` の行を消す。外部キーの `ON DELETE CASCADE` で、投稿・画像の行・いいね・コメント・フォロー関係・リフレッシュトークンが消える
-5. コミットしたあとに、集めたキーを S3 からまとめて消す。失敗は WARN（消せなかったキーを載せる）で、応答は 204
+5. コミットしたあとに、集めたキーを S3 からまとめて消す。失敗は `image.delete_failed`（WARN。消せなかったキーを載せる）で、応答は 204
 6. Cookie を消して 204 を返す。退会は出来事 `user.withdrew` として利用者 id 付きで残す（[logging-design.md](../logging-design.md) の 3 章）
 
 退会と同時に走った同じ人の投稿などが利用者への外部キー違反になったときは、401 `UNAUTHENTICATED` に変換する（[error-handling-design.md](../error-handling-design.md)）。

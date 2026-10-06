@@ -74,6 +74,7 @@ flowchart TB
     U -->|"画像の表示"| S3
     EC2 -.->|"起動スクリプトが秘密情報を読む"| SSM["SSM Parameter Store"]
     A -.->|"ログ"| CW["CloudWatch Logs"]
+    N -.->|"アクセスログ"| CW
     CW -.->|"アラームの通知"| SNS["SNS（メール）"]
 ```
 
