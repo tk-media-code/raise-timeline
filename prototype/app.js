@@ -174,6 +174,9 @@
     const logoutBtn = el('button', { type: 'button', class: 'nav-link nav-button' },
       el('span', { class: 'nav-icon', 'aria-hidden': 'true', text: '⏻' }), el('span', { text: 'ログアウト' }));
     logoutBtn.addEventListener('click', logout);
+    const resetBtn = el('button', { type: 'button', class: 'nav-link nav-button' },
+      el('span', { class: 'nav-icon', 'aria-hidden': 'true', text: '↺' }), el('span', { text: '見本データに戻す' }));
+    resetBtn.addEventListener('click', resetData);
     const postBtn = el('button', { type: 'button', class: 'btn btn-primary btn-block', text: '投稿する' });
     postBtn.addEventListener('click', () => RT.app.openComposer());
     const fab = el('button', { type: 'button', class: 'fab', 'aria-label': '投稿する', text: '＋' });
@@ -183,7 +186,8 @@
       el('a', { href: '#/', class: 'logo', text: 'raise-timeline' }),
       el('div', { class: 'nav-list' },
         ...items.map((i) => navLink(i, path, 'nav-link')),
-        logoutBtn),
+        logoutBtn,
+        resetBtn),
       postBtn,
       el('a', { class: 'me', href: items[2].href },
         avatar(user, 40),
