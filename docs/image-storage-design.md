@@ -114,13 +114,13 @@ S3 への保存が途中で失敗したときも、それまでに上げた分�
 2. 大きさと形式を検査
 3. 新しいキーで S3 に上げる
 4. `users.avatar_key` と `updated_at` を更新
-5. 古いキーがあれば S3 から消す。失敗は WARN ログにとどめ、応答は成功
+5. 古いキーがあれば S3 から消す。失敗は WARN の出来事 `image.delete_failed` にとどめ、応答は成功（[logging-design.md](logging-design.md) の 3 章）
 6. `{ "avatarUrl": "..." }` を返す
 
 ### 削除
 
-- 投稿の削除: DB の行を消す（`post_images` は連鎖で消える）→ S3 のオブジェクトを `DeleteObjects` でまとめて消す。S3 側の失敗は WARN ログにとどめ、応答は 204
-- 退会: `users` の行を消す前に、その人の投稿画像のキー（`post_images` を `posts.user_id` でたどる）とアイコンのキーを集め、DB をコミットしてから `DeleteObjects` でまとめて消す（1 回 1,000 件まで。超えたら分ける）。失敗は WARN ログに消せなかったキーを載せてとどめ、応答は 204
+- 投稿の削除: DB の行を消す（`post_images` は連鎖で消える）→ S3 のオブジェクトを `DeleteObjects` でまとめて消す。S3 側の失敗は `image.delete_failed` にとどめ、応答は 204
+- 退会: `users` の行を消す前に、その人の投稿画像のキー（`post_images` を `posts.user_id` でたどる）とアイコンのキーを集め、DB をコミットしてから `DeleteObjects` でまとめて消す（1 回 1,000 件まで。超えたら分ける）。失敗は `image.delete_failed` に消せなかったキー（`app.image.keys`）を載せてとどめ、応答は 204
 - 残った孤児の画像は、利用者には見えない（DB から参照されない）。定期的な掃除は範囲外とし、将来の課題にする
 
 ## 5. コードの構成
