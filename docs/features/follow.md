@@ -39,9 +39,10 @@
 
 ## 4. 処理の流れ
 
-- フォロー: 相手を `username` で引き、`follows` に `(follower_id = 自分, followee_id = 相手)` を入れる。一意制約に当たったら無視して 204。自分自身なら 422
+- フォロー: 相手を `username` で引き、`follows` に `(follower_id = 自分, followee_id = 相手)` を `INSERT ... ON CONFLICT DO NOTHING` で入れる。既にあれば何もせず 204（一意制約の違反でトランザクションを中断させない）。自分自身なら 422
 - 解除: 行を消す。無くても 204
 - 一覧: フォロワーは `followee_id = その人`、フォロー中は `follower_id = その人` で引き、`users` と結合する。各行の `isFollowing` は「ログイン中の利用者がその行の人をフォローしているか」
+- 一覧の並びとカーソルは `follows.id`。`nextCursor` には `follows.id` を入れ、画面はそのまま送り返す。各行の `isFollowing` は `EXISTS` の副問い合わせで取る（[database-design.md](../database-design.md) の 5 章）
 
 ## 5. データ
 
@@ -62,7 +63,7 @@
 ### 入力の境界
 
 - 自分自身をフォローすると 422 で行は増えない
-- 一覧が 0 件なら `items` が空で `nextCursor` が null。21 人なら `items` が 20 で `nextCursor` が 20 件目の id
+- 一覧が 0 件なら `items` が空で `nextCursor` が null。21 人なら `items` が 20 で `nextCursor` が 20 件目の `follows.id`
 
 ### 権限
 
@@ -81,7 +82,7 @@
 
 ### 並び順とページング
 
-- 一覧は id の降順。`cursor` で続きが重複なく返る
+- 一覧は `follows.id` の降順。`nextCursor` は 20 件目の `follows.id` で、`cursor` に付けると続きが重複なく返る
 
 ### 画面
 

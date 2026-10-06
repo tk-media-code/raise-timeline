@@ -41,15 +41,18 @@ flowchart LR
 
 - ローカルでも本物の S3 を使う。開発用バケットと、そのバケットだけを触れる IAM ユーザーを使う（[image-storage-design.md](image-storage-design.md)）。費用は月に数円〜十数円
 - オフラインでは画像まわりだけ動かない。それ以外の機能はローカルで完結する
-- `.env` に足す変数は次のとおり。`.env` は `.gitignore` 済みで、コミットしない
+- backend の環境変数に、JWT の秘密鍵と S3 の設定が増える。土台の決定（`.env` を必須にしない。`docker compose up` だけで起動する）は守る。`JWT_SECRET` はローカル専用の既定値を `docker-compose.yml` に書く（DB のパスワードと同じ扱い）。`AUTH_COOKIE_SECURE=false` もローカル専用の値として `docker-compose.yml` に書く。S3 の変数は無くても起動し、無いときは画像の操作だけが 503 `IMAGE_STORAGE_UNAVAILABLE` になる
+- 結合テスト用の DB `raise_timeline_test` を、`db` サービスの初期化スクリプト（`/docker-entrypoint-initdb.d/`）で作る。backend には `DB_URL_TEST` で渡し、テストのプロファイル（`application-test.properties`）だけがそれを使う（[test-strategy.md](test-strategy.md)）。初期化スクリプトは DB の初回起動時だけ走るので、既にある開発環境は一度 `docker compose down -v` で作り直す
 
-| 変数 | 中身 |
-| --- | --- |
-| `JWT_SECRET` | アクセストークンの署名鍵。256 ビット以上の乱数を Base64 にしたもの |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | 開発用 IAM ユーザーのアクセスキー |
-| `AWS_REGION` | `ap-northeast-1` |
-| `S3_BUCKET` | 開発用バケット名 |
-| `S3_PUBLIC_BASE_URL` | `https://<バケット名>.s3.ap-northeast-1.amazonaws.com` |
+`.env` で上書きできる変数は次のとおり。`.env` は `.gitignore` 済みで、コミットしない。S3 を使うときだけ `.env` が要る。
+
+| 変数 | 中身 | 既定値（.env が無いとき） |
+| --- | --- | --- |
+| `JWT_SECRET` | アクセストークンの署名鍵。256 ビット以上の乱数を Base64 にしたもの | `docker-compose.yml` のローカル専用の値 |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | 開発用 IAM ユーザーのアクセスキー | 無し。無ければ画像の操作が 503 |
+| `AWS_REGION` | `ap-northeast-1` | 無し |
+| `S3_BUCKET` | 開発用バケット名 | 無し |
+| `S3_PUBLIC_BASE_URL` | `https://<バケット名>.s3.ap-northeast-1.amazonaws.com` | 無し |
 
 `docker-compose.yml` はこれらを `backend` サービスの環境変数として渡す。変数の一覧は README にも書く。
 
@@ -63,12 +66,12 @@ flowchart TB
     U[利用者のブラウザ] -->|"HTTPS 443"| ALB["ALB<br/>ACM の証明書。80 は 443 へリダイレクト"]
     ALB -->|"HTTP 80。ヘルスチェックは GET /api/health"| EC2
     subgraph EC2 ["EC2 ×1（Amazon Linux 2023）"]
-        N["web コンテナ: nginx<br/>静的ファイルの配信、/api/ の転送"] -->|"localhost:8080"| A["backend コンテナ: Spring Boot"]
+        N["web コンテナ: nginx<br/>静的ファイルの配信、/api/ の転送"] -->|"backend:8080（Compose のネットワーク）"| A["backend コンテナ: Spring Boot"]
     end
     A --> RDS[("RDS for PostgreSQL 18<br/>プライベートサブネット")]
     A -->|"インスタンスロールで書く"| S3[("S3 本番用バケット")]
     U -->|"画像の表示"| S3
-    A -.->|"起動時に秘密情報を読む"| SSM["SSM Parameter Store"]
+    EC2 -.->|"起動スクリプトが秘密情報を読む"| SSM["SSM Parameter Store"]
     A -.->|"ログ"| CW["CloudWatch Logs"]
 ```
 
@@ -79,11 +82,11 @@ flowchart TB
 | VPC | 2 つの AZ。パブリックサブネットに ALB と EC2、プライベートサブネットに RDS |
 | ALB | HTTPS（443）で受け、HTTP（80）は 443 へリダイレクト。証明書は ACM。ターゲットは EC2 の 80 番。ヘルスチェックは `GET /api/health` |
 | EC2 | Amazon Linux 2023、t3.small 程度を 1 台。Docker と Docker Compose を入れ、`web`（nginx）と `backend`（Spring Boot）の 2 コンテナを動かす |
-| RDS | PostgreSQL 18、db.t4g.micro、gp3 20 GB、単一 AZ、自動バックアップ 7 日、パブリックアクセスなし |
+| RDS | PostgreSQL 18、db.t4g.micro、gp3 20 GB、単一 AZ、自動バックアップ 7 日、パブリックアクセスなし。接続は `sslmode=verify-full` にする |
 | S3 | 本番用バケット。詳細は [image-storage-design.md](image-storage-design.md) |
 | SSM Parameter Store | DB のパスワードと JWT の秘密鍵を SecureString で置く。無料 |
 | CloudWatch Logs | アプリのログ。Docker の `awslogs` ログドライバで送る |
-| IAM | EC2 のインスタンスロールに、本番用バケットへの `PutObject` / `DeleteObject`、SSM の `GetParameter`、CloudWatch Logs への書き込みを許可する |
+| IAM | EC2 のインスタンスロールに、本番用バケットへの `PutObject` / `DeleteObject`、SSM の `GetParameter`、CloudWatch Logs への書き込み、SSM Session Manager で入るための `AmazonSSMManagedInstanceCore` を付ける |
 
 ### セキュリティグループ
 
@@ -114,8 +117,9 @@ flowchart TB
 | ALB | 約 $20 |
 | EC2 t3.small | 約 $20 |
 | RDS db.t4g.micro ＋ 20 GB | 約 $20 |
+| 公開 IPv4 アドレス ×3（ALB 2 個、EC2 1 個。1 個あたり月約 $3.6） | 約 $11 |
 | S3、CloudWatch Logs、データ転送 | $1〜2 |
-| 合計 | $50〜60 |
+| 合計 | 約 $72〜73（月 $70 前後） |
 
 ### 本番構築の前に決めること
 
@@ -125,14 +129,15 @@ flowchart TB
 | AWS アカウントのプラン | 2025 年 7 月 15 日以降に作ったアカウントは、無料枠が「最大 $200 のクレジットを 6 か月」の方式。本番公開には有料プランへの切り替えが要る |
 | インスタンスの大きさ | t3.small と db.t4g.micro から始め、足りなければ上げる |
 | バケット名 | 全世界で一意。`raise-timeline-prod-<接尾辞>` の形 |
+| 回数制限の値 | ログインと登録は 1 IP あたり毎分 20 回、バースト 20 から始める。教室の同じ NAT から一斉に登録しても詰まらない値に調整する |
 
 ## 4. 部品の役割と、新しく足す依存
 
 | 部品 | 役割 | 足す依存 |
 | --- | --- | --- |
 | React | 画面。ルーティングは React Router。API の呼び出し・応答のキャッシュ・一覧の無限スクロールは TanStack Query で扱う | `@tanstack/react-query` |
-| nginx | 静的ファイルの配信、圧縮、`/api` の転送、未知のパスを `index.html` に戻す、セキュリティヘッダー、ログインと登録の回数制限 | 本番用 Dockerfile と `nginx.conf` |
-| Spring Boot | `/api` の REST API。認証認可は Spring Security と JWT。入力検証。S3 への保存 | `spring-boot-starter-security`、`spring-boot-starter-oauth2-resource-server`（JWT の発行と検証。追加の JWT ライブラリは入れない）、`spring-boot-starter-validation`、AWS SDK for Java v2 の `s3` |
+| nginx | 静的ファイルの配信、圧縮、`/api` の転送、未知のパスを `index.html` に戻す、セキュリティヘッダー、ログインと登録の回数制限、ALB の後ろで利用者の IP を復元する | 本番用 Dockerfile と `nginx.conf` |
+| Spring Boot | `/api` の REST API。認証認可は Spring Security と JWT。入力検証。S3 への保存 | `spring-boot-starter-security`、`spring-boot-starter-security-oauth2-resource-server`（JWT の発行と検証。追加の JWT ライブラリは入れない）、`spring-boot-starter-validation`、AWS SDK for Java v2 の `s3`、Apache Commons Imaging（JPEG の GPS 情報の除去。1.0 系の版が alpha のままなら、採る版と使用の可否を Issue 4 の計画で確かめる）。テスト用に `spring-boot-starter-security-test` |
 | PostgreSQL | データ。スキーマは Flyway、SQL は MyBatis の XML | なし |
 | S3 | 画像 | なし |
 
@@ -144,7 +149,7 @@ TanStack Query を足す理由は、タイムラインやコメントの「20 �
 | 設定 | ローカル | 本番 |
 | --- | --- | --- |
 | DB の接続先・ユーザー・パスワード | `docker-compose.yml` の既定値 | RDS のエンドポイント。パスワードは SSM Parameter Store |
-| JWT の秘密鍵 | `.env` | SSM Parameter Store |
+| JWT の秘密鍵 | `docker-compose.yml` のローカル専用の値（`.env` で上書きできる） | SSM Parameter Store |
 | S3 のバケット名・リージョン・公開ベース URL | `.env` | 環境変数 |
 | S3 の認証情報 | `.env` のアクセスキー（開発用バケット限定の IAM ユーザー） | EC2 のインスタンスロール（キーを置かない） |
 | トークンの有効期限 | `application.properties` の既定値（アクセス 1 時間、リフレッシュ 30 日） | 同じ |
@@ -158,7 +163,7 @@ AWS SDK は認証情報を標準の探索順（環境変数 → インスタン�
 
 | 対策 | 中身 |
 | --- | --- |
-| React のエスケープに乗る | 本文・コメント・自己紹介は React が文字列として描画する。`dangerouslySetInnerHTML` は使わない。本文中の URL をリンクにするときも HTML を組み立てず、React の要素として作る |
+| React のエスケープに乗る | 本文・コメント・自己紹介は React が文字列として描画する。`dangerouslySetInnerHTML` は使わない。本文中の URL をリンクにするときも HTML を組み立てず、React の要素として作る。リンクにするのは `http://` と `https://` で始まる URL だけ |
 | Content Security Policy | nginx が `Content-Security-Policy` を返し、自分のオリジン以外のスクリプトと、インラインスクリプトの実行を拒否する。画像は S3 のオリジンと `blob:`（プレビュー）だけ許可する。値は本番構築の Issue で実測して決める |
 | 外部スクリプトを読み込まない | 広告・解析タグなどの第三者スクリプトを入れない |
 | 画像は別オリジンから配る | 画像は S3 のドメインから配る。偽装したファイルを上げられても、アプリの文脈では実行されない。形式は中身の先頭バイトで判定し、SVG は受け付けない |
@@ -166,7 +171,7 @@ AWS SDK は認証情報を標準の探索順（環境変数 → インスタン�
 
 ### 起きても被害を小さくする
 
-- アクセストークンは JS のメモリにだけ置き、localStorage には置かない。盗み出して持ち去れない
+- アクセストークンは JS のメモリにだけ置き、localStorage には置かない。XSS が起きれば、その場で更新 API を呼んでアクセストークンを得ることまでは防げないが、読み出して持ち去れるものが無く、被害は最長 1 時間に限られる
 - リフレッシュトークンは httpOnly Cookie に置き、JS から読めない
 - アクセストークンの有効期限は 1 時間。ログアウトでリフレッシュトークンをサーバー側で無効にする
 
@@ -174,9 +179,9 @@ AWS SDK は認証情報を標準の探索順（環境変数 → インスタン�
 
 | 対策 | 中身 |
 | --- | --- |
-| HTTPS | ALB で終端。HTTP は 443 へリダイレクト。Cookie に `Secure` を付ける |
-| セキュリティヘッダー | nginx が `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: strict-origin-when-cross-origin` を返す |
-| 総当たり対策 | nginx の `limit_req` で、ログインと登録の API を 1 IP あたり毎分 10 回に制限する |
+| HTTPS | ALB で終端。HTTP は 443 へリダイレクト。本番の Cookie に `Secure` を付ける |
+| セキュリティヘッダー | nginx が `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: strict-origin-when-cross-origin`、`Strict-Transport-Security: max-age=31536000` を返す |
+| 総当たり対策 | nginx の `limit_req` で、ログインと登録の API を 1 IP あたり毎分 20 回（バースト 20）に制限する。ALB の後ろでは接続元が ALB の IP になるので、`set_real_ip_from <VPC の CIDR>`、`real_ip_header X-Forwarded-For`、`real_ip_recursive on` で利用者の IP を復元してから数える。復元しないと全員で 1 つの枠を分け合い、復元を無条件にすると偽装で抜けられる |
 | パスワード | BCrypt で保存。平文はログにも残さない |
 | 認可 | すべての変更系 API で、ログイン中のユーザーが資源の持ち主かを確かめる（[auth-design.md](auth-design.md)） |
 | 入力検証 | サーバーで必ず検証する。画面の検証は入力中に伝えるためのもの |
@@ -185,6 +190,8 @@ AWS SDK は認証情報を標準の探索順（環境変数 → インスタン�
 | DB | インターネットから届かない。EC2 からだけ接続できる |
 | EC2 | SSH を開けない。SSM Session Manager で入る |
 | エラー応答 | 例外の文言・SQL・スタックトレースを本文に載せない（[error-handling-design.md](error-handling-design.md)） |
+| リクエスト ID | 要求ヘッダー `X-Request-Id` は `^[A-Za-z0-9-]{1,64}$` に合うときだけ使い、合わなければ作り直す。利用者が送った値をそのままログと応答に書かない |
+| 画面の遷移先 | ログイン後の戻り先 `next` は `/` で始まり `//` と `/\` で始まらない値だけ受け付ける |
 
 ## 7. 採らなかった案
 

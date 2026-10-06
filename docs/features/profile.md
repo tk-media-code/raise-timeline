@@ -20,7 +20,7 @@
 | 自己紹介 | 改行をそのまま表示。空なら出さない |
 | 登録日 | 「2026年10月に登録」 |
 | フォロー中 n、フォロワー n | 押すとそれぞれの一覧へ |
-| ボタン | 本人なら「プロフィールを編集」→ `/settings/profile`。他人ならフォローボタン |
+| ボタン | 本人なら「プロフィールを編集」→ `/settings/profile`。他人ならフォローボタン。フォローボタンは Issue 7 で足す（[requirements.md](../requirements.md) の「Issue ごとの仮の振る舞い」） |
 | 投稿一覧 | その人の投稿を新しい順に無限スクロール。投稿カードを使う |
 
 - 存在しないユーザー名は「見つかりません」の画面
@@ -36,14 +36,14 @@
 
 - ボタン「保存」。表示名と自己紹介は `PATCH /api/users/me`、アイコンは選んだ時点で `PUT /api/users/me/avatar` を呼ぶ（別の要求）
 - 成功したら通知「保存しました」を出し、プロフィールへ戻る
-- ユーザー名とメールアドレスは表示するが変えられない
+- ユーザー名とメールアドレスは表示するが変えられない。メールアドレスは `GET /api/users/me`（Me）から取る
 
 ## 3. API
 
 | API | 入力 | 応答 |
 | --- | --- | --- |
-| `GET /api/users/me` | | 200 UserDetail（`isMe` true） |
-| `PATCH /api/users/me` | `{ "displayName": "...", "bio": "..." }` | 200 UserDetail。422 で検証の失敗 |
+| `GET /api/users/me` | | 200 Me（UserDetail ＋ email。`isMe` true） |
+| `PATCH /api/users/me` | `{ "displayName": "...", "bio": "..." }` | 200 Me。422 で検証の失敗 |
 | `PUT /api/users/me/avatar` | multipart: `file` | 200 `{ "avatarUrl": "..." }`。413 `FILE_TOO_LARGE`、415 `UNSUPPORTED_IMAGE_TYPE`、422（空） |
 | `GET /api/users/{username}` | | 200 UserDetail。404 |
 | `GET /api/users/{username}/posts` | cursor, limit | 200 Post の一覧。404 |
@@ -57,15 +57,15 @@
 ## 5. データ
 
 `users`（表示名、自己紹介、`avatar_key`、`updated_at`）。投稿一覧は `posts (user_id, id)` の索引を使う。
-`followersCount` は `follows.followee_id`、`followingCount` は `follows.follower_id`、`postsCount` は `posts.user_id` を数える。
+`followersCount` は `follows.followee_id`、`followingCount` は `follows.follower_id` を数える。
 
 ## 6. テストの期待一覧
 
 ### 正常系
 
 - 自分のプロフィールを取ると `isMe` が true、`isFollowing` が false
-- 他人のプロフィールを取ると `isMe` が false。フォローしていれば `isFollowing` が true
-- `followersCount`、`followingCount`、`postsCount` が実際の数と一致する
+- 他人のプロフィールを取ると `isMe` が false。フォローしていれば `isFollowing` が true（`isFollowing` は Issue 7 で確かめる。それまでは false）
+- `followersCount` と `followingCount` が実際の数と一致する（Issue 7 で確かめる。それまでは 0）
 - 表示名と自己紹介を更新すると応答に反映され、`updated_at` が進む
 - アイコンを更新すると新しい `avatarUrl` が返り、`users.avatar_key` が新しいキーになり、古いキーが削除される
 - アイコンが未設定なら `avatarUrl` は null
@@ -81,6 +81,7 @@
 
 - 未ログインで `GET /api/users/alice` は 401
 - 更新は `/me` だけなので、他人の更新は URL で指定できない
+- 他人のプロフィールと各一覧の応答に `email` が含まれない。`email` が入るのは `/me` と登録・ログイン・更新の応答だけ
 
 ### 異常系
 

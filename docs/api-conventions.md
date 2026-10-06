@@ -13,7 +13,7 @@
 | 名前 | URL は複数形の名詞をケバブケースで（`/api/posts`）。JSON のキーは camelCase |
 | ID | UUID の文字列（例 `0199c1f0-7b2a-7c3d-8e4f-123456789abc`） |
 | 日時 | ISO 8601 の UTC、秒まで（例 `2026-10-06T05:12:34Z`）。日本時間への変換は画面で行う |
-| 文字数 | Unicode のコードポイント数で数える。サーバーは `String.codePointCount`、画面は `Array.from(text).length` |
+| 文字数 | Unicode のコードポイント数で数える。サーバーは `String.codePointCount`、画面は `Array.from(text).length`。改行は LF に統一してから数える（multipart は改行を CRLF に変えて送るので、サーバーで CRLF を LF に直してから数え、保存する） |
 | 作成 | 201 と作ったものの本文 |
 | 取得・更新 | 200 と本文 |
 | 削除、いいね、フォロー | 204 で本文なし。いいねとフォローは何度呼んでも同じ結果（既に済みでも 204）。外す側も同じ |
@@ -25,12 +25,14 @@
 
 | | 内容 |
 | --- | --- |
-| 要求 | `?cursor=<最後に受け取った項目の id>&limit=20`。`cursor` を省くと先頭から。`limit` は 1〜50、省くと 20 |
+| 要求 | `?cursor=<前の応答の nextCursor>&limit=20`。`cursor` を省くと先頭から。`limit` は 1〜50、省くと 20 |
 | 応答 | `{ "items": [...], "nextCursor": "<id>" }`。続きが無ければ `"nextCursor": null` |
 | 並び | 新しい順（id の降順）。すべての一覧で同じ |
 | 不正な値 | `cursor` が UUID でない、`limit` が範囲外 → 400 |
 
-サーバーは `limit + 1` 件を取り、余分な 1 件があれば `nextCursor` に `limit` 件目の id を入れる。
+`cursor` は前の応答の `nextCursor` をそのまま送る値で、画面は中身を解釈しない。中身は一覧ごとに決まっている。投稿の一覧、コメント一覧、ユーザー検索は項目そのものの id。いいねした人の一覧は `likes.id`、フォロワーとフォロー中の一覧は `follows.id`（項目は UserCard だが、並びとカーソルは中間テーブルの行で決める）。
+
+サーバーは `limit + 1` 件を取り、余分な 1 件があれば `nextCursor` に `limit` 件目のカーソル値（上の規則で決まる id）を入れる。
 
 ```json
 {
@@ -47,7 +49,8 @@
 | --- | --- | --- |
 | UserSummary | id, username, displayName, avatarUrl | 投稿とコメントの `author` |
 | UserCard | UserSummary ＋ bio, isFollowing | 一覧（検索、フォロワー、フォロー中、いいねした人） |
-| UserDetail | UserCard ＋ followersCount, followingCount, postsCount, createdAt, isMe | プロフィール、ログイン中の自分 |
+| UserDetail | UserCard ＋ followersCount, followingCount, createdAt, isMe | プロフィール |
+| Me | UserDetail ＋ email | `GET /api/users/me`、`PATCH /api/users/me` と、登録・ログイン・更新の応答の `user` だけ。他人には返さない |
 | Post | id, author（UserSummary）, body, images（`[{ id, url }]`）, likeCount, commentCount, likedByMe, edited, createdAt | タイムライン、投稿詳細、その人の投稿 |
 | Comment | id, author（UserSummary）, body, createdAt | コメント一覧 |
 
@@ -75,12 +78,12 @@
 
 | 機能 | メソッドとパス | 入力 | 応答 | 文書 |
 | --- | --- | --- | --- | --- |
-| 登録 | `POST /api/auth/register` | username, displayName, email, password | 201 { accessToken, user: UserDetail } ＋ Cookie | [auth](features/auth.md) |
-| ログイン | `POST /api/auth/login` | email, password | 200 { accessToken, user } ＋ Cookie | auth |
-| 更新 | `POST /api/auth/refresh` | Cookie | 200 { accessToken, user } ＋ 新しい Cookie | auth |
+| 登録 | `POST /api/auth/register` | username, displayName, email, password | 201 { accessToken, user: Me } ＋ Cookie | [auth](features/auth.md) |
+| ログイン | `POST /api/auth/login` | email, password | 200 { accessToken, user: Me } ＋ Cookie | auth |
+| 更新 | `POST /api/auth/refresh` | Cookie | 200 { accessToken, user: Me } ＋ 新しい Cookie | auth |
 | ログアウト | `POST /api/auth/logout` | Cookie | 204。Cookie を消す | auth |
-| 自分 | `GET /api/users/me` | | UserDetail | [profile](features/profile.md) |
-| プロフィール更新 | `PATCH /api/users/me` | displayName, bio | UserDetail | profile |
+| 自分 | `GET /api/users/me` | | Me | [profile](features/profile.md) |
+| プロフィール更新 | `PATCH /api/users/me` | displayName, bio | Me | profile |
 | アイコン更新 | `PUT /api/users/me/avatar` | multipart: file | 200 { avatarUrl } | profile |
 | プロフィール | `GET /api/users/{username}` | | UserDetail | profile |
 | その人の投稿 | `GET /api/users/{username}/posts` | cursor, limit | Post の一覧 | profile |
@@ -122,14 +125,17 @@
 | 200 | 取得・更新の成功 |
 | 201 | 作成の成功 |
 | 204 | 本文の無い成功（削除、いいね、フォロー、ログアウト） |
-| 400 | 要求の形が壊れている（JSON の構文、cursor の形式、multipart の部品不足） |
+| 400 | 要求の形が壊れている（JSON の構文、cursor の形式、multipart の部品不足、limit が範囲外） |
 | 401 | 認証がない・切れている。ログイン失敗 |
 | 403 | 認証はあるが、その資源を触る権限がない |
 | 404 | 資源が無い。存在しない URL |
+| 405 | メソッドが違う（`GET /api/posts` など） |
 | 409 | 重複（ユーザー名、メールアドレス） |
 | 413 | ファイルが大きすぎる |
-| 415 | 画像の形式が対象外 |
+| 415 | 画像の形式が対象外。JSON の API に JSON 以外の Content-Type で送った |
 | 422 | 入力の内容が規則に合わない |
 | 429 | 回数制限（nginx） |
 | 500 | 想定外の失敗 |
-| 503 | DB に届かない（ヘルスチェック） |
+| 503 | DB に届かない（ヘルスチェック）。S3 の設定が無い環境で画像を操作した（`IMAGE_STORAGE_UNAVAILABLE`） |
+
+nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返り、Problem Details ではない。画面はステータスだけで判断する（[error-handling-design.md](error-handling-design.md)）。

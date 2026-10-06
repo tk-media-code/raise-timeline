@@ -5,7 +5,7 @@
 ## 1. 方針
 
 1. **主キーは UUID v7** にし、PostgreSQL 18 の `uuidv7()` で採番する。時刻順に並ぶので、「新しい順」の並びと一覧のカーソルを id だけで扱える。URL に出しても連番ではないので、件数や他人の投稿の存在を推測されない。RDS for PostgreSQL も 18 に対応している
-2. **一覧の並び順とカーソルは、どのテーブルも id に統一する。** `WHERE id < :cursor ORDER BY id DESC LIMIT 21` の形
+2. **一覧の並び順とカーソルは、並べる行の id に統一する。** 投稿・コメント・ユーザー検索はその行の id、いいねした人の一覧は `likes.id`、フォロワーとフォロー中の一覧は `follows.id`。`WHERE id < :cursor ORDER BY id DESC LIMIT 21` の形
 3. **件数は読み出すときに数える。** いいね数・コメント数・フォロー数の列を持たない。数万件の規模では十分速く、数を二重に持つことで起きる食い違いを避けられる
 4. **削除は物理削除。** 外部キーはすべて `ON DELETE CASCADE`。投稿を消すと画像・いいね・コメントが一緒に消える。S3 の画像はアプリが消す
 5. **日時は `timestamptz`** で UTC 保存
@@ -88,8 +88,7 @@ erDiagram
 
 ## 3. テーブル定義
 
-共通の約束: `id` は `uuid` で `DEFAULT uuidv7()`、`created_at` と `updated_at` は `timestamptz NOT NULL DEFAULT now()`。
-`updated_at` の更新はアプリが行う（トリガーは使わない）。
+共通の約束: `id` は `uuid` で `DEFAULT uuidv7()`、`created_at` と `updated_at` は `timestamptz NOT NULL DEFAULT now()`。アプリは作成時に `created_at` と `updated_at` に `Clock` から取った同じ値を明示的に入れ、更新時に `updated_at` を入れる（DB の既定値は保険。DB の `now()` はトランザクションの開始時刻なので、同じトランザクションで作成と編集をするテストでは「編集済み」の判定ができない）。トリガーは使わない。
 
 ### users（利用者）
 
@@ -120,7 +119,7 @@ erDiagram
 
 - 外部キー: `user_id → users.id`（CASCADE）
 - 一意: `token_hash`
-- 索引: `(user_id)`。ログアウト時にその人の行を消すため
+- 索引: `(user_id)`。更新のときに、その人の期限切れの行をついでに消すため
 
 ### posts（投稿）
 
@@ -206,33 +205,63 @@ erDiagram
 
 ## 5. 代表的な問い合わせ
 
-フォロー中タイムライン。21 件取って、21 件目があれば「次がある」と判断し、20 件を返す。
+SQL は MyBatis の XML に書き、値は必ず `#{}` で渡す。`${}` は使わない（SQL の注入を防ぐ）。`IN` の列挙は `<foreach>` で組み立てる。カーソルは `java.util.UUID` に変換してから渡す（文字列のままだと PostgreSQL は uuid と varchar を比べられない）。
+
+フォロー中タイムライン。投稿者は本体の SQL で結合し、列は明示する（`password_hash` と `email` は読まない）。21 件取って、21 件目があれば「次がある」と判断し、20 件を返す。
 
 ```sql
-SELECT p.*
+SELECT p.id, p.user_id, p.body, p.created_at, p.updated_at,
+       u.username, u.display_name, u.avatar_key
 FROM posts p
-WHERE (p.user_id = :me OR p.user_id IN (SELECT followee_id FROM follows WHERE follower_id = :me))
-  AND (:cursor::uuid IS NULL OR p.id < :cursor)
+JOIN users u ON u.id = p.user_id
+WHERE (p.user_id = #{me} OR p.user_id IN (SELECT followee_id FROM follows WHERE follower_id = #{me}))
+  AND (#{cursor}::uuid IS NULL OR p.id < #{cursor})
 ORDER BY p.id DESC
 LIMIT 21;
 ```
 
-投稿に付く数と「自分がいいね済みか」は、投稿の一覧を取ったあとに、その投稿 id の集合に対してまとめて数える（N+1 にしない）。
+投稿に付く画像・数・「自分がいいね済みか」は、投稿の一覧を取ったあとに、その投稿 id の集合に対してまとめて取る（投稿ごとに取りに行かない）。1 ページあたりの問い合わせは本体を含めて 5 本で固定になる。
 
 ```sql
-SELECT post_id, count(*) AS like_count FROM likes WHERE post_id = ANY(:ids) GROUP BY post_id;
-SELECT post_id FROM likes WHERE user_id = :me AND post_id = ANY(:ids);
+SELECT post_id, object_key, position FROM post_images WHERE post_id IN (<foreach>) ORDER BY post_id, position;
+SELECT post_id, count(*) AS like_count FROM likes WHERE post_id IN (<foreach>) GROUP BY post_id;
+SELECT post_id FROM likes WHERE user_id = #{me} AND post_id IN (<foreach>);
 ```
 
-ユーザー検索。`%` と `_` はエスケープしてから使う。
+コメント数も同じ形で `comments` を数える。
+
+いいねした人の一覧。`EXISTS` の副問い合わせは `follows` ができる Issue 7 で足す。それまでは `is_following` を false で返す。並びとカーソルは `likes.id` で、項目は利用者。各行の「ログイン中の利用者がその人をフォローしているか」は `EXISTS` で取る。フォロワーとフォロー中の一覧も同じ形（`follows.id` で並べる）。
 
 ```sql
-SELECT * FROM users
-WHERE (username ILIKE '%' || :q || '%' ESCAPE '\' OR display_name ILIKE '%' || :q || '%' ESCAPE '\')
-  AND (:cursor::uuid IS NULL OR id < :cursor)
-ORDER BY id DESC
+SELECT l.id AS cursor_id, u.id, u.username, u.display_name, u.avatar_key, u.bio,
+       EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = #{me} AND f.followee_id = u.id) AS is_following
+FROM likes l
+JOIN users u ON u.id = l.user_id
+WHERE l.post_id = #{postId}
+  AND (#{cursor}::uuid IS NULL OR l.id < #{cursor})
+ORDER BY l.id DESC
 LIMIT 21;
 ```
+
+いいねとフォローの追加。同時に 2 回押されても 1 行にし、トランザクションを中断させない。
+
+```sql
+INSERT INTO likes (post_id, user_id) VALUES (#{postId}, #{me}) ON CONFLICT DO NOTHING;
+```
+
+ユーザー検索。`%` と `_` と `\` はエスケープしてから使う。列は明示する。
+
+```sql
+SELECT u.id, u.username, u.display_name, u.avatar_key, u.bio,
+       EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = #{me} AND f.followee_id = u.id) AS is_following
+FROM users u
+WHERE (u.username ILIKE '%' || #{q} || '%' ESCAPE '\' OR u.display_name ILIKE '%' || #{q} || '%' ESCAPE '\')
+  AND (#{cursor}::uuid IS NULL OR u.id < #{cursor})
+ORDER BY u.id DESC
+LIMIT 21;
+```
+
+登録で同時に同じユーザー名が来たときは、一意制約の違反を制約名で見分けて 409 に変換する。
 
 ## 6. マイグレーション
 

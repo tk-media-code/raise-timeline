@@ -35,9 +35,9 @@
 | --- | --- | --- | --- |
 | サービス | 認可の判定、検証、カーソルの扱い、S3 の失敗時の後始末 | JUnit 5 ＋ Mockito。Mapper と `ImageStorage` は代役 | 要らない |
 | Web 層 | 各 API のステータスと Problem Details の形。401・403・422 の変換。JSON の入出力 | `@WebMvcTest` ＋ `MockMvc`。サービスは `@MockitoBean`。Spring Security の設定を読み込む | 要らない |
-| Mapper | SQL が意図どおりの行を返すこと。一意制約、連鎖削除、カーソルの絞り込み | `@SpringBootTest` ＋ `@Transactional`。本物の PostgreSQL に対して実行し、各テストの終わりに巻き戻す。Flyway が先にスキーマを作る | 要る（コンテナの中で走る） |
+| Mapper | SQL が意図どおりの行を返すこと。一意制約、連鎖削除、カーソルの絞り込み | `@SpringBootTest` ＋ `@Transactional`。テスト用の DB `raise_timeline_test`（`db` サービスの初期化スクリプトが作り、`DB_URL_TEST` で渡す。テストでは `src/test/resources/application-test.properties` と `@ActiveProfiles("test")` で `spring.datasource.url=${DB_URL_TEST}` だけを上書きする。本体の `application.properties` と同じ名前のファイルをテスト側に置くと、本体の設定がまるごと読まれなくなるので置かない）に対して実行し、各テストの終わりに巻き戻す。Flyway が先にスキーマを作る。開発用の DB とは分けるので、手動確認で作った行の影響を受けず、「0 件なら空」「20 件ちょうどなら null」のような全件を前提にした期待も成り立つ | 要る（コンテナの中で走る） |
 | 認証 | トークンの発行と検証、期限切れ、リフレッシュトークンの差し替えとログアウト後の拒否 | 上の層にまたがる | 一部要る |
-| 全体 | アプリが起動し、`GET /api/health` が 200 を返す | `@SpringBootTest` | 要る |
+| 全体 | アプリが起動し、`GET /api/health` が 200 を返す | `@SpringBootTest` | 要る（テスト用の DB） |
 
 - `HealthCheckControllerTest` が Web 層の、`RaiseTimelineApplicationTests` が全体の雛形
 - 品質チェックはコンテナの中で `./gradlew check` を走らせるので、Mapper のテストは `db` サービスに届く。CI（GitHub Actions）はビルドだけで、テストは走らせない
@@ -78,6 +78,7 @@
 - Mapper のテストは、テストの中で必要な行を作る。共通の初期データ（フィクスチャ）は持たない
 - 画像は数バイトの偽のデータ（JPEG のマジックナンバーだけを持つ配列）を使う
 - 日時に依存するテストは、`Clock` を注入して固定する
+- 利用者名とメールアドレスは、テストごとに乱数を含めて作る（他のテストや手動確認の行とぶつからない）
 
 ## 6. 命名と置き場
 
@@ -90,4 +91,5 @@
 | --- | --- |
 | E2E テスト（Playwright など）を自動化に入れる | 速さと安定性の割に手間が大きい。この規模なら手動確認で足りる |
 | S3 のテストに S3Mock のコンテナを足す | 品質チェックはコンテナの中で走り、Docker を起動できない。Compose にサービスを足せば可能だが、まずは代役で十分 |
+| 結合テストを開発用の DB に対して走らせる | 手動確認で作った行が残っていると、全件を前提にした期待が落ちる。テスト用の DB を分けるほうが単純 |
 | Mapper のテストを H2 など別の DB で行う | PostgreSQL 固有の機能（`uuidv7()`、式インデックス、`ILIKE`）を使うので、本物でないと確かめられない |

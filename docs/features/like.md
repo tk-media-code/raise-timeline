@@ -15,7 +15,7 @@
 
 - ハートと数。自分が付けていれば塗りつぶし
 - 押した瞬間に見た目と数を変え、裏で API を呼ぶ。失敗したら元に戻して通知する（楽観的更新）
-- 連打しても最後の状態に収束する（TanStack Query の `useMutation` で直前の要求を上書き）
+- 連打しても最後の状態に収束する（`useMutation` の `scope` を投稿ごとに分け、同じ投稿への要求を順番に送る）
 
 ### いいねした人 `/posts/:id/likes`
 
@@ -33,9 +33,10 @@
 
 ## 4. 処理の流れ
 
-- 付ける: `likes` に行を入れる。一意制約に当たったら（同時に 2 回押された）無視して 204
+- 付ける: `INSERT ... ON CONFLICT DO NOTHING` で行を入れる。既にあれば何もせず 204（一意制約の違反でトランザクションを中断させない）
 - 外す: `likes` から行を消す。無くても 204
 - 投稿の `likeCount` と `likedByMe` は、投稿を返すときに `likes` を数える（[timeline.md](timeline.md) の 4 章）
+- 一覧: 並びとカーソルは `likes.id`。`nextCursor` には `likes.id` を入れ、画面はそのまま送り返す。各行の `isFollowing` は `EXISTS` の副問い合わせで取る（[database-design.md](../database-design.md) の 5 章）
 
 ## 5. データ
 
@@ -48,12 +49,12 @@
 - 付けると 204。投稿を取り直すと `likeCount` が 1 増え、`likedByMe` が true
 - 外すと 204。`likeCount` が戻り、`likedByMe` が false
 - 自分の投稿にも付けられる
-- いいねした人の一覧に、付けた人が新しい順に UserCard で返る。`isFollowing` が付く
+- いいねした人の一覧に、付けた人が新しい順に UserCard で返る。`isFollowing` が付く（`isFollowing` は Issue 7 で確かめる。それまでは false）
 
 ### 入力の境界
 
 - 一覧が 0 件なら `items` が空で `nextCursor` が null
-- 21 人なら `items` が 20 で `nextCursor` が 20 件目の id
+- 21 人なら `items` が 20 で `nextCursor` が 20 件目の `likes.id`
 
 ### 権限
 
@@ -68,11 +69,11 @@
 
 - 2 回付けても `likes` は 1 行で、2 回目も 204
 - 付けていない投稿を外しても 204
-- 同時に 2 回付けても 1 行（一意制約違反を 204 に変換する）
+- 同時に 2 回付けても 1 行（`ON CONFLICT DO NOTHING` で 204）
 
 ### 並び順とページング
 
-- 一覧は id の降順。`cursor` で続きが重複なく返る
+- 一覧は `likes.id` の降順。`nextCursor` は 20 件目の `likes.id` で、`cursor` に付けると続きが重複なく返る
 
 ### 画面
 

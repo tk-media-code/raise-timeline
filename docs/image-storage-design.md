@@ -72,7 +72,10 @@ IAM ポリシー（書き込み用。開発用ユーザーと本番用ロール�
 | 形式 | JPEG / PNG / GIF / WebP。先頭バイト（マジックナンバー）で判定 | 同じ | 415 |
 | 空のファイル | 不可 | 不可 | 422 |
 
+大きさの単位は 2 進で数える。5 MB は 5,242,880 バイト、2 MB は 2,097,152 バイト（Spring の `DataSize` と同じ）。
+
 - SVG は受け付けない（スクリプトを含められる）
+- JPEG は、保存の前に Exif のうち GPS のディレクトリ（GPS IFD。撮影地の座標）だけを取り除き、Orientation（写真の向き）などの他のタグは残す。Apache Commons Imaging で `TiffImageMetadata` から `TiffOutputSet` を取り、GPS のディレクトリを除いて `ExifRewriter.updateExifMetadataLossless` で書き戻す。画素は変えない。向きのタグを消すと、縦に撮った写真が横倒しで表示されるため、丸ごとは消さない。XMP（APP1 の別の形式。`exif:GPSLatitude` などが入ることがある）は `JpegXmpRewriter.removeXmpXml` で丸ごと取り除く。PNG / GIF / WebP は対象外（スマホの写真にはまず使われず、位置情報を持つこともまれ）で、そのまま保存する
 - 画像の縦横の大きさは検査しない。縮小もしない。表示は CSS で収める。大きな画像の縮小は将来の課題
 - 画面でも、ファイル選択の時点で拡張子と大きさを検査して先に伝える（最終判断はサーバー）
 
@@ -88,7 +91,8 @@ sequenceDiagram
     participant DB
     B->>A: POST /api/posts（multipart: body, images）
     A->>A: 枚数・大きさ・形式を検査
-    loop 画像ごと
+    A->>A: JPEG なら GPS の情報を取り除く
+    loop 画像ごと（最大 4 枚を並行に）
         A->>S3: PutObject（posts/{uuid}.{ext}、Content-Type、Cache-Control）
     end
     A->>DB: posts と post_images を 1 トランザクションで書く
@@ -99,6 +103,8 @@ sequenceDiagram
         A-->>B: 201 Post（画像の URL 付き）
     end
 ```
+
+S3 への PUT はトランザクションの外で行い、DB の書き込みだけをトランザクションにする。S3 の削除はコミットの後で行う（[error-handling-design.md](error-handling-design.md) の 3 章）。
 
 S3 への保存が途中で失敗したときも、それまでに上げた分を消して 500 を返す。
 
@@ -131,10 +137,13 @@ public interface ImageStorage {
 | 実装 | 用途 |
 | --- | --- |
 | `S3ImageStorage` | 本番とローカルの実行時。AWS SDK for Java v2 の `S3Client` を使う。数十行の薄い部品にとどめる |
+| `DisabledImageStorage` | S3 の設定（`S3_BUCKET`）が無いときに使う。呼ばれたら `ImageStorageUnavailableException` を投げ、503 になる。設定が無くてもアプリが起動するため |
 | Mockito の代役、または `InMemoryImageStorage`（テスト用） | 自動テスト。どこにも保存しない（[test-strategy.md](test-strategy.md)） |
 
 - 画像の形式判定は `ImageTypeDetector`（先頭バイトを見る）に分け、単体テストで確かめる
 - キーの生成は `ImageKeys`（`posts/...`、`avatars/...`）に分ける
+- GPS の除去は `GpsMetadataRemover` に分け、GPS を含む JPEG を渡すと GPS が無くなり、Orientation が残ることを単体テストで確かめる
+- S3 クライアントは `apiCallTimeout` 30 秒、再試行 2 回にする
 
 ## 6. 設定
 
@@ -145,11 +154,13 @@ public interface ImageStorage {
 | `S3_PUBLIC_BASE_URL` | `.env`（`https://<バケット>.s3.ap-northeast-1.amazonaws.com`） | 環境変数。CloudFront に変えるときはここだけ変える |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `.env`（開発用 IAM ユーザー） | 置かない。インスタンスロールを SDK が自動で使う |
 
+`S3_BUCKET` が無いときは `DisabledImageStorage` が使われ、画像の操作だけが 503 になる。それ以外の機能は動く。
+
 AWS SDK は認証情報を標準の探索順（環境変数 → … → インスタンスロール）で見つけるので、コードはローカルと本番で変わらない。
 
 ### ローカルの準備（人が行う）
 
-1. AWS コンソールで開発用バケットを作り、上のバケットポリシーを付ける
+1. AWS コンソールで開発用バケットを作り、バケットの「パブリックアクセスのブロック」のうちバケットポリシーに関する 2 項目を外して、上のバケットポリシーを付ける。アカウント単位の「パブリックアクセスのブロック」も、バケットポリシーに関する項目を外しておく必要がある
 2. 開発用の IAM ユーザーを作り、上の IAM ポリシーを付けて、アクセスキーを発行する
 3. リポジトリ直下の `.env` に `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_REGION`、`S3_BUCKET`、`S3_PUBLIC_BASE_URL` を書く
 4. `docker compose up -d` で backend に渡る
@@ -168,6 +179,8 @@ AWS SDK は認証情報を標準の探索順（環境変数 → … → イン�
 - アップロードできるのはログイン済みの本人だけ
 - 1 要求あたりの大きさを nginx と Spring の両方で制限する
 - バケットの一覧は公開しない。キーは推測できない UUID
+- JPEG の GPS の情報（Exif の GPS IFD と XMP）は保存の前に取り除く。撮影地の座標を公開しない
+- 上限を超える大きさの要求は、Tomcat の `max-swallow-size` の都合で 413 ではなく接続の切断（nginx 越しでは 502）になることがある。画像の Issue の手動確認で 10 MB の画像を試し、画面の文言が出ることを確かめる
 
 ## 9. 採らなかった案
 
