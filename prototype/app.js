@@ -101,9 +101,27 @@
     RT.ui.toast('見本データに戻しました');
   }
 
-  // Task 2 で投稿フォームのダイアログを開く関数に置き換える
+  // 投稿フォームをダイアログで開く。スマホの＋ボタンと PC の「投稿する」の入り口
   function openComposer() {
-    RT.ui.toast('投稿フォームは Task 2 で作る');
+    const form = RT.ui.composeForm({
+      onPosted: () => {
+        dialog.close();
+        RT.ui.toast('投稿しました');
+        route(); // 表示中の画面を読み直して、新しい投稿を出す
+      },
+    });
+    const closeBtn = el('button', { type: 'button', class: 'icon-btn dialog-close', 'aria-label': '閉じる', text: '×' });
+    const dialog = el('dialog', { class: 'dialog dialog-wide', 'aria-labelledby': 'compose-title' },
+      el('div', { class: 'dialog-body' },
+        el('div', { class: 'dialog-head' },
+          el('h2', { id: 'compose-title', class: 'dialog-title', text: '新しい投稿' }),
+          closeBtn),
+        form));
+    closeBtn.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => dialog.remove());
+    document.getElementById('dialogs').append(dialog);
+    dialog.showModal();
+    form.focusBody();
   }
 
   function navItems(user) {

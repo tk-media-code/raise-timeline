@@ -17,6 +17,12 @@
     // errors: [{ field, message }]
     constructor(errors) { super(errors[0].message); this.name = 'ConflictError'; this.errors = errors; }
   }
+  class ForbiddenError extends Error {
+    constructor(message) { super(message || 'この操作はできません'); this.name = 'ForbiddenError'; }
+  }
+  class NotFoundError extends Error {
+    constructor(message) { super(message || '見つかりません'); this.name = 'NotFoundError'; }
+  }
 
   // ---- 保存 ----
   function load() { return JSON.parse(localStorage.getItem(DATA_KEY)); }
@@ -115,6 +121,152 @@
     save(data);
     setSession(user.id);
     return publicUser(user);
+  }
+
+  // ---- 投稿 ----
+  const PAGE_SIZE = 20;
+  const MAX_POST_CHARS = 280;
+  const MAX_IMAGES = 4;
+  const MAX_IMAGE_BYTES = 5242880;
+  const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+  // multipart と同じく、CRLF を LF に直してから数える
+  function normalizeBody(body) {
+    return String(body == null ? '' : body).replace(/\r\n?/g, '\n');
+  }
+
+  // 戻り値は { body?, images? }。誤りが無ければ空
+  function validatePostBody(body, imageCount) {
+    const errors = {};
+    const n = countCodePoints(normalizeBody(body));
+    if (n > MAX_POST_CHARS) errors.body = '280 文字以内で入力してください';
+    else if (n === 0 && !imageCount) errors.body = '本文か画像を入れてください';
+    if (imageCount > MAX_IMAGES) errors.images = '画像は 4 枚までです';
+    return errors;
+  }
+
+  // 戻り値は誤りの文言。通れば null
+  function validateImageFile(file, maxBytes) {
+    if (!IMAGE_TYPES.includes(file.type)) return 'JPEG、PNG、GIF、WebP の画像を選んでください';
+    if (file.size > (maxBytes || MAX_IMAGE_BYTES)) return '画像は 5 MB 以内にしてください';
+    return null;
+  }
+
+  function authorOf(data, userId) {
+    const u = data.users.find((x) => x.id === userId);
+    return { id: u.id, username: u.username, displayName: u.displayName, avatarUrl: u.avatarDataUrl };
+  }
+
+  // 保存形式の投稿を、画面に渡す Post の形にする（docs/api-conventions.md 3 章）
+  function toPost(data, row, meId) {
+    const likes = data.likes.filter((l) => l.postId === row.id);
+    return {
+      id: row.id,
+      author: authorOf(data, row.userId),
+      body: row.body,
+      images: data.postImages
+        .filter((i) => i.postId === row.id)
+        .sort((a, b) => a.position - b.position)
+        .map((i) => ({ id: i.id, url: i.dataUrl })),
+      likeCount: likes.length,
+      commentCount: data.comments.filter((c) => c.postId === row.id).length,
+      likedByMe: likes.some((l) => l.userId === meId),
+      edited: Date.parse(row.updatedAt) > Date.parse(row.createdAt),
+      createdAt: row.createdAt,
+    };
+  }
+
+  // 新しい順（id の降順）。カーソルは最後に受け取った id。21 件取って次があるか決める
+  function pagePosts(data, rows, cursor, meId) {
+    const sorted = rows
+      .filter((p) => cursor == null || p.id < cursor)
+      .sort((a, b) => b.id - a.id)
+      .slice(0, PAGE_SIZE + 1);
+    const items = sorted.slice(0, PAGE_SIZE).map((p) => toPost(data, p, meId));
+    return { items, nextCursor: sorted.length > PAGE_SIZE ? items[items.length - 1].id : null };
+  }
+
+  function requireUser() {
+    const user = currentUser();
+    if (!user) throw new AuthError('ログインが必要です');
+    return user;
+  }
+
+  function timeline(tab, cursor) {
+    const me = requireUser();
+    const data = load();
+    let rows = data.posts;
+    if (tab === 'following') {
+      const ids = new Set([me.id, ...data.follows.filter((f) => f.followerId === me.id).map((f) => f.followeeId)]);
+      rows = rows.filter((p) => ids.has(p.userId));
+    }
+    return pagePosts(data, rows, cursor, me.id);
+  }
+
+  function userPosts(username, cursor) {
+    const me = requireUser();
+    const data = load();
+    const user = data.users.find((u) => u.username.toLowerCase() === String(username).toLowerCase());
+    if (!user) throw new NotFoundError();
+    return pagePosts(data, data.posts.filter((p) => p.userId === user.id), cursor, me.id);
+  }
+
+  function findPost(data, id) {
+    const row = data.posts.find((p) => p.id === Number(id));
+    if (!row) throw new NotFoundError();
+    return row;
+  }
+
+  function getPost(id) {
+    const me = requireUser();
+    const data = load();
+    return toPost(data, findPost(data, id), me.id);
+  }
+
+  function createPost({ body, imageDataUrls }) {
+    const me = requireUser();
+    const text = normalizeBody(body);
+    const urls = imageDataUrls || [];
+    const errors = validatePostBody(text, urls.length);
+    if (Object.keys(errors).length > 0) throw new ValidationError(errors);
+
+    const data = load();
+    const now = new Date().toISOString();
+    const row = { id: newId(data), userId: me.id, body: text, createdAt: now, updatedAt: now };
+    data.posts.push(row);
+    urls.forEach((dataUrl, position) => {
+      data.postImages.push({ id: newId(data), postId: row.id, dataUrl, position });
+    });
+    save(data);
+    return toPost(data, row, me.id);
+  }
+
+  function updatePost(id, body) {
+    const me = requireUser();
+    const data = load();
+    const row = findPost(data, id);
+    if (row.userId !== me.id) throw new ForbiddenError();
+    const text = normalizeBody(body);
+    const imageCount = data.postImages.filter((i) => i.postId === row.id).length;
+    const errors = validatePostBody(text, imageCount);
+    if (Object.keys(errors).length > 0) throw new ValidationError(errors);
+
+    row.body = text;
+    row.updatedAt = new Date(Math.max(Date.now(), Date.parse(row.createdAt) + 1)).toISOString();
+    save(data);
+    return toPost(data, row, me.id);
+  }
+
+  function deletePost(id) {
+    const me = requireUser();
+    const data = load();
+    const row = findPost(data, id);
+    if (row.userId !== me.id) throw new ForbiddenError();
+    data.posts = data.posts.filter((p) => p.id !== row.id);
+    data.postImages = data.postImages.filter((i) => i.postId !== row.id);
+    data.likes = data.likes.filter((l) => l.postId !== row.id);
+    data.comments = data.comments.filter((c) => c.postId !== row.id);
+    save(data);
   }
 
   // ---- 見本データ ----
@@ -306,10 +458,12 @@
 
   window.RT = window.RT || {};
   window.RT.store = {
-    AuthError, ValidationError, ConflictError,
+    AuthError, ValidationError, ConflictError, ForbiddenError, NotFoundError,
+    MAX_POST_CHARS, MAX_IMAGES, MAX_IMAGE_BYTES,
     load, save, newId,
     init, reset, seed,
     currentUser, login, logout, register,
-    validateRegister, validateLogin, countCodePoints,
+    validateRegister, validateLogin, validatePostBody, validateImageFile, countCodePoints,
+    timeline, userPosts, getPost, createPost, updatePost, deletePost,
   };
 })();
