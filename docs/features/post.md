@@ -56,7 +56,7 @@ multipart/form-data。部品 `body`（テキスト）と `images`（ファイル
 | 応答 | 場面 |
 | --- | --- |
 | 201 Post | 成功。`images` は送った順 |
-| 422 `VALIDATION_ERROR` | 本文 281 文字以上、本文も画像も無い、画像 5 枚以上、空のファイル |
+| 422 `VALIDATION_ERROR` | 本文 281 文字以上、本文も画像も無い、画像 5 枚以上、空のファイル、読み取れない JPEG |
 | 413 `FILE_TOO_LARGE` | 5 MB 超 |
 | 415 `UNSUPPORTED_IMAGE_TYPE` | 形式違い |
 

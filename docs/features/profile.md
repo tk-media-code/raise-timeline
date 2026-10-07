@@ -45,7 +45,7 @@
 | --- | --- | --- |
 | `GET /api/users/me` | | 200 Me（UserDetail ＋ email。`isMe` true） |
 | `PATCH /api/users/me` | `{ "displayName": "...", "bio": "..." }` | 200 Me。422 で検証の失敗 |
-| `PUT /api/users/me/avatar` | multipart: `file` | 200 `{ "avatarUrl": "..." }`。413 `FILE_TOO_LARGE`、415 `UNSUPPORTED_IMAGE_TYPE`、422（空） |
+| `PUT /api/users/me/avatar` | multipart: `file` | 200 `{ "avatarUrl": "..." }`。413 `FILE_TOO_LARGE`、415 `UNSUPPORTED_IMAGE_TYPE`、422（空、読み取れない JPEG） |
 | `GET /api/users/{username}` | | 200 UserDetail。404 |
 | `GET /api/users/{username}/posts` | cursor, limit | 200 Post の一覧。404 |
 
