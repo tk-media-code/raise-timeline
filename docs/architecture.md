@@ -42,7 +42,7 @@ flowchart LR
 - ローカルでも本物の S3 を使う。開発用バケットと、そのバケットだけを触れる IAM ユーザーを使う（[image-storage-design.md](image-storage-design.md)）。費用は月に数円〜十数円
 - オフラインでは画像まわりだけ動かない。それ以外の機能はローカルで完結する
 - backend の環境変数に、JWT の秘密鍵と S3 の設定が増える。土台の決定（`.env` を必須にしない。`docker compose up` だけで起動する）は守る。`JWT_SECRET` はローカル専用の既定値を `docker-compose.yml` に書く（DB のパスワードと同じ扱い）。`AUTH_COOKIE_SECURE=false` もローカル専用の値として `docker-compose.yml` に書く。S3 の変数は無くても起動し、無いときは画像の操作だけが 503 `IMAGE_STORAGE_UNAVAILABLE` になる
-- 結合テスト用の DB `raise_timeline_test` を、`db` サービスの初期化スクリプト（`/docker-entrypoint-initdb.d/`）で作る。backend には `DB_URL_TEST` で渡し、テストのプロファイル（`application-test.properties`）だけがそれを使う（[test-strategy.md](test-strategy.md)）。初期化スクリプトは DB の初回起動時だけ走るので、既にある開発環境は一度 `docker compose down -v` で作り直す
+- 結合テスト用の DB `raise_timeline_test` を、`db` サービスの初期化スクリプト（`/docker-entrypoint-initdb.d/`）で作る。backend には `DB_URL_TEST` で渡し、テストのプロファイル（`application-test.properties`）だけがそれを使う（[test-strategy.md](test-strategy.md)）。初期化スクリプトは DB の初回起動時（データのボリュームが空のとき）だけ走り、テストのたびには走らない。既にある開発環境では `docker compose exec db psql -U raise_timeline -d raise_timeline -c 'CREATE DATABASE raise_timeline_test OWNER raise_timeline'` を 1 回だけ手で実行する。`docker compose down -v` で作り直すと、DB のデータに加えて依存とビルドのボリュームも消えるので使わない
 
 `.env` で上書きできる変数は次のとおり。`.env` は `.gitignore` 済みで、コミットしない。S3 を使うときだけ `.env` が要る。
 
