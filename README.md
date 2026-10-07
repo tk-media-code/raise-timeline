@@ -138,4 +138,5 @@ Issue を立て、ブランチを切り、Pull Request で変更を入れます�
 | `plans/` | 実装計画の作業メモ。Git では管理せず、紐付いたブランチが消えると一緒に消える |
 | `.claude/` | Claude Code のルール・スキル・hook・エージェント定義 |
 | `.github/` | CI（ビルドが通るかだけを確かめる）と、Issue・PR のテンプレート |
+| `.githooks/` | git のフック。作業ブランチを消したとき、紐付いた計画を `plans/` から片付ける |
 | `docker-compose.yml` | ローカル開発用の構成（frontend / backend / db） |
