@@ -42,7 +42,7 @@ flowchart LR
 - ローカルでも本物の S3 を使う。開発用バケットと、そのバケットだけを触れる IAM ユーザーを使う（[image-storage-design.md](image-storage-design.md)）。費用は月に数円〜十数円
 - オフラインでは画像まわりだけ動かない。それ以外の機能はローカルで完結する
 - backend の環境変数に、JWT の秘密鍵と S3 の設定が増える。土台の決定（`.env` を必須にしない。`docker compose up` だけで起動する）は守る。`JWT_SECRET` はローカル専用の既定値を `docker-compose.yml` に書く（DB のパスワードと同じ扱い）。`AUTH_COOKIE_SECURE=false` もローカル専用の値として `docker-compose.yml` に書く。S3 の変数は無くても起動し、無いときは画像の操作だけが 503 `IMAGE_STORAGE_UNAVAILABLE` になる
-- 結合テスト用の DB `raise_timeline_test` を、`db` サービスの初期化スクリプト（`/docker-entrypoint-initdb.d/`）で作る。backend には `DB_URL_TEST` で渡し、テストのプロファイル（`application-test.properties`）だけがそれを使う（[test-strategy.md](test-strategy.md)）。初期化スクリプトは DB の初回起動時だけ走るので、既にある開発環境は一度 `docker compose down -v` で作り直す
+- 結合テスト用の DB `raise_timeline_test` を、`db` サービスの初期化スクリプト（`/docker-entrypoint-initdb.d/`）で作る。backend には `DB_URL_TEST` で渡し、テストのプロファイル（`application-test.properties`）だけがそれを使う（[test-strategy.md](test-strategy.md)）。初期化スクリプトは DB の初回起動時（データのボリュームが空のとき）だけ走り、テストのたびには走らない。既にある開発環境では `docker compose exec db psql -U raise_timeline -d raise_timeline -c 'CREATE DATABASE raise_timeline_test OWNER raise_timeline'` を 1 回だけ手で実行する。`docker compose down -v` で作り直すと、DB のデータに加えて依存とビルドのボリュームも消えるので使わない
 
 `.env` で上書きできる変数は次のとおり。`.env` は `.gitignore` 済みで、コミットしない。S3 を使うときだけ `.env` が要る。
 
@@ -53,7 +53,7 @@ flowchart LR
 | `AWS_REGION` | `ap-northeast-1` | 無し |
 | `S3_BUCKET` | 開発用バケット名 | 無し |
 | `S3_PUBLIC_BASE_URL` | `https://<バケット名>.s3.ap-northeast-1.amazonaws.com` | 無し |
-| `LOG_LEVEL_APP` | アプリのログの水準。`DEBUG` にすると SQL も出る | `INFO` |
+| `LOG_LEVEL_APP` | アプリのログの水準。`DEBUG` では SQL とその引数も出る。`INFO` にすると本番と同じ行だけになる | `DEBUG`（`docker-compose.yml` の既定値。アプリ自体の既定は `INFO`） |
 
 `docker-compose.yml` はこれらを `backend` サービスの環境変数として渡す。変数の一覧は README にも書く。
 
@@ -158,7 +158,7 @@ TanStack Query を足す理由は、タイムラインやコメントの「20 �
 | S3 の認証情報 | `.env` のアクセスキー（開発用バケット限定の IAM ユーザー） | EC2 のインスタンスロール（キーを置かない） |
 | トークンの有効期限 | `application.properties` の既定値（アクセス 1 時間、リフレッシュ 30 日） | 同じ |
 | 環境名（`APP_ENV`） | 無し。ログの `service.environment` は `local` になる | 環境変数で `production` |
-| ログの水準（`LOG_LEVEL_APP`） | `.env` で `DEBUG` にできる。既定は `INFO` | `INFO` |
+| ログの水準（`LOG_LEVEL_APP`） | `docker-compose.yml` の既定値 `DEBUG`（`.env` で `INFO` にできる） | 環境変数で `INFO`。アプリ自体の既定も `INFO` |
 
 Spring Boot 側では `application.properties` が `${JWT_SECRET}` のように環境変数を参照する。
 AWS SDK は認証情報を標準の探索順（環境変数 → インスタンスロール）で見つけるので、ローカルと本番でコードは変わらない。
@@ -197,7 +197,7 @@ AWS SDK は認証情報を標準の探索順（環境変数 → インスタン�
 | EC2 | SSH を開けない。SSM Session Manager で入る |
 | エラー応答 | 例外の文言・SQL・スタックトレースを本文に載せない（[error-handling-design.md](error-handling-design.md)） |
 | リクエスト ID | 要求ヘッダー `X-Request-Id` は `^[A-Za-z0-9-]{1,64}$` に合うときだけ使い、合わなければ作り直す。利用者が送った値をそのままログと応答に書かない |
-| 画面の遷移先 | ログイン後の戻り先 `next` は `/` で始まり `//` と `/\` で始まらない値だけ受け付ける |
+| 画面の遷移先 | ログイン後の戻り先 `next` は `/` で始まり、`//` と `/\` で始まらず、制御文字（タブ・改行）を含まない値だけ受け付ける |
 
 ## 7. 採らなかった案
 

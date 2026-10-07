@@ -71,11 +71,13 @@ IAM ポリシー（書き込み用。開発用ユーザーと本番用ロール�
 | 大きさ | 1 枚 5 MB まで | 2 MB まで | 413 |
 | 形式 | JPEG / PNG / GIF / WebP。先頭バイト（マジックナンバー）で判定 | 同じ | 415 |
 | 空のファイル | 不可 | 不可 | 422 |
+| 読み取れない JPEG（位置情報を取り除く処理で解析に失敗する） | 不可 | 不可 | 422 |
 
 大きさの単位は 2 進で数える。5 MB は 5,242,880 バイト、2 MB は 2,097,152 バイト（Spring の `DataSize` と同じ）。
 
 - SVG は受け付けない（スクリプトを含められる）
 - JPEG は、保存の前に Exif のうち GPS のディレクトリ（GPS IFD。撮影地の座標）だけを取り除き、Orientation（写真の向き）などの他のタグは残す。Apache Commons Imaging で `TiffImageMetadata` から `TiffOutputSet` を取り、GPS のディレクトリを除いて `ExifRewriter.updateExifMetadataLossless` で書き戻す。画素は変えない。向きのタグを消すと、縦に撮った写真が横倒しで表示されるため、丸ごとは消さない。XMP（APP1 の別の形式。`exif:GPSLatitude` などが入ることがある）は `JpegXmpRewriter.removeXmpXml` で丸ごと取り除く。PNG / GIF / WebP は対象外（スマホの写真にはまず使われず、位置情報を持つこともまれ）で、そのまま保存する
+- JPEG の解析に失敗したら（先頭のバイトだけ JPEG で中身が壊れているなど）、422「画像を読み取れませんでした」にする。位置情報を消せないまま保存すると撮影地が漏れるおそれがあるので、保存しない。利用者の入力で起きる失敗なので、500 にもしない
 - 画像の縦横の大きさは検査しない。縮小もしない。表示は CSS で収める。大きな画像の縮小は将来の課題
 - 画面でも、ファイル選択の時点で拡張子と大きさを検査して先に伝える（最終判断はサーバー）
 
@@ -91,14 +93,14 @@ sequenceDiagram
     participant DB
     B->>A: POST /api/posts（multipart: body, images）
     A->>A: 枚数・大きさ・形式を検査
-    A->>A: JPEG なら GPS の情報を取り除く
+    A->>A: JPEG なら GPS の情報を取り除く（読み取れなければ 422）
     loop 画像ごと（最大 4 枚を並行に）
         A->>S3: PutObject（posts/{uuid}.{ext}、Content-Type、Cache-Control）
     end
     A->>DB: posts と post_images を 1 トランザクションで書く
     alt DB の書き込みに失敗
         A->>S3: 上げた画像を DeleteObjects
-        A-->>B: 500
+        A-->>B: 500（本人への外部キー違反なら 401）
     else 成功
         A-->>B: 201 Post（画像の URL 付き）
     end
@@ -111,7 +113,7 @@ S3 への保存が途中で失敗したときも、それまでに上げた分�
 ### アイコン
 
 1. `PUT /api/users/me/avatar`（multipart: file）
-2. 大きさと形式を検査
+2. 大きさと形式を検査し、JPEG なら GPS の情報を取り除く（読み取れなければ 422。S3 には上げない）
 3. 新しいキーで S3 に上げる
 4. `users.avatar_key` と `updated_at` を更新
 5. 古いキーがあれば S3 から消す。失敗は WARN の出来事 `image.delete_failed` にとどめ、応答は成功（[logging-design.md](logging-design.md) の 3 章）

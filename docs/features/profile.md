@@ -45,7 +45,7 @@
 | --- | --- | --- |
 | `GET /api/users/me` | | 200 Me（UserDetail ＋ email。`isMe` true） |
 | `PATCH /api/users/me` | `{ "displayName": "...", "bio": "..." }` | 200 Me。422 で検証の失敗 |
-| `PUT /api/users/me/avatar` | multipart: `file` | 200 `{ "avatarUrl": "..." }`。413 `FILE_TOO_LARGE`、415 `UNSUPPORTED_IMAGE_TYPE`、422（空） |
+| `PUT /api/users/me/avatar` | multipart: `file` | 200 `{ "avatarUrl": "..." }`。413 `FILE_TOO_LARGE`、415 `UNSUPPORTED_IMAGE_TYPE`、422（空、読み取れない JPEG） |
 | `GET /api/users/{username}` | | 200 UserDetail。404 |
 | `GET /api/users/{username}/posts` | cursor, limit | 200 Post の一覧。404 |
 
@@ -77,6 +77,8 @@
 - 表示名: 空白だけは 422、50 文字は通る、51 文字は 422
 - 自己紹介: 空は通る、160 文字は通る、161 文字は 422
 - アイコン: 2 MB は通る、2 MB ＋ 1 バイトは 413。PNG / GIF / WebP は通る。SVG とテキストは 415。空のファイルは 422
+- 表示名と自己紹介に NUL 文字を含むと 422
+- アイコンに中身が壊れた JPEG を上げると 422（`errors` の `field` は `file`）。`avatar_key` は変わらず、S3 の代役に何も渡らない
 
 ### 権限
 
@@ -90,6 +92,7 @@
 - 古い画像の削除が失敗しても 200 で、WARN の出来事 `image.delete_failed` が出る（[logging-design.md](../logging-design.md) の 3 章）
 - 存在しないユーザー名は 404
 - 画面: 保存に失敗しても入力は消えない
+- 画面: 存在しないユーザー名の URL で「見つかりません」の画面が出る
 
 ### 重複と一意性
 

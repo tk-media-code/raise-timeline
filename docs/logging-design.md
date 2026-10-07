@@ -32,7 +32,7 @@
 | ERROR | 人が対応しないと直らない。想定外の例外で 500 を返した、起動に失敗した、設定が欠けている | 1 件でもメール通知。必ず調べる |
 | WARN | 処理は続けられたが、放置すると問題になる。S3 の削除失敗、ヘルスチェックで DB に届かない（503）、1 秒を超えた応答 | 通知しない。数の推移を週に 1 度見る |
 | INFO | 正常な出来事の記録。要求 1 件につき 1 行、業務上の出来事、起動完了 | 保存するだけ |
-| DEBUG | 開発者が追うための詳細。SQL とその引数、トークン検証の内訳 | 出さない。ローカルでは環境変数 `LOG_LEVEL_APP=DEBUG` で有効にする |
+| DEBUG | 開発者が追うための詳細。SQL とその引数、トークン検証の内訳 | 出さない。ローカルでは既定で出す（`docker-compose.yml` が `LOG_LEVEL_APP` の既定値に `DEBUG` を渡す） |
 | TRACE | 使わない | |
 
 ### 3 つの規則
@@ -96,7 +96,7 @@ Spring Boot が自動で付ける項目と、このプロジェクトが足す�
 ### MDC
 
 MDC は「要求の間ずっと付く値」を置く仕組み。要求の最初に値を置き、要求の最後に消すと、その間にどこで書いたログにも自動で載る。
-MyBatis が出す SQL のログにも利用者 id が付くので、「この人のこの操作で流れた SQL」を requestId でまとめて追える。
+MyBatis が出す SQL のログにも利用者 id が付くので、ローカルでは「この人のこの操作で流れた SQL」を requestId でまとめて追える（SQL は DEBUG なので、本番には出ない）。
 
 MDC はスレッドごとの値なので、別のスレッドで走らせる処理（画像の並行アップロード）には引き継がれない。その中ではログを書かないか、`TaskDecorator` で MDC を写す。どちらにするかは画像の Issue で決める。
 
@@ -131,7 +131,7 @@ Spring Boot に nginx 以外から届く経路は無い（Compose のネット�
 | `logging.structured.json.stacktrace.root=first` | 根本原因を先頭に |
 | `logging.structured.json.stacktrace.max-length=65536` | CloudWatch Logs の 1 件の上限 256 KB に収める保険 |
 | `spring.main.banner-mode=off` | 起動時の ASCII アートを消し、JSON 以外の出力を無くす |
-| `logging.level.com.tkmedia.raisetimeline=${LOG_LEVEL_APP:INFO}` | ローカルで DEBUG にする口。MyBatis の SQL も Mapper のパッケージの下で出る |
+| `logging.level.com.tkmedia.raisetimeline=${LOG_LEVEL_APP:INFO}` | アプリのログの水準。環境変数が無いときは INFO にし、本番で渡し忘れても DEBUG にならないようにする。ローカルは `docker-compose.yml` が既定で `DEBUG` を渡す。MyBatis の SQL も Mapper のパッケージの下で出る |
 | `server.forward-headers-strategy=native` | 本番で `client.ip` を利用者の IP にする（上の MDC の節） |
 | `logging.level.org.springframework.web.servlet.PageNotFound=ERROR` | 405 などの 4xx で Spring MVC が出す WARN を止める（2 章の規則 2） |
 
@@ -170,7 +170,10 @@ docker compose logs --no-log-prefix backend --since 10m | jq -R -r 'fromjson? //
 | --- | --- |
 | 1 つの要求だけ読む | 上のコマンドの `fromjson? // empty` の後ろに `\| select(.http.request.id == "<requestId>")` を足す |
 | ERROR だけ読む | 同じく `\| select(.log.level == "ERROR")` を足す。スタックトレースは `.error.stack_trace` に入っている |
-| SQL まで見る | `.env` に `LOG_LEVEL_APP=DEBUG` を書き、`docker compose up -d` で backend を作り直す |
+| DEBUG を除いて読む | 同じく `\| select(.log.level != "DEBUG")` を足す。本番で見えるのと同じ行だけになる |
+| SQL を出さない | ローカルの既定は DEBUG で、SQL とその引数も出る。止めたいときは `.env` に `LOG_LEVEL_APP=INFO` を書き、`docker compose up -d` で backend を作り直す |
+
+ローカルの既定を DEBUG にしているのは、不具合が起きた時点で SQL とその引数が揃っていて、DEBUG に切り替えて同じ操作をやり直す手間が要らないため。行が増えても、requestId で絞れば関係のない行は混ざらない。
 
 AI も同じコマンドを使う。これらは README の「よく使うコマンド」にも書く。
 
@@ -227,7 +230,7 @@ CloudWatch のメトリクスフィルタで「条件に合う行を数える」
 ### 本番で通知が届いたら
 
 1. CloudWatch Logs Insights で、保存した検索「ERROR の一覧」を実行し、`http.request.id` を控える
-2. 検索「requestId で追う」にその ID を入れ、その要求の全行を時刻順に読む。例外の `error.stack_trace` と、直前の SQL や出来事が 1 本の流れで見える
+2. 検索「requestId で追う」にその ID を入れ、その要求の全行を時刻順に読む。例外の `error.stack_trace` と、その要求の出来事と要求ログが 1 本の流れで見える。SQL は DEBUG なので本番には出ない。SQL まで要るときは、3 でローカルに再現して読む
 3. ローカルで再現し、Issue を立てて直す
 
 ### 保存する検索
@@ -244,8 +247,9 @@ CloudWatch のメトリクスフィルタで「条件に合う行を数える」
 
 ### ローカルで
 
-7 章のコマンドで読む。AI に向けた「不具合の調査ではまずログを読む」という指示は `.claude/rules/` に置くのが筋だが、AI への指示ファイルを含めると
-文書だけの PR ではなくなるので、ログ基盤の Issue で `add-project-rule` を使って足す。
+7 章のコマンドで読む。
+
+AI への指示は 2 層に分ける。「不具合の調査では、推測でコードを読む前に、まずログとエラー出力を読む」という原則は、どのプロジェクトにも通じるので、ハーネス（tk-media の AI ハーネス）が全リポジトリに配る。このリポジトリでのログの読み方（7 章のコマンド、requestId のたどり方、本番の保存した検索）は、ログ基盤の Issue で `add-project-rule` を使って `.claude/rules/` に足す。
 
 ## 11. 将来、監視ツールを入れるとき
 
@@ -268,7 +272,7 @@ OpenTelemetry で送りたくなったときは、`management.opentelemetry.logg
 
 ## 12. テストの期待一覧
 
-ログ基盤の Issue で確かめる。テストは標準出力を捕まえて JSON として読み、項目を確かめる（[test-strategy.md](test-strategy.md)）。
+ログ基盤の Issue で確かめる。テストは標準出力を捕まえて JSON として読み、項目を確かめる（[test-strategy.md](test-strategy.md)）。テストは backend コンテナの中で走り、`LOG_LEVEL_APP` の既定値 `DEBUG` を引き継ぐ。レベルで結果が変わるテスト（2 など）は、`.env` で INFO にしても DEBUG のままでも通るように書く（例: 行が無いか、あっても `log.level` が `DEBUG`）。「ログに出ない」を確かめるテストは、INFO 以上の行だけを見る。
 
 1. 要求 1 件につき要求ログが 1 行出て、メソッド・パス・status・所要時間・requestId が揃う
 2. `GET /api/health` の 200 では要求ログが INFO では出ない（DEBUG に落ちる）
@@ -283,10 +287,10 @@ OpenTelemetry で送りたくなったときは、`management.opentelemetry.logg
 
 | Issue | 担当 |
 | --- | --- |
-| ログの基盤を作る（実装の順序 1） | 4 章の設定、`RequestLogFilter`、`LogFields`、Problem Details と `ApiExceptionHandler` のうち Spring Security に依らない部分（500 の ERROR 出力と `event.code` の受け渡しを含む）、ヘルスチェックの `GET /` から `GET /api/health` への移動（応答は変えない）、README のログの読み方、`docker-compose.yml` で `LOG_LEVEL_APP` と `APP_ENV` を backend に渡す、`.claude/rules/` の指示、12 章の 1〜6 と 8 |
+| ログの基盤を作る（実装の順序 1） | 4 章の設定、`RequestLogFilter`、`LogFields`、Problem Details と `ApiExceptionHandler` のうち Spring Security に依らない部分（500 の ERROR 出力と `event.code` の受け渡しを含む）、ヘルスチェックの `GET /` から `GET /api/health` への移動（応答は変えない）、README のログの読み方、`docker-compose.yml` で `LOG_LEVEL_APP`（既定値 `DEBUG`）と `APP_ENV` を backend に渡す、`.claude/rules/` のログの読み方（10 章）、12 章の 1〜6 と 8 |
 | 認証の基盤を作る（実装の順序 2） | 認証フィルタが `user.id` を MDC に置く。Spring Security のハンドラが `event.code` を置く。`auth.*` の出来事。画面の 500 の通知に requestId を添える（6 章）。12 章の 7 |
 | 各機能の Issue | 3 章の表の出来事を、その機能で書く |
-| 本番環境に出す（実装の順序 11） | 8 章と 9 章のすべて。10 章の保存する検索の登録 |
+| 本番環境に出す（実装の順序 11） | 8 章と 9 章のすべて。10 章の保存する検索の登録。本番の `LOG_LEVEL_APP` は `INFO` を明示して渡す |
 
 認証の実装計画（`plans/2026-10-06-auth-foundation.md`）からは、requestId と Problem Details の作業をログ基盤へ移し、`logging.pattern.level` の設定を消す。
 
@@ -306,3 +310,4 @@ OpenTelemetry で送りたくなったときは、`management.opentelemetry.logg
 | MDC のキーを `requestId` のままにする | ECS の `http.request.id` に揃えると、nginx のログと同じ名前で突き合わせられる。API の応答の `requestId` は契約なので変えない |
 | 503 を一律に WARN にする（以前のエラーハンドリング設計） | 503 のうち `IMAGE_STORAGE_UNAVAILABLE` は S3 の設定が無い開発環境でだけ起きる想定内の応答。WARN にするのはヘルスチェックの DB 失敗だけにし、`health.db_unreachable` として残す |
 | 画像のアップロードだけ 1 秒の上限を変える | まず実測する。WARN の集計で多ければ分ける |
+| ローカルも INFO を既定にし、SQL が要るときだけ DEBUG に切り替える | 不具合が起きたあとで切り替えると、backend を作り直して同じ操作をやり直す必要がある。AI がまずログを読む進め方では、SQL が最初から揃っているほうが速い。行が増えても requestId で絞れる。本番で INFO に何を残すかは 3 章の表とテストで守る |

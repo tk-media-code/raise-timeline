@@ -73,6 +73,7 @@
 ### 異常系
 
 - 画面: API が失敗したら、ボタンと数が元に戻り、通知が出る
+- フォローの直前に相手が退会し、相手への外部キー違反（`follows_followee_id_fkey`）になったら 404 `NOT_FOUND`。自分への違反（`follows_follower_id_fkey`。自分が同時に退会した）は 401 `UNAUTHENTICATED`。どちらも 500 にならない
 
 ### 重複と一意性
 
