@@ -272,7 +272,7 @@ OpenTelemetry で送りたくなったときは、`management.opentelemetry.logg
 
 ## 12. テストの期待一覧
 
-ログ基盤の Issue で確かめる。テストは標準出力を捕まえて JSON として読み、項目を確かめる（[test-strategy.md](test-strategy.md)）。テストは backend コンテナの中で走り、`LOG_LEVEL_APP` の既定値 `DEBUG` を引き継ぐ。レベルで結果が変わるテスト（2 など）は、行の有無ではなく `log.level` の値を確かめる。
+ログ基盤の Issue で確かめる。テストは標準出力を捕まえて JSON として読み、項目を確かめる（[test-strategy.md](test-strategy.md)）。テストは backend コンテナの中で走り、`LOG_LEVEL_APP` の既定値 `DEBUG` を引き継ぐ。レベルで結果が変わるテスト（2 など）は、`.env` で INFO にしても DEBUG のままでも通るように書く（例: 行が無いか、あっても `log.level` が `DEBUG`）。「ログに出ない」を確かめるテストは、INFO 以上の行だけを見る。
 
 1. 要求 1 件につき要求ログが 1 行出て、メソッド・パス・status・所要時間・requestId が揃う
 2. `GET /api/health` の 200 では要求ログが INFO では出ない（DEBUG に落ちる）

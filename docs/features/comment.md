@@ -74,6 +74,7 @@
 
 - 画面: 投稿に失敗しても本文は残る
 - コメントの直前に投稿が消され、外部キー違反（`comments_post_id_fkey`）になったら 404 `NOT_FOUND`。500 にならない（Mapper の代役に外部キー違反を投げさせて確かめる）
+- 本人への外部キー違反（`comments_user_id_fkey`。退会と同時に書いた）は 401 `UNAUTHENTICATED`
 
 ### 重複と一意性
 

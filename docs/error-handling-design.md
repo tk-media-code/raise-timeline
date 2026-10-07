@@ -33,7 +33,7 @@ HTTP の標準である RFC 9457「Problem Details」に従う。Spring Boot が
 
 | ステータス | code | 起きる場面 | detail の例 |
 | --- | --- | --- | --- |
-| 400 | `BAD_REQUEST` | JSON が壊れている、cursor の形式が不正、multipart に必要な部品が無い、limit が範囲外 | 要求の形式が正しくありません |
+| 400 | `BAD_REQUEST` | JSON が壊れている、パスの id や cursor が UUID の形式でない、multipart に必要な部品が無い、limit が範囲外 | 要求の形式が正しくありません |
 | 401 | `UNAUTHENTICATED` | アクセストークンが無い・期限切れ・改ざん | ログインが必要です |
 | 401 | `INVALID_CREDENTIALS` | ログインのメールアドレスかパスワードが違う。どちらが違うかは言わない | メールアドレスまたはパスワードが違います |
 | 401 | `INVALID_REFRESH_TOKEN` | リフレッシュトークンが無い・期限切れ・ログアウト済み | ログインの有効期限が切れました |
@@ -60,7 +60,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 
 - 例外の変換は `@RestControllerAdvice` の 1 クラス（`ApiExceptionHandler`）に集める。`ResponseEntityExceptionHandler` を継承し、Spring が投げる例外（JSON の構文エラー、`@Valid` の失敗、multipart の超過など）も同じ形にする
 - 業務の例外はサービス層が投げる。`NotFoundException`（404）、`ForbiddenException`（403）、`ConflictException`（409、どの項目かを持つ）、`InvalidCredentialsException`（401）、`InvalidRefreshTokenException`（401）、`InvalidPasswordException`（401。退会の確認）、`UnsupportedImageTypeException`（415）、`FileTooLargeException`（413。アイコンの 2 MB 超のように、要求全体の上限より小さい上限はアプリで検査する）、`ValidationException`（422。サービス層で検証するテーブルをまたぐ規則）、`ImageStorageUnavailableException`（503）
-- いいねやコメントを付けようとした投稿が同時に消されて外部キー違反になったときは、404 `NOT_FOUND` に変換する（`ON CONFLICT DO NOTHING` は一意制約にしか効かない）。退会と同時に走った操作が、操作した本人（`user_id`、`follower_id`）への外部キー違反になったときは 401 `UNAUTHENTICATED` に変換する。フォローの相手（`followee_id`）への外部キー違反は、相手が同時に退会したということなので 404 `NOT_FOUND` にする。どの列への違反かは制約名（PostgreSQL の既定の名前 `<テーブル>_<列>_fkey`。例 `follows_followee_id_fkey`）で見分ける
+- いいねやコメントを付けようとした投稿が同時に消されて外部キー違反になったときは、404 `NOT_FOUND` に変換する（`ON CONFLICT DO NOTHING` は一意制約にしか効かない）。退会と同時に走った操作が、操作した本人（`user_id`、`follower_id`）への外部キー違反になったときは 401 `UNAUTHENTICATED` に変換する。フォローの相手（`followee_id`）への外部キー違反は、相手が同時に退会したということなので 404 `NOT_FOUND` にする。どの列への違反かは制約名（PostgreSQL の既定の名前 `<テーブル>_<列>_fkey`。例 `follows_followee_id_fkey`）で見分ける。知らない制約名の違反は変換せず 500 `INTERNAL_ERROR` のままにして、ERROR のログで気づけるようにする
 - Spring Security の 401 と 403 は、例外ハンドラに届く前に止まる。`AuthenticationEntryPoint` と `AccessDeniedHandler` を差し替えて、同じ Problem Details を書き出す
 - 存在しない URL（`NoResourceFoundException`）は 404 `NOT_FOUND` にする
 - 想定外の例外（`Exception`）は 500 `INTERNAL_ERROR`。`detail` は固定文言
@@ -69,7 +69,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 
 - JSON の入力は Bean Validation（`@Valid` と `@NotBlank` `@Size` `@Pattern` `@Email`）で検証し、`MethodArgumentNotValidException` を 422 に変換する。`errors` には項目ごとの文言を日本語で入れる
 - 文字数は Unicode のコードポイント数で数える。標準の `@Size` は UTF-16 の単位で数えるので、コードポイントで数える独自の検証（`@CodePointSize`）を作る
-- 文字列の入力に NUL（U+0000）があれば 422。PostgreSQL が保存できず、通すと 500 になるため。共通の検証で、JSON の文字列・multipart のテキスト・クエリの文字列のすべてに当てる（[api-conventions.md](api-conventions.md)）
+- 文字列の入力に NUL（U+0000）があれば 422。PostgreSQL が保存できず、通すと 500 になるため。共通の検証で、JSON の文字列・multipart のテキスト・クエリの文字列のすべてに当てる（[api-conventions.md](api-conventions.md)）。検査は、前後の空白の除去と CRLF の変換より前に、受け取ったままの文字列に当てる（`String.trim()` は NUL も取り除くので、後に当てると末尾の NUL が黙って消える）
 - JPEG の位置情報を取り除く処理で画像を読み取れなかったときは 422。文言は「画像を読み取れませんでした」、`errors` の `field` は画像の部品名（投稿は `images`、アイコンは `file`）。位置情報を消せないまま保存はしない（[image-storage-design.md](image-storage-design.md) の 3 章）
 - 画像の枚数・大きさ・形式は、アップロードの処理で検査する。大きさの超過は Spring が `MaxUploadSizeExceededException` を投げるので 413 に変換する
 - テーブルをまたぐ規則（本文も画像も無い投稿は不可、自分自身のフォロー不可）はサービス層で検証し、422 を投げる

@@ -93,14 +93,14 @@ sequenceDiagram
     participant DB
     B->>A: POST /api/posts（multipart: body, images）
     A->>A: 枚数・大きさ・形式を検査
-    A->>A: JPEG なら GPS の情報を取り除く
+    A->>A: JPEG なら GPS の情報を取り除く（読み取れなければ 422）
     loop 画像ごと（最大 4 枚を並行に）
         A->>S3: PutObject（posts/{uuid}.{ext}、Content-Type、Cache-Control）
     end
     A->>DB: posts と post_images を 1 トランザクションで書く
     alt DB の書き込みに失敗
         A->>S3: 上げた画像を DeleteObjects
-        A-->>B: 500
+        A-->>B: 500（本人への外部キー違反なら 401）
     else 成功
         A-->>B: 201 Post（画像の URL 付き）
     end
@@ -113,7 +113,7 @@ S3 への保存が途中で失敗したときも、それまでに上げた分�
 ### アイコン
 
 1. `PUT /api/users/me/avatar`（multipart: file）
-2. 大きさと形式を検査
+2. 大きさと形式を検査し、JPEG なら GPS の情報を取り除く（読み取れなければ 422。S3 には上げない）
 3. 新しいキーで S3 に上げる
 4. `users.avatar_key` と `updated_at` を更新
 5. 古いキーがあれば S3 から消す。失敗は WARN の出来事 `image.delete_failed` にとどめ、応答は成功（[logging-design.md](logging-design.md) の 3 章）

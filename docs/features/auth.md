@@ -166,7 +166,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 - 画面: 未ログインで `/` を開くと `/login?next=/` へ移り、ログイン後に `/` へ戻る
 - 画面: ログイン済みで `/login` を開くと `/` へ移る
 - 署名の方式を `none` にしたトークン（署名なし）は 401
-- 画面: 戻り先に `//evil.example`、`/\evil.example`、`https://evil.example` を渡してログインすると、外へは移らず `/` へ移る
+- 画面: 戻り先に `//evil.example`、`/\evil.example`、`https://evil.example`、タブを混ぜた `/%09/evil.example` を渡してログインすると、外へは移らず `/` へ移る
 
 ### 異常系
 
@@ -195,7 +195,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 ### その他
 
 - ログイン失敗の文言は、存在しないメールアドレスでも、パスワード違いでも同じ
-- ログの出力にパスワード・トークン・メールアドレスが含まれない（[logging-design.md](../logging-design.md) の 5 章）
+- パスワードとトークンは、DEBUG を含むどのログの行にも含まれない。メールアドレスは INFO 以上の行に含まれない（DEBUG の行に出るローカルの SQL の引数は見ない。[logging-design.md](../logging-design.md) の 5 章）
 - ログイン失敗の応答時間が、メールアドレスの有無で変わらない（ダミーの照合をしている）
 - 登録、ログインの成功と失敗、更新の失敗、ログアウトが、出来事 `auth.register` `auth.login.succeeded` `auth.login.failed` `auth.refresh.failed` `auth.logout` として残る。成功の行には利用者 id が付き、失敗の行にはメールアドレスの有無を示す値が無い（[logging-design.md](../logging-design.md) の 3 章）
 

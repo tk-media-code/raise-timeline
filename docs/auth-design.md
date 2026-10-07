@@ -179,7 +179,7 @@ flowchart TD
 | --- | --- |
 | 状態の置き場 | React の Context（`AuthProvider`）。`accessToken`、`user`、`status`（`loading` / `authenticated` / `anonymous`）を持つ |
 | 起動時 | `AuthProvider` が、API クライアントと同じ「更新を 1 本にまとめる関数」で `POST /api/auth/refresh` を 1 回呼ぶ。終わるまで `loading` |
-| 保護された画面 | `status` が `anonymous` なら `/login?next=<元のパス>` へ移す。ログイン後に `next` へ戻す。`next` は `/` で始まり、`//` と `/\` で始まらない値だけを受け付ける（外部サイトへ飛ばされないため）。それ以外は `/` へ |
+| 保護された画面 | `status` が `anonymous` なら `/login?next=<元のパス>` へ移す。ログイン後に `next` へ戻す。`next` は `/` で始まり、`//` と `/\` で始まらず、制御文字（タブ・改行）を含まない値だけを受け付ける（外部サイトへ飛ばされないため。ブラウザは URL のタブと改行を取り除くので、`/<タブ>/evil.example` は `//evil.example` になる）。それ以外は `/` へ |
 | ログイン済みで `/login` `/register` | `/` へ移す |
 | API クライアント | `fetch` を包む 1 つの関数。Bearer を付ける。401 `UNAUTHENTICATED` なら更新を 1 回試してやり直す。更新は同じタブでは 1 本だけ（進行中の Promise を共有する）、タブの間では Web Locks API で順番に並べる |
 | ログアウト | API を呼んでから状態を捨て、TanStack Query のキャッシュも消す（他人のデータを残さない） |
