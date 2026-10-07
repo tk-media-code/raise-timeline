@@ -53,7 +53,7 @@ flowchart LR
 | `AWS_REGION` | `ap-northeast-1` | 無し |
 | `S3_BUCKET` | 開発用バケット名 | 無し |
 | `S3_PUBLIC_BASE_URL` | `https://<バケット名>.s3.ap-northeast-1.amazonaws.com` | 無し |
-| `LOG_LEVEL_APP` | アプリのログの水準。`DEBUG` にすると SQL も出る | `INFO` |
+| `LOG_LEVEL_APP` | アプリのログの水準。`DEBUG` では SQL とその引数も出る。`INFO` にすると本番と同じ行だけになる | `DEBUG`（`docker-compose.yml` の既定値。アプリ自体の既定は `INFO`） |
 
 `docker-compose.yml` はこれらを `backend` サービスの環境変数として渡す。変数の一覧は README にも書く。
 
@@ -158,7 +158,7 @@ TanStack Query を足す理由は、タイムラインやコメントの「20 �
 | S3 の認証情報 | `.env` のアクセスキー（開発用バケット限定の IAM ユーザー） | EC2 のインスタンスロール（キーを置かない） |
 | トークンの有効期限 | `application.properties` の既定値（アクセス 1 時間、リフレッシュ 30 日） | 同じ |
 | 環境名（`APP_ENV`） | 無し。ログの `service.environment` は `local` になる | 環境変数で `production` |
-| ログの水準（`LOG_LEVEL_APP`） | `.env` で `DEBUG` にできる。既定は `INFO` | `INFO` |
+| ログの水準（`LOG_LEVEL_APP`） | `docker-compose.yml` の既定値 `DEBUG`（`.env` で `INFO` にできる） | 環境変数で `INFO`。アプリ自体の既定も `INFO` |
 
 Spring Boot 側では `application.properties` が `${JWT_SECRET}` のように環境変数を参照する。
 AWS SDK は認証情報を標準の探索順（環境変数 → インスタンスロール）で見つけるので、ローカルと本番でコードは変わらない。
