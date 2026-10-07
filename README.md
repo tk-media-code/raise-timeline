@@ -1,6 +1,23 @@
 # raise-timeline
 
-新しいアプリを作るための土台です。アプリの中身はこれから作ります。今あるのは、ダミーページと、DB の疎通を確かめるヘルスチェックだけです。
+X（旧 Twitter）を模した、学習用の SNS アプリです。プログラミングスクールの課題として作っていますが、本番環境に出して複数の人が実際に使うことを前提にしています。
+
+主な機能は、登録・ログイン・退会、プロフィール、投稿（画像は 4 枚まで）、タイムライン、いいね、コメント、フォロー、ユーザー検索です。要件と設計は [docs/README.md](docs/README.md) から読めます。
+
+## いまの段階
+
+要件定義・設計と、プロトタイプでの仕様確認が終わった段階です。動いているアプリは、まだダミーページとヘルスチェックだけです。
+
+機能は [docs/requirements.md](docs/requirements.md) の「6. 実装の順序」に沿って、1 Issue ずつ作ります。次は「1. ログの基盤を作る」です。
+
+## 仕様を知る
+
+| 知りたいこと | 入口 |
+| --- | --- |
+| 要件と設計を文書で読む | [docs/README.md](docs/README.md)。読む順番と用語の表があります |
+| 画面を触って確かめる | [prototype/index.html](prototype/index.html) をブラウザで開きます。ビルドも依存も要りません。見本アカウントと開き方は [prototype/README.md](prototype/README.md) にあります |
+
+プロトタイプは仕様を確かめるための使い捨てで、本番の実装ではありません。
 
 ## 技術スタック
 
@@ -107,13 +124,18 @@ task-management へ push するときは、その品質チェックが task-mana
 
 Issue を立て、ブランチを切り、Pull Request で変更を入れます。ルールの正本は `.claude/rules/development-flow.md` です。
 
+機能は 1 Issue ＝ 1 ブランチ ＝ 1 PR とし、[docs/requirements.md](docs/requirements.md) の「6. 実装の順序」に沿って 1 つずつ入れます。
+
 ## ディレクトリ構成
 
 | パス | 内容 |
 | --- | --- |
 | `backend/` | Spring Boot のアプリ |
 | `frontend/` | React のアプリ |
-| `scripts/` | 品質チェック |
-| `docs/` | 設計書 |
+| `scripts/` | 品質チェックと、開発の進め方を支える補助（最終レビューの印、計画の管理） |
+| `docs/` | 要件定義書と設計書。入口は `docs/README.md` |
 | `prototype/` | 仕様確認用のプロトタイプ（HTML / CSS / JavaScript のみ）。開き方は `prototype/README.md` |
+| `plans/` | 実装計画の作業メモ。Git では管理せず、紐付いたブランチが消えると一緒に消える |
+| `.claude/` | Claude Code のルール・スキル・hook・エージェント定義 |
+| `.github/` | CI（ビルドが通るかだけを確かめる）と、Issue・PR のテンプレート |
 | `docker-compose.yml` | ローカル開発用の構成（frontend / backend / db） |
