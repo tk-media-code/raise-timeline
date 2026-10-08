@@ -134,6 +134,7 @@ Spring Boot に nginx 以外から届く経路は無い（Compose のネット�
 | `logging.level.com.tkmedia.raisetimeline=${LOG_LEVEL_APP:INFO}` | アプリのログの水準。環境変数が無いときは INFO にし、本番で渡し忘れても DEBUG にならないようにする。ローカルは `docker-compose.yml` が既定で `DEBUG` を渡す。MyBatis の SQL も Mapper のパッケージの下で出る |
 | `server.forward-headers-strategy=native` | 本番で `client.ip` を利用者の IP にする（上の MDC の節） |
 | `logging.level.org.springframework.web.servlet.PageNotFound=ERROR` | 405 などの 4xx で Spring MVC が出す WARN を止める（2 章の規則 2） |
+| `spring.mvc.log-resolved-exception=false` | DevTools が開発時に true にして、4xx のたびに `ExceptionHandlerExceptionResolver` が「Resolved [...]」の WARN を出す。本番とテストでは出ないので、ローカルを揃えるために明示的に false にする（2 章の規則 2） |
 
 MDC のキー名は ECS の `http.request.id`。API の応答に入る `requestId`（ヘッダー `X-Request-Id` と Problem Details の `requestId`）は変えない。
 
