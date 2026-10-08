@@ -23,6 +23,8 @@ dependencies {
 	// ソースの変更を検知してアプリだけを再起動する開発用の道具。本番の JAR には入らない。
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	// @Valid の失敗（MethodArgumentNotValidException）を 422 の Problem Details に変えるため。
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	// SQL を自分で書いて Java に結びつける道具。Spring Boot の依存管理に含まれないので版を明記する。
 	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
 	// 起動時に db/migration の SQL を順に流し、DB の構造を版管理する。版は Spring Boot が決める。

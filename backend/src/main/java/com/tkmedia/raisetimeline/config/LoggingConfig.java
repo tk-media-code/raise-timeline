@@ -1,5 +1,6 @@
 package com.tkmedia.raisetimeline.config;
 
+import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.web.RequestLogFilter;
 import java.time.Clock;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -17,8 +18,8 @@ public class LoggingConfig {
 	 * 要求ログが 1 要求につき 2 行出てしまう。ここでは {@code new} して登録情報の中に持たせる。
 	 */
 	@Bean
-	public FilterRegistrationBean<RequestLogFilter> requestLogFilter(Clock clock) {
-		FilterRegistrationBean<RequestLogFilter> registration = new FilterRegistrationBean<>(new RequestLogFilter(clock));
+	public FilterRegistrationBean<RequestLogFilter> requestLogFilter(Clock clock, ProblemDetailWriter writer) {
+		FilterRegistrationBean<RequestLogFilter> registration = new FilterRegistrationBean<>(new RequestLogFilter(clock, writer));
 		registration.setOrder(RequestLogFilter.ORDER);
 		registration.addUrlPatterns("/*");
 		return registration;

@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.tkmedia.raisetimeline.config.LoggingConfig;
 import com.tkmedia.raisetimeline.controller.HealthCheckController;
+import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.logging.LogLines;
 import com.tkmedia.raisetimeline.mapper.HealthCheckMapper;
 import java.time.Clock;
@@ -36,7 +37,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @WebMvcTest(controllers = { RequestLogFilterTest.TestController.class, HealthCheckController.class })
-@Import({ RequestLogFilterTest.TestController.class, LoggingConfig.class })
+@Import({ RequestLogFilterTest.TestController.class, LoggingConfig.class, ProblemDetailWriter.class })
 @ExtendWith(OutputCaptureExtension.class)
 class RequestLogFilterTest {
 
