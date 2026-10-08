@@ -12,7 +12,9 @@ const PASSWORD_MESSAGE = '8〜72 文字の半角英数字と記号で入力し�
 const REQUIRED_MESSAGE = '入力してください'
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/
-// 厳密な RFC の検証はしない。空白と @ の数だけ見て、実在の確認はしない（サーバーも同じ緩さ）。
+// 厳密な RFC の検証はしない。空白を含まない 2 つの部分を @ でつないだものだけを通す。
+// サーバーの RegisterRequest.email も同じ正規表現（(?U) で \s を Unicode の空白にして JS とそろえる）と、
+// コードポイントで数える 254 文字以内で検証する。同じ例を validation.test.ts と AuthControllerTest の両方に置いてあるので、片方だけ変えない。
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/
 const EMAIL_MAX_LENGTH = 254
 // 空白を含まない ASCII の可視文字（! から ~）だけ。

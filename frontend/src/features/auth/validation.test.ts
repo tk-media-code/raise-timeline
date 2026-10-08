@@ -49,15 +49,21 @@ describe('validateRegister', () => {
   })
 
   describe('email', () => {
+    // 同じ例を backend の AuthControllerTest（registerValidationAccepts / Rejects）にも置いている。片方だけ変えない。
     it.each([
       ['@ が無い', 'alice.example.com', EMAIL_MESSAGE],
       ['空', '', EMAIL_MESSAGE],
       ['@ の前が空', '@example.com', EMAIL_MESSAGE],
       ['@ の後が空', 'alice@', EMAIL_MESSAGE],
-      ['空白を含む', 'al ice@example.com', EMAIL_MESSAGE],
+      ['ローカル部に空白', 'a b@example.com', EMAIL_MESSAGE],
+      ['ドメインに空白', 'alice@exa mple.com', EMAIL_MESSAGE],
       ['@ が 2 つ', 'a@b@example.com', EMAIL_MESSAGE],
+      ['ローカル部に連続するドット', 'a..b@example.com', undefined],
+      ['ローカル部が 65 文字', 'a'.repeat(65) + '@example.com', undefined],
       ['254 文字', 'a'.repeat(242) + '@example.com', undefined],
       ['255 文字', 'a'.repeat(243) + '@example.com', EMAIL_MESSAGE],
+      ['絵文字を含む 254 コードポイント', '😀😀' + 'a'.repeat(240) + '@example.com', undefined],
+      ['絵文字を含む 255 コードポイント', '😀😀' + 'a'.repeat(241) + '@example.com', EMAIL_MESSAGE],
     ])('%s', (_name, email, expected) => {
       expect(validateRegister({ ...valid, email }).email).toBe(expected)
     })

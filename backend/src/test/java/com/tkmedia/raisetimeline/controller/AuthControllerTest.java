@@ -136,6 +136,10 @@ class AuthControllerTest {
 				Arguments.of("displayName 絵文字 1 つは 1 文字", "taro_1", "😀", "a@example.com", "password1"),
 				Arguments.of("displayName 絵文字 50 個は 50 文字", "taro_1", "😀".repeat(50), "a@example.com", "password1"),
 				Arguments.of("email 254 文字", "taro_1", "太郎", longEmail(254), "password1"),
+				Arguments.of("email 254 コードポイント（絵文字を含み UTF-16 では 255 以上）", "taro_1", "太郎",
+						"😀".repeat(2) + longEmail(252), "password1"),
+				Arguments.of("email のローカル部が連続するドット", "taro_1", "太郎", "a..b@example.com", "password1"),
+				Arguments.of("email のローカル部が 65 文字", "taro_1", "太郎", "a".repeat(65) + "@example.com", "password1"),
 				Arguments.of("password 8 文字", "taro_1", "太郎", "a@example.com", "a".repeat(8)),
 				Arguments.of("password 72 文字", "taro_1", "太郎", "a@example.com", "a".repeat(72)));
 	}
@@ -165,7 +169,13 @@ class AuthControllerTest {
 				Arguments.of("displayName 絵文字 51 個は 51 文字", "displayName", "taro_1", "😀".repeat(51), "a@example.com",
 						"password1"),
 				Arguments.of("email に @ が無い", "email", "taro_1", "太郎", "example.com", "password1"),
+				Arguments.of("email の @ の後が無い", "email", "taro_1", "太郎", "alice@", "password1"),
+				Arguments.of("email の @ の前が無い", "email", "taro_1", "太郎", "@example.com", "password1"),
+				Arguments.of("email のローカル部に空白", "email", "taro_1", "太郎", "a b@example.com", "password1"),
+				Arguments.of("email のドメインに空白", "email", "taro_1", "太郎", "alice@exa mple.com", "password1"),
 				Arguments.of("email 255 文字", "email", "taro_1", "太郎", longEmail(255), "password1"),
+				Arguments.of("email 255 コードポイント（絵文字を含む）", "email", "taro_1", "太郎",
+						"😀".repeat(2) + longEmail(253), "password1"),
 				Arguments.of("password 7 文字", "password", "taro_1", "太郎", "a@example.com", "a".repeat(7)),
 				Arguments.of("password 73 文字", "password", "taro_1", "太郎", "a@example.com", "a".repeat(73)));
 	}
@@ -351,19 +361,13 @@ class AuthControllerTest {
 				{"email":"%s","password":"%s"}""".formatted(email, password);
 	}
 
-	/** 全体の長さが length 文字で、ローカル部 64 文字・ドメインのラベル 63 文字以下の、形式として正しいメールアドレス。 */
+	/**
+	 * 全体の長さがちょうど length コードポイントの、画面と同じ規則（空白と @ を含まない 2 部分を @ でつなぐ）で形式として正しいメールアドレス。
+	 * ローカル部を伸ばして長さを作る。画面の規則はローカル部の長さを見ないので、64 文字を超えても通る。
+	 */
 	private static String longEmail(int length) {
-		String local = "a".repeat(64);
-		// 残りは "@" + ドメイン。ドメインは "b"×63 のラベルをつなぎ、最後を ".com" にする。
-		int domainLength = length - local.length() - 1;
-		StringBuilder domain = new StringBuilder();
-		int remaining = domainLength - ".com".length();
-		while (remaining > 64) {
-			domain.append("b".repeat(63)).append('.');
-			remaining -= 64;
-		}
-		domain.append("b".repeat(remaining));
-		return local + "@" + domain + ".com";
+		String domain = "@example.com";
+		return "a".repeat(length - domain.length()) + domain;
 	}
 
 }
