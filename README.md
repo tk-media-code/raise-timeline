@@ -6,9 +6,9 @@ X（旧 Twitter）を模した、学習用の SNS アプリです。プログラ
 
 ## いまの段階
 
-要件定義・設計と、プロトタイプでの仕様確認が終わった段階です。動いているアプリは、まだダミーページとヘルスチェックだけです。
+要件定義・設計と、プロトタイプでの仕様確認が終わり、認証の基盤を作った段階です。動いているアプリは、登録・ログイン・ログアウトができ、ログインした人にはホームのダミーページが出ます。投稿やタイムラインなどは、まだありません。
 
-機能は [docs/requirements.md](docs/requirements.md) の「6. 実装の順序」に沿って、1 Issue ずつ作ります。次は「2. 認証の基盤を作る」です。
+機能は [docs/requirements.md](docs/requirements.md) の「6. 実装の順序」に沿って、1 Issue ずつ作ります。次は「3. 投稿とタイムラインを作る」です。
 
 ## 仕様を知る
 
@@ -23,8 +23,8 @@ X（旧 Twitter）を模した、学習用の SNS アプリです。プログラ
 
 | 区分 | 使うもの |
 | --- | --- |
-| フロントエンド | React 19 / TypeScript 6 / Vite 8 / Tailwind CSS 4 / React Router 8 |
-| バックエンド | Java 25 / Spring Boot 4 / MyBatis / Flyway |
+| フロントエンド | React 19 / TypeScript 6 / Vite 8 / Tailwind CSS 4 / React Router 8 / TanStack Query |
+| バックエンド | Java 25 / Spring Boot 4 / Spring Security / MyBatis / Flyway |
 | データベース | PostgreSQL 18 |
 | 開発環境 | Docker Compose（frontend / backend / db の3サービス） |
 | 静的解析とテスト | フロントエンド: oxlint・Vitest／バックエンド: Checkstyle・SpotBugs・JUnit |
@@ -47,7 +47,7 @@ docker compose up -d --build
 
 | URL | 内容 |
 | --- | --- |
-| http://localhost:5173 | ダミーページ（frontend） |
+| http://localhost:5173 | 画面（frontend）。未ログインならログイン画面に移る。`/api` は backend へ中継される |
 | http://localhost:8080/api/health | ヘルスチェック（backend）。DB に届けば 200、届かなければ 503 を返します |
 
 止めるときは `docker compose down` です。データごと消すときは `docker compose down -v` です。`-v` は DB のデータだけでなく、依存とビルド結果のボリュームも消すので、次の起動は依存のダウンロードからやり直しで数分かかります。
@@ -61,9 +61,24 @@ docker compose up -d --build
 | `POSTGRES_DB` | `raise_timeline` | データベース名 |
 | `POSTGRES_USER` | `raise_timeline` | データベースのユーザー名 |
 | `POSTGRES_PASSWORD` | `local-dev-only` | データベースのパスワード |
+| `JWT_SECRET` | `bG9jYWwtZGV2LW9ubHktand0LXNlY3JldC0zMi1ieXRlcyE=` | アクセストークンの署名鍵。32 バイト以上のデータを Base64 にした文字列でなければならず、満たさないと backend は起動しない。ローカル専用の値で、本番は別の値を渡す |
+| `AUTH_COOKIE_SECURE` | `false` | ログイン用 Cookie に `Secure` を付けるか。ローカルは HTTP なので `false`（`docker-compose.yml` に固定で、`.env` では変えられない）。アプリ本体の既定は `true` |
+| `DB_URL_TEST` | `jdbc:postgresql://db:5432/raise_timeline_test` | テストが繋ぐ DB。開発用の DB にテストのデータが混ざらないよう別にしてある（`docker-compose.yml` に固定で、`.env` では変えられない。`POSTGRES_DB` を変えると、それに `_test` が付く） |
 | `LOG_LEVEL_APP` | `DEBUG` | アプリのログの水準。`DEBUG` では SQL とその引数も出る。`INFO` にすると本番と同じ行だけになる。変えたら `docker compose up -d` で backend を作り直す |
 
 DB の3つは初回起動時だけ読まれます。変えたら `docker compose down -v` でデータごと作り直してください。依存のボリュームも消えるので、次の起動は数分かかります。
+
+### テスト用の DB
+
+結合テストは、開発用とは別の DB `raise_timeline_test` に繋ぎます。DB の初回起動時（データが空のとき）に、`db/init/` のスクリプトが作ります。
+
+すでに起動したことのある環境では、このスクリプトは走りません。次のコマンドを 1 回だけ手で実行して作ります。
+
+```bash
+docker compose exec db psql -U raise_timeline -d raise_timeline -c 'CREATE DATABASE raise_timeline_test OWNER raise_timeline'
+```
+
+`docker compose down -v` で作り直す必要はありません。データだけでなく依存のボリュームも消え、次の起動に数分かかるためです。
 
 ## よく使うコマンド
 
