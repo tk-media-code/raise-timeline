@@ -84,7 +84,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 
 ログの水準、残す出来事、項目名、requestId の仕組みは [logging-design.md](logging-design.md) にある。ここでは例外ハンドラに関わる点だけを書く。
 
-- 想定外の例外で 500 を返すとき、`ApiExceptionHandler` が ERROR を 1 回だけ書く（出来事 `http.request.failed`、例外付き）。4xx は別の行にしない。要求ログの status と code で足りる
+- 想定外の例外で 500 を返すとき、`ApiExceptionHandler` が ERROR を 1 回だけ書く（出来事 `http.request.failed`、例外付き）。4xx は別の行にしない。要求ログの status と code で足りる。フィルタから漏れた例外は `RequestLogFilter` が捕まえ、同じ行を `InternalErrorLog` で 1 回だけ書く
 - 例外ハンドラと Spring Security のハンドラは、Problem Details を書くときに `code` を要求の属性（request attribute）に置き、要求ログがそれを `event.code` として読む
 - 例外の文言・SQL・スタックトレースはログにだけ残す。パスワードとトークンはログにも出さない（logging-design.md の 5 章）
 

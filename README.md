@@ -8,7 +8,7 @@ X（旧 Twitter）を模した、学習用の SNS アプリです。プログラ
 
 要件定義・設計と、プロトタイプでの仕様確認が終わった段階です。動いているアプリは、まだダミーページとヘルスチェックだけです。
 
-機能は [docs/requirements.md](docs/requirements.md) の「6. 実装の順序」に沿って、1 Issue ずつ作ります。次は「1. ログの基盤を作る」です。
+機能は [docs/requirements.md](docs/requirements.md) の「6. 実装の順序」に沿って、1 Issue ずつ作ります。次は「2. 認証の基盤を作る」です。
 
 ## 仕様を知る
 
@@ -33,6 +33,7 @@ X（旧 Twitter）を模した、学習用の SNS アプリです。プログラ
 
 - Docker と Docker Compose v2（`docker compose` コマンド）
 - 品質チェックを手で走らせるときだけ、ホストの Node.js（[品質チェック](#品質チェック)）
+- ログを読むときだけ、ホストの `jq`（[ログを読む](#ログを読む)）
 
 アプリを動かすだけなら、ホストに Java も Node.js も要りません。
 
@@ -47,7 +48,7 @@ docker compose up -d --build
 | URL | 内容 |
 | --- | --- |
 | http://localhost:5173 | ダミーページ（frontend） |
-| http://localhost:8080 | ヘルスチェック（backend）。DB に届けば 200、届かなければ 503 を返します |
+| http://localhost:8080/api/health | ヘルスチェック（backend）。DB に届けば 200、届かなければ 503 を返します |
 
 止めるときは `docker compose down` です。データごと消すときは `docker compose down -v` です。`-v` は DB のデータだけでなく、依存とビルド結果のボリュームも消すので、次の起動は依存のダウンロードからやり直しで数分かかります。
 
@@ -60,6 +61,7 @@ docker compose up -d --build
 | `POSTGRES_DB` | `raise_timeline` | データベース名 |
 | `POSTGRES_USER` | `raise_timeline` | データベースのユーザー名 |
 | `POSTGRES_PASSWORD` | `local-dev-only` | データベースのパスワード |
+| `LOG_LEVEL_APP` | `DEBUG` | アプリのログの水準。`DEBUG` では SQL とその引数も出る。`INFO` にすると本番と同じ行だけになる。変えたら `docker compose up -d` で backend を作り直す |
 
 DB の3つは初回起動時だけ読まれます。変えたら `docker compose down -v` でデータごと作り直してください。依存のボリュームも消えるので、次の起動は数分かかります。
 
@@ -77,6 +79,23 @@ docker compose exec frontend npm run typecheck
 # DB に入る
 docker compose exec db psql -U raise_timeline -d raise_timeline
 ```
+
+## ログを読む
+
+backend のログは 1 行 1 JSON（ECS 形式）です。項目の意味と決まりは [docs/logging-design.md](docs/logging-design.md) にあります。人が目で読むときは、`jq` で「時刻 レベル メッセージ requestId」の形に整形します。Gradle の出力など JSON でない行は読み飛ばします。
+
+```bash
+docker compose logs --no-log-prefix backend --since 10m | jq -R -r 'fromjson? // empty | "\(.["@timestamp"]) \(.log.level) \(.message) \(.http.request.id // "")"'
+```
+
+| したいこと | やり方 |
+| --- | --- |
+| 1 つの要求だけ読む | 上のコマンドの `fromjson? // empty` の後ろに `\| select(.http.request.id == "<requestId>")` を足す |
+| ERROR だけ読む | 同じく `\| select(.log.level == "ERROR")` を足す。スタックトレースは `.error.stack_trace` に入っている |
+| DEBUG を除いて読む | 同じく `\| select(.log.level != "DEBUG")` を足す。本番で見えるのと同じ行だけになる |
+| SQL を出さない | ローカルの既定は DEBUG で、SQL とその引数も出る。止めたいときは `.env` に `LOG_LEVEL_APP=INFO` を書き、`docker compose up -d` で backend を作り直す |
+
+エラー応答の `requestId` と同じ値が、ログの `http.request.id` に入っています。応答で受け取った `requestId` を `<requestId>` に入れれば、その要求の行だけを読めます。
 
 ## frontend の依存を足す・変える
 

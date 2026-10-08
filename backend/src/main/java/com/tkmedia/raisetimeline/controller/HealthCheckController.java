@@ -1,5 +1,7 @@
 package com.tkmedia.raisetimeline.controller;
 
+import com.tkmedia.raisetimeline.logging.LogEvents;
+import com.tkmedia.raisetimeline.logging.LogFields;
 import com.tkmedia.raisetimeline.mapper.HealthCheckMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class HealthCheckController {
 
+	/** nginx は /api/ だけを backend へ転送するので、ヘルスチェックもその下に置く。 */
+	public static final String PATH = "/api/health";
+
 	private static final Logger log = LoggerFactory.getLogger(HealthCheckController.class);
 
 	private final HealthCheckMapper healthCheckMapper;
@@ -20,7 +25,7 @@ public class HealthCheckController {
 		this.healthCheckMapper = healthCheckMapper;
 	}
 
-	@GetMapping("/")
+	@GetMapping(PATH)
 	public ResponseEntity<HealthCheckResponse> check() {
 		try {
 			healthCheckMapper.ping();
@@ -30,7 +35,10 @@ public class HealthCheckController {
 			// Mapper の定義の誤りによる BindingException は変換されず 500 になる。
 			// 設定の誤りは DB の停止と区別したいので、それでよい。
 			// 例外の文言には接続先などが入り得るので、ログにだけ残し、レスポンスには載せない。
-			log.warn("DB への問い合わせに失敗した", e);
+			log.atWarn()
+					.addKeyValue(LogFields.EVENT_ACTION, LogEvents.HEALTH_DB_UNREACHABLE)
+					.setCause(e)
+					.log("DB への問い合わせに失敗した");
 			return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
 					.body(new HealthCheckResponse("DOWN", "DOWN"));
 		}

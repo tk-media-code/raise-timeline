@@ -33,6 +33,10 @@ services:
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-raise_timeline}
       DB_USERNAME: ${POSTGRES_USER:-raise_timeline}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only}
+      # ローカル専用の既定値。LOG_LEVEL_APP の既定は DEBUG で、SQL とその引数も出る。
+      # .env に LOG_LEVEL_APP=INFO を書けば、本番と同じ行だけになる。本番は INFO と production を渡す。
+      LOG_LEVEL_APP: ${LOG_LEVEL_APP:-DEBUG}
+      APP_ENV: ${APP_ENV:-local}
     depends_on:
       db:
         # db が接続を受け付けるようになってから起動する。先に起動すると、接続に失敗して落ちる。

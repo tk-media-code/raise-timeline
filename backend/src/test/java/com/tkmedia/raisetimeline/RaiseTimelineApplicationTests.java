@@ -34,9 +34,9 @@ class RaiseTimelineApplicationTests {
 	private Flyway flyway;
 
 	@Test
-	@DisplayName("アプリ全体が起動し、本物の DB に届いた状態で GET / が 200 を返す")
-	void rootReturnsOkWithRealDatabase() throws Exception {
-		mockMvc.perform(get("/"))
+	@DisplayName("アプリ全体が起動し、本物の DB に届いた状態で GET /api/health が 200 を返す")
+	void healthReturnsOkWithRealDatabase() throws Exception {
+		mockMvc.perform(get("/api/health"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("UP"))
 				.andExpect(jsonPath("$.database").value("UP"));
