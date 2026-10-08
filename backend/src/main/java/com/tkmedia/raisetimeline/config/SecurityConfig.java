@@ -26,11 +26,14 @@ import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.firewall.RequestRejectedHandler;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 /**
  * どの URL を誰に開くかを決める。既定は拒否で、開けるものだけを書く。
@@ -66,6 +69,7 @@ public class SecurityConfig {
 				// ここで同じ 401 の Problem Details になる。
 				.oauth2ResourceServer(o -> o
 						.authenticationEntryPoint(entryPoint)
+						.bearerTokenResolver(bearerTokenResolver())
 						.jwt(Customizer.withDefaults()))
 				// 認証が済んだ直後に user.id を MDC に置く。Bean にせず、ここで new する（クラスの説明を参照）。
 				.addFilterAfter(new UserIdLogFilter(), BearerTokenAuthenticationFilter.class)
@@ -78,6 +82,20 @@ public class SecurityConfig {
 						// 本番の nginx は /api/ だけを Spring に転送する。それ以外が届いたら、開けてはいけない。
 						.anyRequest().denyAll());
 		return http.build();
+	}
+
+	/**
+	 * {@code /api/auth/} 配下では Authorization ヘッダーを読まない。それ以外は既定の読み方に委ねる。
+	 *
+	 * <p>画面の側に期限切れのアクセストークンが残っていて、それが Bearer として付いたまま更新やログアウトが送られると、
+	 * 認証フィルタが先にそのトークンを検証して 401 にしてしまい、本来は Cookie だけで決まるはずの更新が失敗し、
+	 * 「ログアウトは常に 204」（docs/features/auth.md 3 章）も守れなくなる。この配下は Cookie か本文で認証する
+	 * 口なので、Bearer は最初から無いものとして扱う。画面側も Bearer を付けないが、サーバー側でも守る。
+	 */
+	private static BearerTokenResolver bearerTokenResolver() {
+		DefaultBearerTokenResolver delegate = new DefaultBearerTokenResolver();
+		PathPatternRequestMatcher authApi = PathPatternRequestMatcher.withDefaults().matcher("/api/auth/**");
+		return request -> authApi.matches(request) ? null : delegate.resolve(request);
 	}
 
 	/**
