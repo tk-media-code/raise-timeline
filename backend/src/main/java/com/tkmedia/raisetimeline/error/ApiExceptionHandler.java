@@ -58,6 +58,8 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 			HttpHeaders headers, HttpStatusCode status, WebRequest request) {
 		List<FieldError> errors = ex.getBindingResult().getFieldErrors().stream()
 				.map(e -> new FieldError(e.getField(), e.isBindingFailure() ? BINDING_FAILURE_MESSAGE : e.getDefaultMessage()))
+				// 1 つの項目に複数の注釈が当たって同じ文言が重なるとき（空文字が @NotBlank と @Pattern の両方に当たる等）、1 件にする。
+				.distinct()
 				.toList();
 		return respond(ex, ErrorCode.VALIDATION_ERROR, errors, headers, request);
 	}
