@@ -95,16 +95,50 @@ describe('refreshSession', () => {
     expect(result?.accessToken).toBe('new')
   })
 
-  it('Web Locks があれば auth-refresh の鍵の中で更新する', async () => {
-    fetchMock.mockImplementation(async () => jsonResponse(200, { accessToken: 'new', user: me }))
-    const request = vi.fn(async (_name: string, callback: () => Promise<unknown>) => callback())
+  it('Web Locks があれば auth-refresh の鍵を持っている間に更新する', async () => {
+    // 鍵を取れた瞬間と、鍵を持っている間かどうかをテストが握る。
+    // 鍵の外で更新する実装だと、fetch が出た時点で held が false になる。
+    const lock: { name: string | null; grant: (() => Promise<unknown>) | null; held: boolean } = {
+      name: null,
+      grant: null,
+      held: false,
+    }
+    let heldAtFetch: boolean | null = null
+    fetchMock.mockImplementation(async () => {
+      heldAtFetch = lock.held
+      return jsonResponse(200, { accessToken: 'new', user: me })
+    })
+    const request = vi.fn((name: string, callback: () => Promise<unknown>) => {
+      lock.name = name
+      return new Promise((resolve, reject) => {
+        // callback をすぐには呼ばず保持する。テストが「鍵が取れた」と決めた時に呼ぶ。
+        lock.grant = async () => {
+          lock.held = true
+          try {
+            resolve(await callback())
+          } catch (error) {
+            reject(error)
+          } finally {
+            lock.held = false
+          }
+        }
+      })
+    })
     vi.stubGlobal('navigator', { ...navigator, locks: { request } })
     const { refreshSession } = await load()
 
-    await refreshSession()
+    const pending = refreshSession()
+    await Promise.resolve()
 
-    expect(request).toHaveBeenCalledTimes(1)
-    expect(request.mock.calls[0][0]).toBe('auth-refresh')
+    // 鍵が取れるまでは、更新の要求を出さない。
+    expect(lock.name).toBe('auth-refresh')
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    await lock.grant?.()
+    const result = await pending
+
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(heldAtFetch).toBe(true)
+    expect(result?.accessToken).toBe('new')
   })
 })
