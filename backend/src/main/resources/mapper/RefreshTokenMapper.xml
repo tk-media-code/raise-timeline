@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tkmedia.raisetimeline.mapper.RefreshTokenMapper">
+
+	<insert id="insert">
+		INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+		VALUES (#{userId}, #{tokenHash}, #{expiresAt})
+	</insert>
+
+	<!--
+		期限内の行だけを消して、持ち主の id を返す。消した行が無ければ（知らない・期限切れ・使用済み）null。
+		SELECT と DELETE に分けず 1 文にするのは、同じトークンの同時使用でどちらか 1 件だけが成功するようにするため。
+		DELETE ... RETURNING は結果を返すので <select> で書く。flushCache="true" にするのは、
+		同じセッションで同じ引数を繰り返したとき、ローカルキャッシュが前回の結果を返して DELETE が実行されなくなるのを防ぐため。
+	-->
+	<select id="consume" resultType="java.util.UUID" flushCache="true" useCache="false">
+		DELETE FROM refresh_tokens
+		WHERE token_hash = #{tokenHash} AND expires_at &gt; #{now}
+		RETURNING user_id
+	</select>
+
+	<!-- ログアウト用。期限に関わらず消す。持ち主の id は、ログアウトの出来事に利用者 id を載せるために返す。 -->
+	<select id="deleteByTokenHash" resultType="java.util.UUID" flushCache="true" useCache="false">
+		DELETE FROM refresh_tokens WHERE token_hash = #{tokenHash} RETURNING user_id
+	</select>
+
+	<delete id="deleteExpiredByUserId">
+		DELETE FROM refresh_tokens WHERE user_id = #{userId} AND expires_at &lt;= #{now}
+	</delete>
+
+</mapper>

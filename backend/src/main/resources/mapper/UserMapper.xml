@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tkmedia.raisetimeline.mapper.UserMapper">
+
+	<sql id="columns">
+		id, username, display_name, email, password_hash, bio, avatar_key, created_at, updated_at
+	</sql>
+
+	<!--
+		id は DB の uuidv7() に任せる。record には useGeneratedKeys で id を書き戻せないので、
+		INSERT ... RETURNING id を <select> で実行し、採番された id を戻り値で受ける。
+		flushCache="true" useCache="false" にするのは、<select> は結果をローカルキャッシュに入れるため。
+		同じ引数の insert を同じセッションで繰り返すと、2 回目が実行されず前回の id が返ってしまう。
+	-->
+	<select id="insert" resultType="java.util.UUID" flushCache="true" useCache="false">
+		INSERT INTO users (username, display_name, email, password_hash, bio, avatar_key, created_at, updated_at)
+		VALUES (#{username}, #{displayName}, #{email}, #{passwordHash}, #{bio},
+		        #{avatarKey,jdbcType=VARCHAR}, #{createdAt}, #{updatedAt})
+		RETURNING id
+	</select>
+
+	<select id="findById" resultType="com.tkmedia.raisetimeline.domain.User">
+		SELECT <include refid="columns"/> FROM users WHERE id = #{id}
+	</select>
+
+	<select id="findByEmail" resultType="com.tkmedia.raisetimeline.domain.User">
+		SELECT <include refid="columns"/> FROM users WHERE lower(email) = lower(#{email})
+	</select>
+
+	<select id="findByUsername" resultType="com.tkmedia.raisetimeline.domain.User">
+		SELECT <include refid="columns"/> FROM users WHERE lower(username) = lower(#{username})
+	</select>
+
+	<select id="existsByUsername" resultType="boolean">
+		SELECT EXISTS (SELECT 1 FROM users WHERE lower(username) = lower(#{username}))
+	</select>
+
+	<select id="existsByEmail" resultType="boolean">
+		SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower(#{email}))
+	</select>
+
+</mapper>
