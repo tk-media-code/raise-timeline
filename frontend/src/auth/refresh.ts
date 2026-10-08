@@ -7,6 +7,23 @@ import { setAccessToken } from './tokenStore'
 // 利用者がログアウトされてしまう（docs/auth-design.md 3 章）。
 let inFlight: Promise<AuthResponse | null> | null = null
 
+// 更新が 401 で終わったこと（セッションが死んだこと）を知りたい購読者。
+// 画面の途中で API クライアントが更新に失敗したとき、React の状態を持つ AuthProvider に伝えるために使う。
+// API クライアントは React の外の関数なので、状態を直接は触れない。
+const expiredListeners = new Set<() => void>()
+
+export function onSessionExpired(listener: () => void): () => void {
+  expiredListeners.add(listener)
+  return () => {
+    expiredListeners.delete(listener)
+  }
+}
+
+function notifySessionExpired(): void {
+  // 呼び出し中に購読が増減しても巻き込まれないよう、複製して回す。
+  for (const listener of [...expiredListeners]) listener()
+}
+
 async function doRefresh(): Promise<AuthResponse | null> {
   try {
     const session = await refresh()
@@ -17,6 +34,7 @@ async function doRefresh(): Promise<AuthResponse | null> {
     // それ以外（500、通信失敗）はセッションが死んだとは言えないので、トークンは残して投げる。
     if (error instanceof ApiError && error.status === 401) {
       setAccessToken(null)
+      notifySessionExpired()
       return null
     }
     throw error

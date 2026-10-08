@@ -95,6 +95,34 @@ describe('refreshSession', () => {
     expect(result?.accessToken).toBe('new')
   })
 
+  it('401 で購読者が呼ばれ、購読を解くと呼ばれない', async () => {
+    fetchMock.mockImplementation(async () => unauthorized())
+    const { refreshSession, onSessionExpired } = await load()
+    const kept = vi.fn()
+    const removed = vi.fn()
+    onSessionExpired(kept)
+    const unsubscribe = onSessionExpired(removed)
+    unsubscribe()
+
+    await refreshSession()
+
+    expect(kept).toHaveBeenCalledTimes(1)
+    expect(removed).not.toHaveBeenCalled()
+  })
+
+  it('401 以外の失敗では購読者を呼ばない', async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(500, { status: 500, code: 'INTERNAL_ERROR', detail: 'x', errors: [], requestId: 'r' }, 'application/problem+json'),
+    )
+    const { refreshSession, onSessionExpired } = await load()
+    const listener = vi.fn()
+    onSessionExpired(listener)
+
+    await expect(refreshSession()).rejects.toMatchObject({ status: 500 })
+
+    expect(listener).not.toHaveBeenCalled()
+  })
+
   it('Web Locks があれば auth-refresh の鍵を持っている間に更新する', async () => {
     // 鍵を取れた瞬間と、鍵を持っている間かどうかをテストが握る。
     // 鍵の外で更新する実装だと、fetch が出た時点で held が false になる。
