@@ -37,6 +37,12 @@ services:
       # .env に LOG_LEVEL_APP=INFO を書けば、本番と同じ行だけになる。本番は INFO と production を渡す。
       LOG_LEVEL_APP: ${LOG_LEVEL_APP:-DEBUG}
       APP_ENV: ${APP_ENV:-local}
+      # JWT の署名鍵。ローカル専用の既定値で、本番は別の値を渡す（このファイルの値を本番で使わない）。
+      JWT_SECRET: ${JWT_SECRET:-bG9jYWwtZGV2LW9ubHktand0LXNlY3JldC0zMi1ieXRlcyE=}
+      # ローカルは http://localhost で HTTPS ではないので、Secure 付きの Cookie がブラウザに捨てられる。ローカル専用で false にする。
+      AUTH_COOKIE_SECURE: "false"
+      # テスト（RaiseTimelineApplicationTests）が繋ぐ DB。開発用の DB にテストのデータを混ぜないよう、名前に _test を付けた別の DB にする。
+      DB_URL_TEST: jdbc:postgresql://db:5432/${POSTGRES_DB:-raise_timeline}_test
     depends_on:
       db:
         # db が接続を受け付けるようになってから起動する。先に起動すると、接続に失敗して落ちる。
@@ -61,6 +67,10 @@ services:
       # postgres:18 からデータの置き場が変わった。マウント先は /var/lib/postgresql
       # （/var/lib/postgresql/data ではない）。
       - postgres-data:/var/lib/postgresql
+      # 初回起動時だけ、このディレクトリのスクリプトが走り、テスト用の DB を作る。
+      # すでにデータがある環境では走らないので、手で作る:
+      #   docker compose exec db psql -U raise_timeline -d raise_timeline -c 'CREATE DATABASE raise_timeline_test OWNER raise_timeline'
+      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # $$ は Compose に展開させず、コンテナの中のシェルに $ として渡す書き方。
       # コンテナ自身が持つ上の環境変数を読むので、既定値を二重に書かずに済む。

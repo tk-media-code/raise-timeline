@@ -2,11 +2,13 @@ package com.tkmedia.raisetimeline.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tkmedia.raisetimeline.config.LoggingConfig;
+import com.tkmedia.raisetimeline.config.SecurityConfig;
 import com.tkmedia.raisetimeline.controller.HealthCheckController;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.logging.LogLines;
@@ -37,7 +39,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @WebMvcTest(controllers = { RequestLogFilterTest.TestController.class, HealthCheckController.class })
-@Import({ RequestLogFilterTest.TestController.class, LoggingConfig.class, ProblemDetailWriter.class })
+@Import({ RequestLogFilterTest.TestController.class, LoggingConfig.class, ProblemDetailWriter.class,
+		SecurityConfig.class })
 @ExtendWith(OutputCaptureExtension.class)
 class RequestLogFilterTest {
 
@@ -62,7 +65,7 @@ class RequestLogFilterTest {
 	@Test
 	@DisplayName("要求ログの行に、メソッド・パス・クエリ・status・所要時間・requestId・client.ip が揃う")
 	void requestLineHasAllFields(CapturedOutput output) throws Exception {
-		mockMvc.perform(get("/api/t/ok?limit=20").header("X-Request-Id", "abc-123"))
+		mockMvc.perform(get("/api/t/ok?limit=20").header("X-Request-Id", "abc-123").with(jwt()))
 				.andExpect(status().isOk())
 				.andExpect(header().string("X-Request-Id", "abc-123"));
 
@@ -84,7 +87,7 @@ class RequestLogFilterTest {
 	@Test
 	@DisplayName("クエリが無い要求では、要求ログに url.query を出さない")
 	void queryIsOmittedWhenAbsent(CapturedOutput output) throws Exception {
-		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "no-query-1"))
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "no-query-1").with(jwt()))
 				.andExpect(status().isOk());
 
 		List<Map<String, Object>> lines = requestLines(output, "no-query-1");
@@ -124,7 +127,7 @@ class RequestLogFilterTest {
 	void slowRequestIsWarn(CapturedOutput output) throws Exception {
 		when(clock.instant()).thenReturn(T0, T0.plusMillis(1001));
 
-		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "slow-1"))
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "slow-1").with(jwt()))
 				.andExpect(status().isOk());
 
 		List<Map<String, Object>> lines = requestLines(output, "slow-1");
@@ -138,7 +141,7 @@ class RequestLogFilterTest {
 	void exactlyOneSecondIsInfo(CapturedOutput output) throws Exception {
 		when(clock.instant()).thenReturn(T0, T0.plusMillis(1000));
 
-		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "exact-1"))
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "exact-1").with(jwt()))
 				.andExpect(status().isOk());
 
 		List<Map<String, Object>> lines = requestLines(output, "exact-1");
@@ -165,7 +168,7 @@ class RequestLogFilterTest {
 	@DisplayName("形式に合わない X-Request-Id は捨てて作り直し、送られた値をログにも応答にも出さない")
 	@ValueSource(strings = { "../etc", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "a\"b", "" })
 	void invalidRequestIdIsRegenerated(String submitted, CapturedOutput output) throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/t/ok").header("X-Request-Id", submitted))
+		MvcResult result = mockMvc.perform(get("/api/t/ok").header("X-Request-Id", submitted).with(jwt()))
 				.andExpect(status().isOk())
 				.andReturn();
 
@@ -183,7 +186,7 @@ class RequestLogFilterTest {
 	void maxLengthRequestIdIsAccepted(CapturedOutput output) throws Exception {
 		String submitted = "a".repeat(64);
 
-		MvcResult result = mockMvc.perform(get("/api/t/ok").header("X-Request-Id", submitted))
+		MvcResult result = mockMvc.perform(get("/api/t/ok").header("X-Request-Id", submitted).with(jwt()))
 				.andExpect(status().isOk())
 				.andReturn();
 
@@ -196,8 +199,8 @@ class RequestLogFilterTest {
 	@Test
 	@DisplayName("X-Request-Id が無ければ 32 文字の小文字 16 進を作り、要求ごとに別の値になる")
 	void missingRequestIdIsGenerated(CapturedOutput output) throws Exception {
-		String first = mockMvc.perform(get("/api/t/ok")).andReturn().getResponse().getHeader("X-Request-Id");
-		String second = mockMvc.perform(get("/api/t/ok")).andReturn().getResponse().getHeader("X-Request-Id");
+		String first = mockMvc.perform(get("/api/t/ok").with(jwt())).andReturn().getResponse().getHeader("X-Request-Id");
+		String second = mockMvc.perform(get("/api/t/ok").with(jwt())).andReturn().getResponse().getHeader("X-Request-Id");
 
 		assertThat(first).matches(HEX_32);
 		assertThat(second).matches(HEX_32).isNotEqualTo(first);
@@ -207,7 +210,7 @@ class RequestLogFilterTest {
 	@Test
 	@DisplayName("要求の途中で書いた行にも、requestId と client.ip が付く")
 	void linesDuringRequestCarryRequestIdAndClientIp(CapturedOutput output) throws Exception {
-		String id = mockMvc.perform(get("/api/t/log")).andExpect(status().isOk())
+		String id = mockMvc.perform(get("/api/t/log").with(jwt())).andExpect(status().isOk())
 				.andReturn().getResponse().getHeader("X-Request-Id");
 
 		List<Map<String, Object>> middle = LogLines.parse(output).stream()
@@ -221,7 +224,7 @@ class RequestLogFilterTest {
 	@Test
 	@DisplayName("MDC に置いた user.id は要求ログに載り、要求が終わると MDC は空になって次の要求に残らない")
 	void mdcValuesReachRequestLineAndAreCleared(CapturedOutput output) throws Exception {
-		String first = mockMvc.perform(get("/api/t/mdc")).andExpect(status().isOk())
+		String first = mockMvc.perform(get("/api/t/mdc").with(jwt())).andExpect(status().isOk())
 				.andReturn().getResponse().getHeader("X-Request-Id");
 
 		List<Map<String, Object>> firstLines = requestLines(output, first);
@@ -230,7 +233,7 @@ class RequestLogFilterTest {
 		Map<String, String> remaining = MDC.getCopyOfContextMap();
 		assertThat(remaining == null || remaining.isEmpty()).isTrue();
 
-		String second = mockMvc.perform(get("/api/t/ok")).andExpect(status().isOk())
+		String second = mockMvc.perform(get("/api/t/ok").with(jwt())).andExpect(status().isOk())
 				.andReturn().getResponse().getHeader("X-Request-Id");
 
 		List<Map<String, Object>> secondLines = requestLines(output, second);

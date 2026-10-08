@@ -25,6 +25,10 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	// @Valid の失敗（MethodArgumentNotValidException）を 422 の Problem Details に変えるため。
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	// 認証・認可の土台。/api/** を既定で拒否し、パスワードのハッシュ化（BCrypt）も提供する。
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	// アクセストークン（JWT）の署名の検証と、Bearer ヘッダーからの取り出しを任せる。自前で JWT を解析しない。
+	implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
 	// SQL を自分で書いて Java に結びつける道具。Spring Boot の依存管理に含まれないので版を明記する。
 	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
 	// 起動時に db/migration の SQL を順に流し、DB の構造を版管理する。版は Spring Boot が決める。
@@ -33,6 +37,8 @@ dependencies {
 	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 	runtimeOnly 'org.postgresql:postgresql'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	// @WebMvcTest で認証済みの要求を作る（jwt()）ため。
+	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
