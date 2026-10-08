@@ -37,7 +37,7 @@
 
 ### 3 つの規則
 
-1. **1 つの事象は 1 回だけ書く。** 例外は、捕まえた場所で記録して握りつぶすか、記録せずに投げ直すかのどちらかにする。両方やると同じ失敗が 2 行になり、数えたときに水増しされる。500 は例外ハンドラが 1 回だけ ERROR で書く
+1. **1 つの事象は 1 回だけ書く。** 例外は、捕まえた場所で記録して握りつぶすか、記録せずに投げ直すかのどちらかにする。両方やると同じ失敗が 2 行になり、数えたときに水増しされる。500 は例外ハンドラが 1 回だけ ERROR で書く。フィルタから漏れた例外（MVC の外）も、同じ行を `InternalErrorLog` が 1 回だけ書く
 2. **4xx は別の行にしない（3 章の表にある出来事を除く）。** 要求ログ（3 章）に status と code が載るので、それで足りる。ログイン失敗や期限切れのトークンは利用者の操作として起きる想定内の失敗なので、ERROR にも WARN にもしない。攻撃の兆候は 1 件の重さではなく「数」で捉え、通知の条件にする（9 章）
 3. **業務上の出来事として残すのは、取り返しがつかない操作と、セキュリティに関わる出来事だけ。** 投稿の作成や編集は要求ログに `POST /api/posts 201` と利用者 id が残るので足りる
 
@@ -49,7 +49,7 @@
 | event.action | レベル | 付ける値 | いつ |
 | --- | --- | --- | --- |
 | `http.request` | INFO。1 秒を超えたら WARN | メソッド、パス、クエリ、status、所要時間、エラー応答の code | 要求 1 件が終わるたび。`GET /api/health` の 200 だけは DEBUG に落とす。ALB が 30 秒ごとに叩くため。画像のアップロードは 1 秒を超えやすいが、まずはそのまま数え、WARN の集計で多ければ上限を分ける |
-| `http.request.failed` | ERROR | 例外の種類・文言・スタックトレース、code | 想定外の例外で 500 を返した |
+| `http.request.failed` | ERROR | 例外の種類・文言・スタックトレース、code | 想定外の例外で 500 を返した。MVC の例外ハンドラとフィルタのどちらの経路でも `InternalErrorLog` が書く |
 | `auth.register` | INFO | 無し。行を書く前に `user.id` を MDC に置く | 登録 |
 | `auth.login.succeeded` | INFO | 無し。行を書く前に `user.id` を MDC に置く | ログイン成功 |
 | `auth.login.failed` | INFO | 無し。メールアドレスの有無も書かない | ログイン失敗 |
@@ -68,7 +68,7 @@
 - 1 つのフィルタ `RequestLogFilter` が、requestId の検証・生成・応答ヘッダー、MDC への登録、要求ログの出力をまとめて行う。Spring Security より外側で動く
 - 所要時間はフィルタに入ってから出るまでの時間。1 秒を超えたら同じ 1 行をレベルだけ WARN にする。1 秒は非機能要件の「通常の操作は 1 秒以内」から取った値で、定数にする
 - エラー応答の `code` は、例外ハンドラと Spring Security のハンドラが Problem Details を書くときに要求の属性（request attribute）に置き、要求ログがそれを `event.code` として読む。成功時は付かない
-- 500 の ERROR 行は例外ハンドラ `ApiExceptionHandler` が書く。要求ログの行は status と code を持つだけで、例外は持たない。2 行は requestId で結びつく
+- 500 の ERROR 行は例外ハンドラ `ApiExceptionHandler` が書く。MVC の例外ハンドラとフィルタのどちらの経路でも `InternalErrorLog` が書く。要求ログの行は status と code を持つだけで、例外は持たない。2 行は requestId で結びつく
 
 ## 4. 項目名と形式
 
@@ -134,7 +134,8 @@ Spring Boot に nginx 以外から届く経路は無い（Compose のネット�
 | `logging.level.com.tkmedia.raisetimeline=${LOG_LEVEL_APP:INFO}` | アプリのログの水準。環境変数が無いときは INFO にし、本番で渡し忘れても DEBUG にならないようにする。ローカルは `docker-compose.yml` が既定で `DEBUG` を渡す。MyBatis の SQL も Mapper のパッケージの下で出る |
 | `server.forward-headers-strategy=native` | 本番で `client.ip` を利用者の IP にする（上の MDC の節） |
 | `logging.level.org.springframework.web.servlet.PageNotFound=ERROR` | 405 などの 4xx で Spring MVC が出す WARN を止める（2 章の規則 2） |
-| `spring.mvc.log-resolved-exception=false` | DevTools が開発時に true にして、4xx のたびに `ExceptionHandlerExceptionResolver` が「Resolved [...]」の WARN を出す。本番とテストでは出ないので、ローカルを揃えるために明示的に false にする（2 章の規則 2） |
+| `spring.mvc.log-resolved-exception=false` | DevTools が開発時に true にして、例外を解決するたび（4xx も 500 も）に `ExceptionHandlerExceptionResolver` が「Resolved [...]」の WARN を出す。本番とテストでは出ないので、ローカルを揃えるために明示的に false にする（2 章の規則 1・2） |
+| `spring.mvc.formcontent.filter.enabled=false` | API は JSON と multipart だけなので、PUT/PATCH/DELETE の form 本文を読む `FormContentFilter` は要らない。壊れた form 本文が MVC の外で例外になり 500（ERROR）になる口を塞ぐ |
 
 MDC のキー名は ECS の `http.request.id`。API の応答に入る `requestId`（ヘッダー `X-Request-Id` と Problem Details の `requestId`）は変えない。
 
@@ -176,7 +177,7 @@ docker compose logs --no-log-prefix backend --since 10m | jq -R -r 'fromjson? //
 
 ローカルの既定を DEBUG にしているのは、不具合が起きた時点で SQL とその引数が揃っていて、DEBUG に切り替えて同じ操作をやり直す手間が要らないため。行が増えても、requestId で絞れば関係のない行は混ざらない。
 
-AI も同じコマンドを使う。これらは README の「よく使うコマンド」にも書く。
+AI も同じコマンドを使う。これらは README の「ログを読む」にも書く。
 
 ## 8. 本番での集め方
 

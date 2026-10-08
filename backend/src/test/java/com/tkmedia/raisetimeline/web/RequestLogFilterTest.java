@@ -179,6 +179,21 @@ class RequestLogFilterTest {
 	}
 
 	@Test
+	@DisplayName("64 文字ちょうどの X-Request-Id はそのまま受け入れ、応答にも要求ログにも同じ値を出す")
+	void maxLengthRequestIdIsAccepted(CapturedOutput output) throws Exception {
+		String submitted = "a".repeat(64);
+
+		MvcResult result = mockMvc.perform(get("/api/t/ok").header("X-Request-Id", submitted))
+				.andExpect(status().isOk())
+				.andReturn();
+
+		assertThat(result.getResponse().getHeader("X-Request-Id")).isEqualTo(submitted);
+		List<Map<String, Object>> lines = requestLines(output, submitted);
+		assertThat(lines).hasSize(1);
+		assertThat(LogLines.get(lines.get(0), "http.request.id")).isEqualTo(submitted);
+	}
+
+	@Test
 	@DisplayName("X-Request-Id が無ければ 32 文字の小文字 16 進を作り、要求ごとに別の値になる")
 	void missingRequestIdIsGenerated(CapturedOutput output) throws Exception {
 		String first = mockMvc.perform(get("/api/t/ok")).andReturn().getResponse().getHeader("X-Request-Id");

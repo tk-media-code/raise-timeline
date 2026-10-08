@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
@@ -40,6 +41,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 	@ExceptionHandler(ApiException.class)
 	public ResponseEntity<Object> handleApiException(ApiException ex, WebRequest request) {
 		return respond(ex, ex.code(), ex.errors(), new HttpHeaders(), request);
+	}
+
+	/**
+	 * 形の壊れた multipart（boundary が無い、途中で切れているなど）は利用者の入力の誤りなので、400 にして ERROR は書かない。
+	 * 500 にすると、利用者の操作で ERROR を起こせてしまう（docs/error-handling-design.md 2 章「multipart に必要な部品が無い → 400」）。
+	 * {@code MaxUploadSizeExceededException} は派生なので、親クラスの専用の処理が優先される（最も近い型が選ばれる）。
+	 */
+	@ExceptionHandler(MultipartException.class)
+	public ResponseEntity<Object> handleMalformedMultipart(MultipartException ex, WebRequest request) {
+		return respond(ex, ErrorCode.BAD_REQUEST, List.of(), new HttpHeaders(), request);
 	}
 
 	@ExceptionHandler(Exception.class)

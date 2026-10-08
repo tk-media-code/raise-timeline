@@ -34,6 +34,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.json.JsonParserFactory;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -49,6 +50,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 
 @WebMvcTest(controllers = ApiExceptionHandlerTest.ThrowingController.class)
 @Import({ ApiExceptionHandlerTest.ThrowingController.class, LoggingConfig.class, ClockConfig.class,
@@ -167,6 +170,8 @@ class ApiExceptionHandlerTest {
 		Map<String, Object> requestLine = onlyRequestLine(output, "boom-1");
 		assertThat(number(LogLines.get(requestLine, "http.response.status_code"))).isEqualTo(500L);
 		assertThat(LogLines.get(requestLine, "event.code")).isEqualTo("INTERNAL_ERROR");
+		assertNoWarn(output);
+		assertSecretOnlyInErrorLine(output, "secret-detail");
 	}
 
 	@Test
@@ -190,6 +195,8 @@ class ApiExceptionHandlerTest {
 		Map<String, Object> requestLine = onlyRequestLine(output, "filter-boom-1");
 		assertThat(number(LogLines.get(requestLine, "http.response.status_code"))).isEqualTo(500L);
 		assertThat(LogLines.get(requestLine, "event.code")).isEqualTo("INTERNAL_ERROR");
+		assertNoWarn(output);
+		assertSecretOnlyInErrorLine(output, "filter-secret");
 	}
 
 	@Test
@@ -276,6 +283,43 @@ class ApiExceptionHandlerTest {
 		assertThat(LogLines.get(requestLine, "event.code")).isNull();
 	}
 
+	@Test
+	@DisplayName("形の壊れた multipart は利用者の入力の誤りなので 400 の BAD_REQUEST になり、例外の文言は出さず、WARN も ERROR も書かない")
+	void malformedMultipartReturns400WithoutError(CapturedOutput output) throws Exception {
+		MvcResult result = mockMvc.perform(get("/api/t/multipart-broken").header("X-Request-Id", "multipart-1"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+				.andExpect(jsonPath("$.detail").value("要求の形式が正しくありません"))
+				.andReturn();
+
+		assertThat(result.getResponse().getContentAsString()).doesNotContain("secret-mp");
+		assertNoWarnOrError(output);
+		Map<String, Object> requestLine = onlyRequestLine(output, "multipart-1");
+		assertThat(LogLines.get(requestLine, "event.code")).isEqualTo("BAD_REQUEST");
+	}
+
+	@Test
+	@DisplayName("アップロードの大きさ超過（MultipartException の派生）は専用の処理が優先され、今は 400 の BAD_REQUEST のまま")
+	void maxUploadSizeStillGoesThroughParentHandler(CapturedOutput output) throws Exception {
+		mockMvc.perform(get("/api/t/multipart-too-large"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+
+		assertNoWarnOrError(output);
+	}
+
+	@Test
+	@DisplayName("壊れた form の本文を DELETE で送っても、MVC の外で 500 にならず、ERROR も書かない")
+	void malformedFormBodyIsNotAnError(CapturedOutput output) throws Exception {
+		MvcResult result = mockMvc.perform(delete("/api/t/not-found")
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.content("a=%zz"))
+				.andReturn();
+
+		assertThat(result.getResponse().getStatus()).isEqualTo(405);
+		assertNoWarnOrError(output);
+	}
+
 	private static Map<String, Object> onlyRequestLine(CapturedOutput output, String requestId) {
 		List<Map<String, Object>> lines = LogLines.withAction(LogLines.parse(output), "http.request").stream()
 				.filter(line -> requestId.equals(LogLines.get(line, "http.request.id")))
@@ -294,6 +338,22 @@ class ApiExceptionHandlerTest {
 	private static void assertNoWarnOrError(CapturedOutput output) {
 		assertThat(LogLines.parse(output)).noneSatisfy(line ->
 				assertThat(LogLines.get(line, "log.level")).isIn("WARN", "ERROR"));
+	}
+
+	/** 500 の ERROR とは別の行に、WARN が重なって出ないこと。 */
+	private static void assertNoWarn(CapturedOutput output) {
+		assertThat(LogLines.parse(output)).noneSatisfy(line ->
+				assertThat(LogLines.get(line, "log.level")).isEqualTo("WARN"));
+	}
+
+	/** 例外の文言（秘密）が出てよいのは ERROR の 1 行だけ。ほかの行（要求ログなど）に漏れていないこと。 */
+	private static void assertSecretOnlyInErrorLine(CapturedOutput output, String secret) {
+		List<String> linesWithSecret = output.getOut().lines()
+				.filter(line -> line.contains(secret))
+				.toList();
+		assertThat(linesWithSecret).hasSize(1);
+		Map<String, Object> line = JsonParserFactory.getJsonParser().parseMap(linesWithSecret.get(0));
+		assertThat(LogLines.get(line, "log.level")).isEqualTo("ERROR");
 	}
 
 	private static long number(Object value) {
@@ -375,6 +435,16 @@ class ApiExceptionHandlerTest {
 
 		@GetMapping("/api/t/bind")
 		void bind(@Valid Query query) {
+		}
+
+		@GetMapping("/api/t/multipart-broken")
+		void multipartBroken() {
+			throw new MultipartException("boundary missing secret-mp");
+		}
+
+		@GetMapping("/api/t/multipart-too-large")
+		void multipartTooLarge() {
+			throw new MaxUploadSizeExceededException(5_242_880L);
 		}
 
 		@GetMapping("/api/t/boom")
