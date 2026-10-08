@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -33,6 +34,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -47,6 +49,10 @@ import org.slf4j.MDC;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionOperations;
 
 class AuthServiceTest {
 
@@ -61,11 +67,14 @@ class AuthServiceTest {
 	private final UserMapper userMapper = mock(UserMapper.class);
 	private final RefreshTokenMapper refreshTokenMapper = mock(RefreshTokenMapper.class);
 	// コストを下げた実物。ハッシュの形（$2 で始まる）と照合の結果を本物の BCrypt で確かめつつ、テストを速くする。
-	private final PasswordEncoder passwordEncoder = spy(new BCryptPasswordEncoder(4));
+	// トランザクションの中かどうかを呼び出しごとに記録する。BCrypt の計算が中に入り込んだら、テストが落ちる。
+	private final RecordingTransactions transactions = new RecordingTransactions();
+	private final List<Boolean> encoderCallsInTransaction = new ArrayList<>();
+	private final PasswordEncoder passwordEncoder = spy(new RecordingEncoder(transactions, encoderCallsInTransaction));
 	private final TokenService tokenService = tokenService();
 	private final UserService userService = new UserService(userMapper);
 	private final AuthService service = new AuthService(userMapper, refreshTokenMapper, tokenService, passwordEncoder,
-			userService, properties(), clock);
+			userService, properties(), clock, transactions);
 
 	private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 	private final Logger authLogger = (Logger) LoggerFactory.getLogger(AuthService.class);
@@ -297,6 +306,77 @@ class AuthServiceTest {
 	}
 
 	@Test
+	@DisplayName("登録では、確認と BCrypt はトランザクションの外、2 つの書き込みは 1 つのトランザクションの中で行う")
+	void registerHashesPasswordOutsideTransactionAndWritesInsideIt() {
+		List<Boolean> existsCalls = new ArrayList<>();
+		List<Boolean> insertCalls = new ArrayList<>();
+		when(userMapper.existsByUsername(anyString())).thenAnswer(inv -> {
+			existsCalls.add(transactions.active);
+			return false;
+		});
+		when(userMapper.existsByEmail(anyString())).thenAnswer(inv -> {
+			existsCalls.add(transactions.active);
+			return false;
+		});
+		when(userMapper.insert(any(User.class))).thenAnswer(inv -> {
+			insertCalls.add(transactions.active);
+			return USER_ID;
+		});
+		doAnswer(inv -> insertCalls.add(transactions.active)).when(refreshTokenMapper)
+				.insert(any(), anyString(), any());
+		encoderCallsInTransaction.clear();
+
+		service.register(new RegisterRequest("alice", "アリス", EMAIL, PASSWORD));
+
+		assertThat(encoderCallsInTransaction).containsExactly(false);
+		assertThat(existsCalls).containsExactly(false, false);
+		assertThat(insertCalls).containsExactly(true, true);
+		assertThat(transactions.executions).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("ログインはトランザクションを使わず、BCrypt の照合もその外で行う")
+	void loginDoesNotUseTransaction() throws NoSuchMethodException {
+		User stored = storedUser();
+		when(userMapper.findByEmail(EMAIL)).thenReturn(Optional.of(stored));
+		encoderCallsInTransaction.clear();
+
+		service.login(new LoginRequest(EMAIL, PASSWORD));
+
+		assertThat(transactions.executions).isZero();
+		assertThat(encoderCallsInTransaction).isNotEmpty().containsOnly(false);
+		assertThat(AuthService.class.isAnnotationPresent(Transactional.class)).isFalse();
+		assertThat(AuthService.class.getMethod("login", LoginRequest.class).isAnnotationPresent(Transactional.class))
+				.isFalse();
+		assertThat(AuthService.class.getMethod("register", RegisterRequest.class)
+				.isAnnotationPresent(Transactional.class)).isFalse();
+	}
+
+	@Test
+	@DisplayName("リフレッシュトークンが無い（null・空白）要求も、更新の失敗として記録し、Mapper を呼ばない")
+	void refreshRejectsMissingToken() {
+		assertThatThrownBy(() -> service.refresh(null)).isInstanceOf(InvalidRefreshTokenException.class);
+		assertThatThrownBy(() -> service.refresh("  ")).isInstanceOf(InvalidRefreshTokenException.class);
+
+		verify(refreshTokenMapper, never()).consume(any(), any());
+		verify(refreshTokenMapper, never()).insert(any(), anyString(), any());
+		List<ILoggingEvent> lines = eventsOf("auth.refresh.failed");
+		assertThat(lines).hasSize(2);
+		assertThat(lines.get(0).getFormattedMessage()).isEqualTo("ログインの更新に失敗した");
+	}
+
+	@Test
+	@DisplayName("ログアウトはトークンが無くても Mapper を呼ばず、auth.logout の行は書く")
+	void logoutWithMissingTokenStillLogs() {
+		service.logout(null);
+
+		verify(refreshTokenMapper, never()).deleteByTokenHash(any());
+		List<ILoggingEvent> lines = eventsOf("auth.logout");
+		assertThat(lines).hasSize(1);
+		assertThat(lines.get(0).getMDCPropertyMap().get("user.id")).isNull();
+	}
+
+	@Test
 	@DisplayName("ログアウトは持ち主が分からなくても例外にせず、user.id なしで記録する")
 	void logoutWithUnknownTokenStillLogs() {
 		when(refreshTokenMapper.deleteByTokenHash(anyString())).thenReturn(null);
@@ -344,6 +424,51 @@ class AuthServiceTest {
 	private static AuthProperties properties(byte[] key) {
 		return new AuthProperties(Base64.getEncoder().encodeToString(key), Duration.ofHours(1), Duration.ofDays(30),
 				"refresh_token", true, "raise-timeline");
+	}
+
+	/** トランザクションの中にいる間だけ {@code active} が true になる、記録用の {@link TransactionOperations}。 */
+	private static final class RecordingTransactions implements TransactionOperations {
+
+		boolean active;
+		int executions;
+
+		@Override
+		public <T> T execute(TransactionCallback<T> action) {
+			executions++;
+			active = true;
+			try {
+				return action.doInTransaction(new SimpleTransactionStatus());
+			} finally {
+				active = false;
+			}
+		}
+
+	}
+
+	/** 呼ばれたとき、トランザクションの中だったかを記録する BCrypt。 */
+	private static final class RecordingEncoder implements PasswordEncoder {
+
+		private final PasswordEncoder delegate = new BCryptPasswordEncoder(4);
+		private final RecordingTransactions transactions;
+		private final List<Boolean> calls;
+
+		RecordingEncoder(RecordingTransactions transactions, List<Boolean> calls) {
+			this.transactions = transactions;
+			this.calls = calls;
+		}
+
+		@Override
+		public String encode(CharSequence rawPassword) {
+			calls.add(transactions.active);
+			return delegate.encode(rawPassword);
+		}
+
+		@Override
+		public boolean matches(CharSequence rawPassword, String encodedPassword) {
+			calls.add(transactions.active);
+			return delegate.matches(rawPassword, encodedPassword);
+		}
+
 	}
 
 }

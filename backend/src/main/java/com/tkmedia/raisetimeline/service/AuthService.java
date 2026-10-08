@@ -14,6 +14,7 @@ import com.tkmedia.raisetimeline.mapper.RefreshTokenMapper;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,10 +23,19 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 /**
  * 登録・ログイン・更新・ログアウト。トークンを Cookie やヘッダーに載せるのは Controller の仕事で、
  * ここは生のトークンを返すだけ。
+ *
+ * <p>トランザクションの境界: BCrypt の計算（{@code encode} と {@code matches}）は、トランザクションの外で行う。
+ * トランザクションは開始の時点で DB の接続を借りるので、中で計算すると、計算の間じゅう接続を 1 本握り続ける。
+ * 接続プールは 10 本なので、ログインが 10 本並ぶとプールが尽き、関係のない要求まで待たされる
+ * （docs/error-handling-design.md の「DB の書き込みだけを {@code @Transactional} にする」）。
+ * そのため {@code register} は {@link TransactionOperations} で書き込みの 2 つだけを 1 つのトランザクションにし、
+ * {@code login} はトランザクションを持たない（読み 1 回と挿入 1 回で、まとめる必要がない）。
+ * {@code refresh} と {@code logout} は BCrypt を使わないので、{@code @Transactional} のまま。
  *
  * <p>ログには利用者 id を {@code MDC} で渡し、メールアドレス・パスワード・トークンは書かない。
  */
@@ -45,6 +55,7 @@ public class AuthService {
 	private final UserService userService;
 	private final AuthProperties props;
 	private final Clock clock;
+	private final TransactionOperations transactions;
 
 	/**
 	 * 未登録のメールでログインされたときも BCrypt の照合を 1 回走らせるための、ダミーのハッシュ。
@@ -54,7 +65,8 @@ public class AuthService {
 	private final String dummyHash;
 
 	public AuthService(UserMapper userMapper, RefreshTokenMapper refreshTokenMapper, TokenService tokenService,
-			PasswordEncoder passwordEncoder, UserService userService, AuthProperties props, Clock clock) {
+			PasswordEncoder passwordEncoder, UserService userService, AuthProperties props, Clock clock,
+			TransactionOperations transactions) {
 		this.userMapper = userMapper;
 		this.refreshTokenMapper = refreshTokenMapper;
 		this.tokenService = tokenService;
@@ -62,11 +74,12 @@ public class AuthService {
 		this.userService = userService;
 		this.props = props;
 		this.clock = clock;
+		this.transactions = transactions;
 		this.dummyHash = passwordEncoder.encode("dummy-password-for-timing");
 	}
 
-	@Transactional
 	public AuthResult register(RegisterRequest request) {
+		// 確認と BCrypt はトランザクションの外（クラスの説明を参照）。
 		// 1 回の応答で返す重複は 1 件だけなので、ユーザー名 → メールの順に確かめて、最初の 1 件で止める。
 		if (userMapper.existsByUsername(request.username())) {
 			throw new ConflictException(ErrorCode.USERNAME_TAKEN, "username");
@@ -75,25 +88,29 @@ public class AuthService {
 			throw new ConflictException(ErrorCode.EMAIL_TAKEN, "email");
 		}
 		OffsetDateTime now = OffsetDateTime.now(clock);
-		User toInsert = new User(null, request.username(), request.displayName(), request.email(),
-				passwordEncoder.encode(request.password()), "", null, now, now);
-		UUID id;
+		String passwordHash = passwordEncoder.encode(request.password());
+		AuthResult result;
 		try {
-			id = userMapper.insert(toInsert);
+			// 利用者と、そのリフレッシュトークンの 2 つの書き込みだけを 1 つのトランザクションにする。
+			result = Objects.requireNonNull(transactions.execute(status -> {
+				User toInsert = new User(null, request.username(), request.displayName(), request.email(),
+						passwordHash, "", null, now, now);
+				UUID id = userMapper.insert(toInsert);
+				User saved = new User(id, toInsert.username(), toInsert.displayName(), toInsert.email(),
+						passwordHash, toInsert.bio(), toInsert.avatarKey(), now, now);
+				return issue(saved, now);
+			}));
 		} catch (DuplicateKeyException e) {
 			// 確認と insert の間に別の登録が入った場合。例外の文言には重なった値（メール）が入るので、
 			// ログにも新しい例外にも引き継がない。
 			throw translate(e);
 		}
-		User saved = new User(id, toInsert.username(), toInsert.displayName(), toInsert.email(),
-				toInsert.passwordHash(), toInsert.bio(), toInsert.avatarKey(), now, now);
-		AuthResult result = issue(saved, now);
-		MDC.put(LogFields.USER_ID, id.toString());
+		MDC.put(LogFields.USER_ID, result.me().id().toString());
 		log.atInfo().addKeyValue(LogFields.EVENT_ACTION, LogEvents.AUTH_REGISTER).log("登録した");
 		return result;
 	}
 
-	@Transactional
+	// トランザクションは付けない（クラスの説明を参照）。
 	public AuthResult login(LoginRequest request) {
 		User user = userMapper.findByEmail(request.email()).orElse(null);
 		// 利用者の有無に関わらず照合を 1 回走らせる（dummyHash の説明を参照）。
@@ -116,12 +133,14 @@ public class AuthService {
 	 */
 	@Transactional
 	public AuthResult refresh(String rawRefreshToken) {
+		// Cookie が無い要求も「リフレッシュトークンが無い」失敗として同じ行を書く（docs/logging-design.md 3 章）。
+		if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+			throw refreshFailed();
+		}
 		OffsetDateTime now = OffsetDateTime.now(clock);
 		UUID userId = refreshTokenMapper.consume(tokenService.hashRefreshToken(rawRefreshToken), now);
 		if (userId == null) {
-			log.atInfo().addKeyValue(LogFields.EVENT_ACTION, LogEvents.AUTH_REFRESH_FAILED)
-					.log("ログインの更新に失敗した");
-			throw new InvalidRefreshTokenException();
+			throw refreshFailed();
 		}
 		// 期限切れの行は誰も使えないので、更新のついでにその人の分だけ掃除する。
 		refreshTokenMapper.deleteExpiredByUserId(userId, now);
@@ -132,12 +151,18 @@ public class AuthService {
 
 	@Transactional
 	public void logout(String rawRefreshToken) {
-		UUID userId = rawRefreshToken == null ? null
+		UUID userId = rawRefreshToken == null || rawRefreshToken.isBlank() ? null
 				: refreshTokenMapper.deleteByTokenHash(tokenService.hashRefreshToken(rawRefreshToken));
 		if (userId != null) {
 			MDC.put(LogFields.USER_ID, userId.toString());
 		}
 		log.atInfo().addKeyValue(LogFields.EVENT_ACTION, LogEvents.AUTH_LOGOUT).log("ログアウトした");
+	}
+
+	private static InvalidRefreshTokenException refreshFailed() {
+		log.atInfo().addKeyValue(LogFields.EVENT_ACTION, LogEvents.AUTH_REFRESH_FAILED)
+				.log("ログインの更新に失敗した");
+		return new InvalidRefreshTokenException();
 	}
 
 	/** トークンを発行して、リフレッシュトークンのハッシュを保存する。 */
