@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tkmedia.raisetimeline.config.SecurityConfig;
+import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.logging.LogLines;
 import com.tkmedia.raisetimeline.mapper.HealthCheckMapper;
 import java.util.List;
@@ -25,7 +26,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(HealthCheckController.class)
-@Import(SecurityConfig.class)
+@Import({ SecurityConfig.class, ProblemDetailWriter.class })
 @ExtendWith(OutputCaptureExtension.class)
 class HealthCheckControllerTest {
 

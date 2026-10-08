@@ -5,6 +5,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tkmedia.raisetimeline.config.LoggingConfig;
@@ -13,10 +14,18 @@ import com.tkmedia.raisetimeline.controller.HealthCheckController;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.logging.LogLines;
 import com.tkmedia.raisetimeline.mapper.HealthCheckMapper;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.apache.catalina.connector.ClientAbortException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,9 +36,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -238,7 +250,38 @@ class RequestLogFilterTest {
 
 		List<Map<String, Object>> secondLines = requestLines(output, second);
 		assertThat(secondLines).hasSize(1);
-		assertThat(LogLines.get(secondLines.get(0), "user.id")).isNull();
+		// jwt() の subject は UserIdLogFilter が user.id に置く。1 回目の u-1 が残っていないことを確かめる。
+		assertThat(LogLines.get(secondLines.get(0), "user.id")).isNotEqualTo("u-1");
+	}
+
+	@Test
+	@DisplayName("フィルタで ClientAbortException が起きても、ERROR も応答本文も出さず、要求ログは code 無しで 1 行だけ出る")
+	void clientAbortInFilterIsNotError(CapturedOutput output) throws Exception {
+		MvcResult result = mockMvc.perform(get("/api/t/filter-disconnect").header("X-Request-Id", "filter-abort-1"))
+				.andReturn();
+
+		assertThat(result.getResponse().getContentAsString()).isEmpty();
+		assertThat(LogLines.parse(output)).noneSatisfy(line -> assertThat(LogLines.get(line, "log.level"))
+				.isEqualTo("ERROR"));
+		List<Map<String, Object>> lines = requestLines(output, "filter-abort-1");
+		assertThat(lines).hasSize(1);
+		assertThat(LogLines.get(lines.get(0), "event.code")).isNull();
+	}
+
+	@Test
+	@DisplayName("フィルタで起きた IOException は、文言が Broken pipe でも切断とは見なさず、500 と ERROR 1 行にする")
+	void serverSideIoExceptionInFilterIsError(CapturedOutput output) throws Exception {
+		MvcResult result = mockMvc.perform(get("/api/t/filter-io").header("X-Request-Id", "filter-io-1"))
+				.andExpect(status().isInternalServerError())
+				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+				.andReturn();
+
+		assertThat(result.getResponse().getContentType()).startsWith("application/problem+json");
+		List<Map<String, Object>> errors = LogLines.parse(output).stream()
+				.filter(line -> "ERROR".equals(LogLines.get(line, "log.level")))
+				.filter(line -> "filter-io-1".equals(LogLines.get(line, "http.request.id")))
+				.toList();
+		assertThat(errors).hasSize(1);
 	}
 
 	/** 指定した requestId の要求ログ。他のテストの行や起動時の行に左右されないよう、requestId で絞る。 */
@@ -250,6 +293,30 @@ class RequestLogFilterTest {
 
 	private static long number(Object value) {
 		return ((Number) value).longValue();
+	}
+
+	@TestConfiguration
+	static class FilterFailureConfig {
+
+		/** RequestLogFilter の内側で、MVC の手前の失敗を再現するフィルタ。自分のパスにだけ効く。 */
+		@Bean
+		FilterRegistrationBean<Filter> filterFailure() {
+			FilterRegistrationBean<Filter> registration = new FilterRegistrationBean<>(
+					new Filter() {
+						@Override
+						public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+								throws IOException, ServletException {
+							if ("/api/t/filter-disconnect".equals(((HttpServletRequest) request).getRequestURI())) {
+								throw new ServletException(new ClientAbortException(new IOException("Broken pipe")));
+							}
+							throw new IOException("Broken pipe");
+						}
+					});
+			registration.setOrder(RequestLogFilter.ORDER + 1);
+			registration.addUrlPatterns("/api/t/filter-disconnect", "/api/t/filter-io");
+			return registration;
+		}
+
 	}
 
 	@RestController

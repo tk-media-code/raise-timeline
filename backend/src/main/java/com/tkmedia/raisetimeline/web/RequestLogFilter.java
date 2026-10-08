@@ -1,6 +1,7 @@
 package com.tkmedia.raisetimeline.web;
 
 import com.tkmedia.raisetimeline.controller.HealthCheckController;
+import com.tkmedia.raisetimeline.error.ClientDisconnects;
 import com.tkmedia.raisetimeline.error.ErrorCode;
 import com.tkmedia.raisetimeline.error.InternalErrorLog;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
@@ -81,13 +82,16 @@ public class RequestLogFilter extends OncePerRequestFilter {
 			response.setHeader(REQUEST_ID_HEADER, requestId);
 			try {
 				chain.doFilter(request, response);
-			} catch (ServletException | RuntimeException e) {
-				// MVC の外（後ろのフィルタなど）で漏れた例外。ここで 500 の Problem Details にして終わらせる。
-				// 投げ直さない。投げ直すと Tomcat がもう 1 回 ERROR を書き、500 1 件につき ERROR が 2 行になる。
-				// IOException は捕まえない。接続が切れたなど相手側の事情で、こちらの失敗ではないため。
-				InternalErrorLog.write(e);
-				// 応答を先に確定させる。要求ログ（下の finally）が status 500 と code を読めるように。
-				writer.write(request, response, ErrorCode.INTERNAL_ERROR);
+			} catch (ServletException | IOException | RuntimeException e) {
+				// 接続が切れたのなら、相手はもう居ない。ERROR も応答も書かない（ハンドラと同じく、型で見分ける）。
+				// 要求ログだけは下の finally で書く。
+				if (!ClientDisconnects.isClientDisconnect(e)) {
+					// MVC の外（後ろのフィルタなど）で漏れた例外。ここで 500 の Problem Details にして終わらせる。
+					// 投げ直さない。投げ直すと Tomcat がもう 1 回 ERROR を書き、500 1 件につき ERROR が 2 行になる。
+					InternalErrorLog.write(e);
+					// 応答を先に確定させる。要求ログ（下の finally）が status 500 と code を読めるように。
+					writer.write(request, response, ErrorCode.INTERNAL_ERROR);
+				}
 			}
 		} finally {
 			// 例外が抜けてきても、要求ログを書き、MDC を消す。
