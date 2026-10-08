@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.tkmedia.raisetimeline.config.ClockConfig;
 import com.tkmedia.raisetimeline.config.SecurityConfig;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.logging.LogLines;
@@ -26,7 +27,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(HealthCheckController.class)
-@Import({ SecurityConfig.class, ProblemDetailWriter.class })
+@Import({ SecurityConfig.class, ClockConfig.class, ProblemDetailWriter.class })
 @ExtendWith(OutputCaptureExtension.class)
 class HealthCheckControllerTest {
 
