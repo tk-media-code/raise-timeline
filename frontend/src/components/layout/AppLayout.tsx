@@ -105,7 +105,7 @@ export function AppLayout() {
           投稿する
         </button>
         <div className="mt-auto flex items-center gap-3 px-3 py-2">
-          <Avatar displayName={user.displayName} avatarUrl={user.avatarUrl} />
+          <Avatar userId={user.id} displayName={user.displayName} avatarUrl={user.avatarUrl} />
           <span className="truncate font-bold">{user.displayName}</span>
         </div>
       </nav>
