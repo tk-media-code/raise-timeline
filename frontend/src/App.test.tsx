@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router'
@@ -88,6 +88,10 @@ describe('App のルート', () => {
     expect(screen.getByRole('banner', { name: '上部バー' })).toBeInTheDocument()
     // AppLayout の <main> の中に描かれ、<main> が入れ子にならない。
     expect(screen.getAllByRole('main')).toHaveLength(1)
+    // 見出しは各ページが持つ。レイアウトの上部バーは見出しにしない（PC 幅で隠れると h1 が無くなるため）。
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    // jsdom は CSS を当てないので、md:hidden の上部バーも描かれる。h1 が本文（main）の中にあることで、各ページが持つことを確かめる。
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'ホーム' })).toBeInTheDocument()
   })
 
   it('存在しないパスは「ページが見つかりません」とホームへのリンクを出す', async () => {

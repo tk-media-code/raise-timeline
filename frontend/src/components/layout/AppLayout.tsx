@@ -54,7 +54,8 @@ export function AppLayout() {
         aria-label="上部バー"
         className="sticky top-0 z-10 flex min-h-14 items-center justify-between border-b border-gray-200 bg-white px-4 md:hidden"
       >
-        <h1 className="text-lg font-bold">{screenName(pathname)}</h1>
+        {/* 見出しにしない。この帯は md 以上で隠れるので、h1 を持たせると PC 幅で h1 が無くなる。見出しは各ページが持つ。 */}
+        <p className="text-lg font-bold">{screenName(pathname)}</p>
         <div className="relative">
           <button
             type="button"
