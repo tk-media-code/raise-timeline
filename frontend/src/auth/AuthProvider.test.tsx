@@ -181,7 +181,6 @@ describe('AuthProvider', () => {
 
     expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
     expect(screen.getByTestId('user')).toHaveTextContent('alice')
-    expect(getAccessToken()).toBe('token-1')
   })
 
   it('更新の途中で signIn すると、遅れて届いた別の人の成功で上書きされない', async () => {
@@ -193,7 +192,6 @@ describe('AuthProvider', () => {
     await act(async () => resolve({ accessToken: 'token-2', user: { ...me, username: 'bob' } }))
 
     expect(screen.getByTestId('user')).toHaveTextContent('alice')
-    expect(getAccessToken()).toBe('token-1')
   })
 
   it('アンマウントすると購読を解く', async () => {

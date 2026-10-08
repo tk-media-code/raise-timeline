@@ -29,6 +29,8 @@ function notifySessionExpired(): void {
 // 結果を捨てて null を返す（トークンは書かず、消さず、購読者にも知らせない）。
 // null にするのは、呼び出し側が「この更新ではログイン状態を作れなかった」と扱えば足りるため。
 // 呼び出し側（AuthProvider）は、起動時の結果を loading の間にしか反映しないので、新しい状態は壊れない。
+// apiFetch が古い世代の更新に相乗りした場合も、この null を受け取る。そのときは元の 401 を投げ、
+// 次の 401 で改めて更新する。
 async function doRefresh(startedAt: number): Promise<AuthResponse | null> {
   try {
     const session = await refresh()
