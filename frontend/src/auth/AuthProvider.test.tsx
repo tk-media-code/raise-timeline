@@ -30,10 +30,11 @@ const me: Me = {
 const session: AuthResponse = { accessToken: 'token-1', user: me }
 
 function Probe() {
-  const { status, user, signIn, signOut } = useAuth()
+  const { status, user, signedOut, signIn, signOut } = useAuth()
   return (
     <div>
       <p data-testid="status">{status}</p>
+      <p data-testid="signed-out">{String(signedOut)}</p>
       <p data-testid="user">{user?.username ?? 'none'}</p>
       <button onClick={() => signIn(session)}>サインイン</button>
       <button onClick={() => void signOut()}>サインアウト</button>
@@ -143,6 +144,21 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('user')).toHaveTextContent('none')
     expect(getAccessToken()).toBeNull()
     expect(queryClient.getQueryData(['timeline'])).toBeUndefined()
+  })
+
+  it('signOut の後だけ signedOut が true になり、signIn で false に戻る。起動時の失敗では false のまま', async () => {
+    refreshSession.mockResolvedValueOnce(null)
+    logout.mockResolvedValue(undefined)
+    renderProvider()
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'))
+    expect(screen.getByTestId('signed-out')).toHaveTextContent('false')
+
+    await userEvent.click(screen.getByRole('button', { name: 'サインイン' }))
+    await userEvent.click(screen.getByRole('button', { name: 'サインアウト' }))
+    await waitFor(() => expect(screen.getByTestId('signed-out')).toHaveTextContent('true'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'サインイン' }))
+    expect(screen.getByTestId('signed-out')).toHaveTextContent('false')
   })
 
   it('ログアウト API が失敗しても anonymous に戻る', async () => {

@@ -8,8 +8,8 @@ import { RequireAuth } from './RequireAuth'
 const useAuth = vi.hoisted(() => vi.fn())
 vi.mock('./AuthProvider', () => ({ useAuth }))
 
-function setAuth(status: AuthContextValue['status']) {
-  useAuth.mockReturnValue({ status, user: null, signIn: vi.fn(), signOut: vi.fn() })
+function setAuth(status: AuthContextValue['status'], signedOut = false) {
+  useAuth.mockReturnValue({ status, user: null, signedOut, signIn: vi.fn(), signOut: vi.fn() })
 }
 
 function Where() {
@@ -49,6 +49,22 @@ describe('RequireAuth', () => {
     )
 
     expect(screen.getByTestId('where')).toHaveTextContent('/login?next=%2Fusers%2Falice%3Ftab%3D1')
+  })
+
+  it('自分でログアウトしたあとの anonymous では、next を付けずに /login へ移る', () => {
+    setAuth('anonymous', true)
+    render(
+      <MemoryRouter initialEntries={['/users/alice?tab=1']}>
+        <Routes>
+          <Route element={<RequireAuth />}>
+            <Route path="/users/:name" element={<p>保護されたページ</p>} />
+          </Route>
+          <Route path="/login" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByTestId('where').textContent).toBe('/login')
   })
 
   it('/users/alice から /login?next=%2Fusers%2Falice に移る', () => {
