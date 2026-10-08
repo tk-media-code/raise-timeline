@@ -222,7 +222,7 @@ class AuthControllerTest {
 	static Stream<Arguments> nulInEachStringField() {
 		String nul = "\\u0000";
 		List<Arguments> cases = new ArrayList<>();
-		String[][] registerFields = { { "username", "taro_1" }, { "displayName", "太郎" },
+		String[][] registerFields = { { "username", "taro_1" }, { "displayName", "太郎です" },
 				{ "email", "a@example.com" }, { "password", "password1" } };
 		for (String[] f : registerFields) {
 			for (String[] position : new String[][] { { "途中", f[1].substring(0, 2) + nul + f[1].substring(2) },
