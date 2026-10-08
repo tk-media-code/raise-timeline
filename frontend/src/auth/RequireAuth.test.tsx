@@ -97,6 +97,23 @@ describe('RedirectIfAuthenticated', () => {
     expect(screen.queryByText('ログイン画面')).not.toBeInTheDocument()
   })
 
+  it('ログイン済みで /login?next=%2Fsettings を開くと /settings へ', () => {
+    setAuth('authenticated')
+
+    renderAt('/login?next=%2Fsettings')
+
+    expect(screen.getByTestId('where')).toHaveTextContent('/settings')
+    expect(screen.queryByText('ログイン画面')).not.toBeInTheDocument()
+  })
+
+  it('ログイン済みで /login?next=%2F%2Fevil.example を開くと / へ', () => {
+    setAuth('authenticated')
+
+    renderAt('/login?next=%2F%2Fevil.example')
+
+    expect(screen.getByText('ホーム')).toBeInTheDocument()
+  })
+
   it('未ログインなら /login の中身を描く', () => {
     setAuth('anonymous')
 

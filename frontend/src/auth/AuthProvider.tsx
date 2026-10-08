@@ -11,7 +11,7 @@ import {
 import { logout, type AuthResponse, type Me } from '../api/auth'
 import { queryClient } from '../lib/queryClient'
 import { onSessionExpired, refreshSession } from './refresh'
-import { setAccessToken } from './tokenStore'
+import { advanceSessionGeneration, setAccessToken } from './tokenStore'
 
 export type AuthStatus = 'loading' | 'authenticated' | 'anonymous'
 
@@ -36,6 +36,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 1 回目が終わったあとの 2 回目は改めて更新してしまうため。
   const startedRef = useRef(false)
 
+  // 起動時の更新の結果は、まだ loading のときだけ反映する。
+  // loading の間も /login は使えるので、更新が終わる前に signIn・signOut が済むことがある。
+  // そのとき遅れて届いた古い結果（別の人の成功や 401）で、新しい状態を上書きしない。
+  const applyStartupResult = useCallback((next: AuthState) => {
+    setState((prev) => (prev.status === 'loading' ? next : prev))
+  }, [])
+
   useEffect(() => {
     if (startedRef.current) return
     startedRef.current = true
@@ -44,19 +51,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         const session = await refreshSession()
-        setState(session ? { status: 'authenticated', user: session.user } : ANONYMOUS)
+        const next: AuthState = session ? { status: 'authenticated', user: session.user } : ANONYMOUS
+        applyStartupResult(next)
       } catch {
         // 500・通信失敗。ログイン画面から入り直せるので、loading のまま止めない。
-        setState(ANONYMOUS)
+        applyStartupResult(ANONYMOUS)
       }
     })()
-  }, [])
+  }, [applyStartupResult])
 
   // 画面の途中で更新が 401 になったら、ログアウト状態にする。
   // 保護されたルートが /login?next= へ移すので、ここでは移動しない。
   useEffect(() => onSessionExpired(() => setState(ANONYMOUS)), [])
 
   const signIn = useCallback((response: AuthResponse) => {
+    // 進行中の更新の結果を古いものにする。先に進めてからトークンを置く。
+    advanceSessionGeneration()
     setAccessToken(response.accessToken)
     setState({ status: 'authenticated', user: response.user })
   }, [])
@@ -67,6 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // サーバーに届かなくても、この端末では必ずログアウト状態にする。
     }
+    // 進行中の更新が、消したトークンを書き戻さないようにする。
+    advanceSessionGeneration()
     setAccessToken(null)
     setState(ANONYMOUS)
     // 前の利用者のキャッシュを残さない。

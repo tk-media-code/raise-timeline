@@ -170,6 +170,32 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('user')).toHaveTextContent('none')
   })
 
+  it('更新の途中で signIn すると、遅れて届いた null で anonymous に戻らない', async () => {
+    let resolve: (value: AuthResponse | null) => void = () => {}
+    refreshSession.mockReturnValue(new Promise((r) => (resolve = r)))
+    renderProvider()
+    await userEvent.click(screen.getByRole('button', { name: 'サインイン' }))
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+
+    await act(async () => resolve(null))
+
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    expect(screen.getByTestId('user')).toHaveTextContent('alice')
+    expect(getAccessToken()).toBe('token-1')
+  })
+
+  it('更新の途中で signIn すると、遅れて届いた別の人の成功で上書きされない', async () => {
+    let resolve: (value: AuthResponse | null) => void = () => {}
+    refreshSession.mockReturnValue(new Promise((r) => (resolve = r)))
+    renderProvider()
+    await userEvent.click(screen.getByRole('button', { name: 'サインイン' }))
+
+    await act(async () => resolve({ accessToken: 'token-2', user: { ...me, username: 'bob' } }))
+
+    expect(screen.getByTestId('user')).toHaveTextContent('alice')
+    expect(getAccessToken()).toBe('token-1')
+  })
+
   it('アンマウントすると購読を解く', async () => {
     refreshSession.mockResolvedValue(session)
     const { unmount } = renderProvider()

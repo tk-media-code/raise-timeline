@@ -123,6 +123,39 @@ describe('refreshSession', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
+  it('更新の途中で世代が進んだら、遅れて届いた 401 でトークンを消さず購読者も呼ばない', async () => {
+    let respond: (response: Response) => void = () => {}
+    fetchMock.mockImplementation(() => new Promise<Response>((r) => (respond = r)))
+    const { refreshSession, onSessionExpired, advanceSessionGeneration, getAccessToken, setAccessToken } =
+      await load()
+    const listener = vi.fn()
+    onSessionExpired(listener)
+
+    const pending = refreshSession()
+    // 更新の応答を待つ間にログインした、という状況。
+    advanceSessionGeneration()
+    setAccessToken('signed-in')
+    respond(unauthorized())
+
+    await expect(pending).resolves.toBeNull()
+    expect(getAccessToken()).toBe('signed-in')
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('更新の途中で世代が進んだら、遅れて届いた成功でトークンを上書きしない', async () => {
+    let respond: (response: Response) => void = () => {}
+    fetchMock.mockImplementation(() => new Promise<Response>((r) => (respond = r)))
+    const { refreshSession, advanceSessionGeneration, getAccessToken, setAccessToken } = await load()
+
+    const pending = refreshSession()
+    advanceSessionGeneration()
+    setAccessToken('signed-in')
+    respond(jsonResponse(200, { accessToken: 'stale', user: me }))
+
+    await expect(pending).resolves.toBeNull()
+    expect(getAccessToken()).toBe('signed-in')
+  })
+
   it('Web Locks があれば auth-refresh の鍵を持っている間に更新する', async () => {
     // 鍵を取れた瞬間と、鍵を持っている間かどうかをテストが握る。
     // 鍵の外で更新する実装だと、fetch が出た時点で held が false になる。
