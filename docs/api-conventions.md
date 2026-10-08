@@ -106,7 +106,7 @@
 | ヘルスチェック | `GET /api/health` | | 200 `{"status":"UP","database":"UP"}` または 503 | — |
 
 - `{username}` は大文字小文字を区別せずに引く
-- ヘルスチェックは、今の `GET /` を `/api/health` へ移す。応答は変えない。nginx が `/api/` だけを転送するため
+- ヘルスチェックは `GET /api/health`（以前の `GET /` から移した）。nginx が `/api/` だけを転送するため
 - `POST /api/posts` は画像が無くても multipart で送る（1 つの API に統一する）
 - 投稿の編集は本文だけなので JSON
 
