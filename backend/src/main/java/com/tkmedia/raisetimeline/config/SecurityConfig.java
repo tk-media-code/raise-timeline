@@ -16,14 +16,12 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
@@ -39,7 +37,9 @@ import org.springframework.security.web.servlet.util.matcher.PathPatternRequestM
  * どの URL を誰に開くかを決める。既定は拒否で、開けるものだけを書く。
  *
  * <p>{@link AuthProperties} の登録もここで行う。{@code @WebMvcTest} は {@code @ConfigurationProperties} の
- * Bean を拾わないので、テストでは {@code @Import(SecurityConfig.class)} だけで揃うようにしている。
+ * Bean を拾わないので、{@code @Import(SecurityConfig.class)} で {@link AuthProperties} が揃う。
+ * ただし {@link ProblemDetailWriter} と {@link ClockConfig} は別の Bean なので、テストではこの 2 つも
+ * {@code @Import} に足す。
  */
 @Configuration
 @EnableConfigurationProperties(AuthProperties.class)
@@ -53,8 +53,9 @@ public class SecurityConfig {
 		AuthenticationEntryPoint entryPoint = (req, res, ex) -> writer.write(req, res, ErrorCode.UNAUTHENTICATED);
 		AccessDeniedHandler accessDeniedHandler = (req, res, ex) -> writer.write(req, res, ErrorCode.FORBIDDEN);
 		http
-				// 認証は Cookie ではなく Authorization ヘッダーの Bearer トークンで行う。ブラウザが勝手に付ける
-				// 認証情報が無いので、CSRF の攻撃が成り立たない。
+				// API の認証は Authorization ヘッダーの Bearer トークンで行い、ブラウザが勝手に付ける認証情報は無い。
+				// Cookie で動くのは更新とログアウトの 2 本だけで、これは SameSite=Lax の Cookie が守る
+				// （別サイトからの POST には付かない。docs/auth-design.md 6 章）。そのため CSRF トークンの仕組みは使わない。
 				.csrf(AbstractHttpConfigurer::disable)
 				// サーバー側にセッションを持たない。状態はトークンに入れる。
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -137,8 +138,9 @@ public class SecurityConfig {
 	 * HS256 の検証側。署名・有効期限・発行者（iss）を確かめる。
 	 *
 	 * <p>{@code JwtValidators.createDefaultWithIssuer} には Clock を渡す口が無く、期限の判定がシステム時計に
-	 * 固定される。アプリは Clock を Bean で持ち、テストで差し替えて時刻を固定するので、同じ中身
-	 * （期限の検証 + 発行者の検証）を Clock つきで組み立てている。
+	 * 固定される。アプリは Clock を Bean で持ち、テストで差し替えて時刻を固定するので、Clock を設定した
+	 * 期限の検証を {@code createDefaultWithValidators} に渡す。この関数は、渡された検証と同じ型の既定の検証
+	 * （期限）を重ねて入れないので、Clock つきの検証が残る。既定の型（typ）と thumbprint の検証もここで加わる。
 	 */
 	public static JwtDecoder createJwtDecoder(byte[] key, String issuer, Clock clock) {
 		// javax.crypto は JDK の標準で、Jakarta EE 移行前のパッケージではない。ただし Checkstyle が javax の import を
@@ -149,9 +151,8 @@ public class SecurityConfig {
 				.build();
 		JwtTimestampValidator timestampValidator = new JwtTimestampValidator();
 		timestampValidator.setClock(clock);
-		OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(
-				timestampValidator, new JwtIssuerValidator(issuer));
-		decoder.setJwtValidator(validator);
+		decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(timestampValidator,
+				new JwtIssuerValidator(issuer)));
 		return decoder;
 	}
 

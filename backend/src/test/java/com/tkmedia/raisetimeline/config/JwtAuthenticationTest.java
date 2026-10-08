@@ -11,8 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.logging.LogLines;
 import com.tkmedia.raisetimeline.service.TokenService;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -104,6 +106,23 @@ class JwtAuthenticationTest {
 	}
 
 	@Test
+	@DisplayName("署名の無い alg=none のトークンは 401 の Problem Details（UNAUTHENTICATED）になり、WARN と ERROR は出ない")
+	void algNoneBearerReturns401Problem(CapturedOutput output) throws Exception {
+		Base64.Encoder base64 = Base64.getUrlEncoder().withoutPadding();
+		long exp = Clock.systemUTC().instant().plus(Duration.ofHours(1)).getEpochSecond();
+		String header = base64.encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8));
+		String claims = base64.encodeToString(("{\"sub\":\"" + USER_ID + "\",\"iss\":\"raise-timeline\",\"exp\":" + exp + "}")
+				.getBytes(StandardCharsets.UTF_8));
+
+		mockMvc.perform(get("/api/t/whoami").header("Authorization", "Bearer " + header + "." + claims + "."))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string("Content-Type", startsWith(PROBLEM_JSON)))
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+
+		assertNoWarnOrError(output);
+	}
+
+	@Test
 	@DisplayName("Bearer があっても、denyAll に当たれば本文の無い 403 ではなく Problem Details（FORBIDDEN）になる")
 	void validBearerOnDeniedPathReturns403Problem() throws Exception {
 		mockMvc.perform(get("/x").header("Authorization", "Bearer " + tokenService.issueAccessToken(USER_ID)))
@@ -113,7 +132,9 @@ class JwtAuthenticationTest {
 	}
 
 	// 不正なトークンは利用者の側の事情であって、サーバーの不具合ではない。
+	// ログが 1 行も読めていないと noneSatisfy は空振りで通ってしまうので、先に行があることを確かめる。
 	private static void assertNoWarnOrError(CapturedOutput output) {
+		assertThat(LogLines.parse(output)).isNotEmpty();
 		assertThat(LogLines.parse(output)).noneSatisfy(line -> assertThat(LogLines.get(line, "log.level"))
 				.isIn("WARN", "ERROR"));
 	}

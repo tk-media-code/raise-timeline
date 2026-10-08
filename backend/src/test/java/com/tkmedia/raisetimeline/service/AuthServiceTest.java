@@ -250,7 +250,11 @@ class AuthServiceTest {
 		assertThatThrownBy(() -> service.login(new LoginRequest(EMAIL, PASSWORD)))
 				.isInstanceOf(InvalidCredentialsException.class);
 
-		verify(passwordEncoder, times(1)).matches(eq(PASSWORD), anyString());
+		// 空のハッシュだと BCrypt は計算せずにすぐ false を返し、時間差を隠す守りが黙って消える。
+		// 呼ばれたことだけでなく、渡したハッシュが BCrypt の形（$2a$10$ + 53 文字）であることまで確かめる。
+		ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
+		verify(passwordEncoder, times(1)).matches(eq(PASSWORD), hash.capture());
+		assertThat(hash.getValue()).matches("^\\$2[aby]?\\$\\d\\d\\$.{53}$");
 	}
 
 	@Test

@@ -1,6 +1,8 @@
 package com.tkmedia.raisetimeline.controller;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.containsStringIgnoringCase;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
@@ -9,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -27,6 +30,10 @@ import com.tkmedia.raisetimeline.service.AuthResult;
 import com.tkmedia.raisetimeline.service.AuthService;
 import jakarta.servlet.http.Cookie;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +48,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -64,6 +72,7 @@ class AuthControllerTest {
 	private static final AuthResult RESULT = new AuthResult("access-token-value", RAW_REFRESH,
 			new Me(USER_ID, "taro_1", "太郎", null, "", false, 0, 0, OffsetDateTime.parse("2026-10-01T00:00:00Z"),
 					true, "taro@example.com"));
+	private static final String NO_NUL_MESSAGE = "使えない文字が含まれています";
 	private static final String USERNAME_MESSAGE = "3〜20 文字の英数字と _ で入力してください";
 
 	@Autowired
@@ -199,13 +208,43 @@ class AuthControllerTest {
 				.andExpect(jsonPath("$.errors[0].field").value("password"));
 	}
 
-	@ParameterizedTest
-	@ValueSource(strings = { "a\\u0000b", "ab\\u0000" })
-	@DisplayName("文字列の途中や末尾の NUL（JSON のエスケープ）は、空白の除去より前の値で検出して 422 になる")
-	void nulInStringFieldIsRejected(String displayName) throws Exception {
-		postJson("/api/auth/register", registerJson("taro_1", displayName, "a@example.com", "password1"))
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("nulInEachStringField")
+	@DisplayName("どの文字列項目でも、途中や末尾の NUL（JSON のエスケープ）は空白の除去より前の値で検出して 422 になる")
+	void nulInStringFieldIsRejected(String name, String path, String field, String json) throws Exception {
+		// username と password は @Pattern にも当たるので、エラーが 1 件とは限らない。NoNul の文言が入っていることを見る。
+		postJson(path, json)
 				.andExpect(status().isUnprocessableContent())
-				.andExpect(jsonPath("$.errors[0].field").value("displayName"));
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+				.andExpect(jsonPath("$.errors[?(@.field == '" + field + "')].message").value(hasItem(NO_NUL_MESSAGE)));
+	}
+
+	static Stream<Arguments> nulInEachStringField() {
+		String nul = "\\u0000";
+		List<Arguments> cases = new ArrayList<>();
+		String[][] registerFields = { { "username", "taro_1" }, { "displayName", "太郎" },
+				{ "email", "a@example.com" }, { "password", "password1" } };
+		for (String[] f : registerFields) {
+			for (String[] position : new String[][] { { "途中", f[1].substring(0, 2) + nul + f[1].substring(2) },
+					{ "末尾", f[1] + nul } }) {
+				Map<String, String> values = new LinkedHashMap<>();
+				for (String[] other : registerFields) {
+					values.put(other[0], other[0].equals(f[0]) ? position[1] : other[1]);
+				}
+				cases.add(Arguments.of("登録の " + f[0] + " の" + position[0], "/api/auth/register", f[0],
+						registerJson(values.get("username"), values.get("displayName"), values.get("email"),
+								values.get("password"))));
+			}
+		}
+		cases.add(Arguments.of("ログインの email の途中", "/api/auth/login", "email",
+				loginJson("a" + nul + "@example.com", "password1")));
+		cases.add(Arguments.of("ログインの email の末尾", "/api/auth/login", "email",
+				loginJson("a@example.com" + nul, "password1")));
+		cases.add(Arguments.of("ログインの password の途中", "/api/auth/login", "password",
+				loginJson("a@example.com", "pass" + nul + "word1")));
+		cases.add(Arguments.of("ログインの password の末尾", "/api/auth/login", "password",
+				loginJson("a@example.com", "password1" + nul)));
+		return cases.stream();
 	}
 
 	@Test
@@ -256,6 +295,22 @@ class AuthControllerTest {
 				.andExpect(header().string("Content-Type", startsWith(PROBLEM_JSON)))
 				.andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
 				.andExpect(jsonPath("$.detail").value("メールアドレスまたはパスワードが違います"))
+				.andExpect(header().doesNotExist("Set-Cookie"));
+	}
+
+	@Test
+	@DisplayName("ログイン中に DB へ届かないときは 500 の固定文になり、接続先の情報を本文に載せず、Cookie は付かない")
+	void loginWhenDatabaseUnreachableReturns500WithoutLeak() throws Exception {
+		when(authService.login(any())).thenThrow(new CannotGetJdbcConnectionException(
+				"Failed to obtain JDBC Connection: jdbc:postgresql://db:5432/raise_timeline に接続できない"));
+
+		postJson("/api/auth/login", loginJson("taro@example.com", "password1"))
+				.andExpect(status().isInternalServerError())
+				.andExpect(header().string("Content-Type", startsWith(PROBLEM_JSON)))
+				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+				.andExpect(jsonPath("$.detail").value(ErrorCode.INTERNAL_ERROR.message()))
+				.andExpect(content().string(not(containsStringIgnoringCase("jdbc"))))
+				.andExpect(content().string(not(containsStringIgnoringCase("postgresql"))))
 				.andExpect(header().doesNotExist("Set-Cookie"));
 	}
 

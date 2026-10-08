@@ -105,6 +105,13 @@ describe('validateLogin', () => {
     })
   })
 
+  it('空白だけの項目も「入力してください」を返す（サーバーの @NotBlank に合わせる）', () => {
+    expect(validateLogin({ email: '   ', password: '\t　' })).toEqual({
+      email: '入力してください',
+      password: '入力してください',
+    })
+  })
+
   it('ログインではメールアドレスの形式やパスワードの長さまでは見ない', () => {
     expect(validateLogin({ email: 'not-an-email', password: 'a' })).toEqual({})
   })

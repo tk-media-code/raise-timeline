@@ -10,6 +10,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.tkmedia.raisetimeline.logging.LogLines;
 import jakarta.servlet.http.Cookie;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,6 +25,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -141,6 +144,33 @@ class AuthFlowIntegrationTest {
 
 	private static int statusOf(MvcResult result) {
 		return result.getResponse().getStatus();
+	}
+
+	@ParameterizedTest(name = "{0} に対になっていないサロゲート")
+	@ValueSource(strings = { "displayName", "username", "email" })
+	@DisplayName("対になっていないサロゲートを含む登録は、500 にならず 201 か 422 で終わる")
+	void loneSurrogateIsNeverA500(String field) throws Exception {
+		String username = newName("sur");
+		Map<String, String> values = new LinkedHashMap<>();
+		values.put("username", username);
+		values.put("displayName", "テスト");
+		values.put("email", username + "@example.com");
+		values.put("password", PASSWORD);
+		// JSON のエスケープ \\uD800 で送る。生のバイトでは UTF-8 として不正になり、別の理由の 400 になってしまう。
+		values.put(field, values.get(field).substring(0, 2) + "\\uD800" + values.get(field).substring(2));
+
+		MvcResult result = mockMvc.perform(post("/api/auth/register")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(json(values)))
+				.andReturn();
+
+		// 本物の DB で確かめた結果、displayName と email は 201 になる。PostgreSQL の JDBC ドライバーは対になっていない
+		// サロゲートを "?" に置き換えて保存するので、500 にはならない。この先 500 に変わらないことを守る。
+		assertThat(statusOf(result)).isIn(201, 422);
+		if ("username".equals(field)) {
+			// ユーザー名は @Pattern（英数字と _）で必ず弾かれる。
+			assertThat(statusOf(result)).isEqualTo(422);
+		}
 	}
 
 	@Test

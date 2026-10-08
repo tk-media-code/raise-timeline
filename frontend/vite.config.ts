@@ -14,7 +14,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // コンテナ名で backend へ転送する。ブラウザからは同じオリジン（5173）への呼び出しに見えるので、
-      // CORS の設定が要らず、SameSite=Strict の Cookie もそのまま送られる。
+      // CORS の設定が要らず、SameSite=Lax の Cookie もそのまま送られる。
       '/api': { target: 'http://backend:8080', changeOrigin: false },
     },
   },

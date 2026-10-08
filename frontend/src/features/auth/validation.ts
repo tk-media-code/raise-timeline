@@ -40,10 +40,10 @@ export function validateRegister(values: RegisterValues): RegisterErrors {
 }
 
 // ログインは「空でないこと」だけを見る。形式や長さまで見ると、登録時の規則が変わったときに
-// 古い規則で作った利用者がログインできなくなる。
+// 古い規則で作った利用者がログインできなくなる。空白だけの入力もサーバーの @NotBlank が 422 にするので、画面でも空と同じに扱う。
 export function validateLogin(values: LoginInput): Partial<Record<'email' | 'password', string>> {
   const errors: Partial<Record<'email' | 'password', string>> = {}
-  if (values.email === '') errors.email = REQUIRED_MESSAGE
-  if (values.password === '') errors.password = REQUIRED_MESSAGE
+  if (values.email.trim() === '') errors.email = REQUIRED_MESSAGE
+  if (values.password.trim() === '') errors.password = REQUIRED_MESSAGE
   return errors
 }
