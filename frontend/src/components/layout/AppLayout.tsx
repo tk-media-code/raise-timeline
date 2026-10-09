@@ -39,6 +39,9 @@ export function AppLayout() {
   if (!user) return null
 
   const profilePath = `/users/${user.username}`
+  // 設定の画面では丸いボタンを出さない。設定から投稿する必要は無く、右下に固定したボタンが
+  // 右寄せの「保存」（今後は「退会」の節のボタンも）に重なって、短い画面では押せなくなるため。PC の左ナビの「投稿する」は残す。
+  const showPhoneComposeButton = !pathname.startsWith('/settings/')
 
   function askLogout() {
     setMenuOpen(false)
@@ -134,14 +137,16 @@ export function AppLayout() {
       </nav>
 
       {/* スマホでは左ナビが無いので、下部タブの上に丸いボタンを置く。見た目は ＋、名前は「投稿する」。 */}
-      <button
-        type="button"
-        aria-label="投稿する"
-        onClick={() => setComposeOpen(true)}
-        className="fixed right-4 bottom-18 z-10 flex min-h-14 min-w-14 items-center justify-center rounded-full bg-sky-600 text-3xl text-white shadow-lg hover:bg-sky-700 md:hidden"
-      >
-        <span aria-hidden="true">＋</span>
-      </button>
+      {showPhoneComposeButton && (
+        <button
+          type="button"
+          aria-label="投稿する"
+          onClick={() => setComposeOpen(true)}
+          className="fixed right-4 bottom-18 z-10 flex min-h-14 min-w-14 items-center justify-center rounded-full bg-sky-600 text-3xl text-white shadow-lg hover:bg-sky-700 md:hidden"
+        >
+          <span aria-hidden="true">＋</span>
+        </button>
+      )}
 
       <ComposeDialog open={composeOpen} onClose={() => setComposeOpen(false)} />
 

@@ -123,6 +123,22 @@ describe('AppLayout', () => {
     expect(api.createPost).not.toHaveBeenCalled()
   })
 
+  it('設定の画面では、スマホの丸ボタンを出さず、左ナビの「投稿する」だけが残る', () => {
+    renderLayout('/settings/profile')
+
+    const buttons = screen.getAllByRole('button', { name: '投稿する' })
+
+    expect(buttons).toHaveLength(1)
+    const nav = screen.getByRole('navigation', { name: 'メインメニュー' })
+    expect(within(nav).getByRole('button', { name: '投稿する' })).toBe(buttons[0])
+  })
+
+  it('ホームでは、左ナビと丸ボタンの 2 つの「投稿する」がある', () => {
+    renderLayout('/')
+
+    expect(screen.getAllByRole('button', { name: '投稿する' })).toHaveLength(2)
+  })
+
   it('ブラウザが先にダイアログを閉じても（open のまま close()）、状態が合い、もう一度開ける', async () => {
     renderLayout()
     const nav = screen.getByRole('navigation', { name: 'メインメニュー' })
