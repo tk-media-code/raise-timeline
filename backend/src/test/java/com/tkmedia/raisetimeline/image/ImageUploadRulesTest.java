@@ -34,7 +34,7 @@ class ImageUploadRulesTest {
 	@DisplayName("空のファイルは、渡した項目名で 422 になる")
 	void rejectsEmpty() {
 		assertUnreadable(new byte[0], "images");
-		assertUnreadable(new byte[0], "avatar");
+		assertUnreadable(new byte[0], "file");
 	}
 
 	@Test
@@ -51,11 +51,11 @@ class ImageUploadRulesTest {
 	@Test
 	@DisplayName("アイコンは 2,097,152 バイトまで通り、2,097,153 バイトは 413")
 	void avatarSizeBoundary() {
-		PreparedImage ok = ImageUploadRules.prepare("avatar", TestImages.pngOfSize(2_097_152L),
+		PreparedImage ok = ImageUploadRules.prepare("file", TestImages.pngOfSize(2_097_152L),
 				ImageUploadRules.AVATAR_MAX_BYTES);
 		assertThat(ok.type()).isEqualTo(ImageType.PNG);
 
-		assertThatThrownBy(() -> ImageUploadRules.prepare("avatar", TestImages.pngOfSize(2_097_153L),
+		assertThatThrownBy(() -> ImageUploadRules.prepare("file", TestImages.pngOfSize(2_097_153L),
 				ImageUploadRules.AVATAR_MAX_BYTES)).isInstanceOf(FileTooLargeException.class);
 	}
 

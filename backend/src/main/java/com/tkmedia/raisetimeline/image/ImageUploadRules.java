@@ -35,7 +35,7 @@ public final class ImageUploadRules {
 	/**
 	 * 検査を通して保存できる状態にする。
 	 *
-	 * @param field 失敗を報告する要求の項目名（{@code images} か {@code avatar}）
+	 * @param field 失敗を報告する要求の項目名（{@code images} か {@code file}）
 	 * @param content アップロードされた中身
 	 * @param maxBytes 許す大きさ（バイト）。ちょうどこの大きさまでは通る
 	 */

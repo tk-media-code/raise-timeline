@@ -76,9 +76,9 @@ IAM ポリシー（書き込み用。開発用ユーザーと本番用ロール�
 大きさの単位は 2 進で数える。5 MB は 5,242,880 バイト、2 MB は 2,097,152 バイト（Spring の `DataSize` と同じ）。
 
 - SVG は受け付けない（スクリプトを含められる）
-- JPEG は、保存の前に Exif のうち GPS のディレクトリ（GPS IFD。撮影地の座標）だけを取り除き、Orientation（写真の向き）などの他のタグは残す。Apache Commons Imaging で `TiffImageMetadata` から `TiffOutputSet` を取り、GPS のディレクトリを除いて `ExifRewriter.updateExifMetadataLossless` で書き戻す。画素は変えない。向きのタグを消すと、縦に撮った写真が横倒しで表示されるため、丸ごとは消さない。XMP（APP1 の別の形式。`exif:GPSLatitude` などが入ることがある）は、標準の XMP（識別子 `http://ns.adobe.com/xap/1.0/`）と、64KB を超えたときに使われる Extended XMP（識別子 `http://ns.adobe.com/xmp/extension/`）のどちらの APP1 も丸ごと取り除く。ライブラリの `JpegXmpRewriter.removeXmpXml` が消すのは標準の XMP だけで、Extended XMP が残って GPS が漏れるため、`GpsMetadataRemover` の中で `JpegRewriter` を継承して、取り除く条件を差し替えている。GPS が無い JPEG は Exif を書き換えず、そのまま通すPNG / GIF / WebP は対象外（スマホの写真にはまず使われず、位置情報を持つこともまれ）で、そのまま保存する
+- JPEG は、保存の前に Exif のうち GPS のディレクトリ（GPS IFD。撮影地の座標）だけを取り除き、Orientation（写真の向き）などの他のタグは残す。Apache Commons Imaging で `TiffImageMetadata` から `TiffOutputSet` を取り、GPS のディレクトリを除いて `ExifRewriter.updateExifMetadataLossless` で書き戻す。画素は変えない。向きのタグを消すと、縦に撮った写真が横倒しで表示されるため、丸ごとは消さない。XMP（APP1 の別の形式。`exif:GPSLatitude` などが入ることがある）は、標準の XMP（識別子 `http://ns.adobe.com/xap/1.0/`）と、64KB を超えたときに使われる Extended XMP（識別子 `http://ns.adobe.com/xmp/extension/`）のどちらの APP1 も丸ごと取り除く。ライブラリの `JpegXmpRewriter.removeXmpXml` が消すのは標準の XMP だけで、Extended XMP が残って GPS が漏れるため、`GpsMetadataRemover` の中で `JpegRewriter` を継承して、取り除く条件を差し替えている。GPS が無い JPEG は Exif を書き換えない（XMP の除去は行う）。PNG / GIF / WebP は対象外（スマホの写真にはまず使われず、位置情報を持つこともまれ）で、そのまま保存する
 - Apache Commons Imaging は `1.0.0-alpha6` に固定し、使うのは `GpsMetadataRemover` の中だけにする。Java で、画素に触れずに Exif だけを書き換えられるライブラリは、実質これしかない（世界標準の ExifTool と Exiv2 は Java ではない）。alpha 版である危うさは、単体テスト（GPS が消える、Orientation が残る、Exif の無い JPEG が通る）と、スマホで撮った写真での手動確認で補う。他のクラスが直接使わないので、置き換えるときの影響はこのクラスに収まる
-- JPEG の解析に失敗したら（先頭のバイトだけ JPEG で中身が壊れているなど）、422「画像を読み取れませんでした」にする。位置情報を消せないまま保存すると撮影地が漏れるおそれがあるので、保存しない。利用者の入力で起きる失敗なので、500 にもしない
+- JPEG の解析に失敗したら（先頭のバイトだけ JPEG で中身が壊れているなど）、422「画像を読み取れませんでした」にする。解析は Exif だけを読む（`JpegImageParser.getExifMetadata`）。`Imaging.getMetadata` は APP13（Photoshop / IPTC）も解析し、そこが壊れていると例外になるため、位置情報と関係の無い部分の不具合で本物の写真まで弾いてしまう。位置情報を消せないまま保存すると撮影地が漏れるおそれがあるので、保存しない。利用者の入力で起きる失敗なので、500 にもしない
 - 画像の縦横の大きさは検査しない。縮小もしない。表示は CSS で収める。大きな画像の縮小は将来の課題
 - 検査の順序は、投稿の作成では (1) 画像があるのに保存先が使えなければ 503、(2) 本文（422）、(3) 枚数（5 枚以上は 422「画像は 4 枚までです」。項目は `images`）、(4) 画像を送られた順に 1 枚ずつ、空（422）、大きさ（413）、形式（415）、読み取れない JPEG（422）。**画像はすべて検査してから、1 枚も保存しないうちに** 上げ始める。アイコンは (1) と (4) だけで、項目は `file`。大きさを形式より先に見るのは、大きなファイルの先頭を調べる前に断るため。ただし 1 ファイルが 5 MB（`spring.servlet.multipart.max-file-size`）を超えるか、要求全体が 21 MB（`max-request-size`）を超えると、Spring が multipart を解析する途中で 413 にするので、この順序より前に止まる（保存先や本文に関係なく 413）。投稿画像の 5 MB は Spring の上限と同じ値なので、実質ここで決まる。アイコンの 2 MB は、2〜5 MB ならこの順序の (4) で 413 になる
 - 画面でも、ファイル選択の時点で検査して先に伝える（最終判断はサーバー）。順序は **形式、大きさ** で、サーバーと逆になる。SVG を選んだ人に「大きすぎる」と言うと、小さくすれば通ると誤解させるため。形式は、MIME が 4 種のどれか、または拡張子が jpg / jpeg / png / gif / webp（大文字小文字を区別しない）なら通す。OS が拡張子から MIME を決められず、空になることがあるため。通らなかったファイルは追加せず、文言を出す。5 枚目以降は追加せず「画像は 4 枚までです」を出す（4 枚目までは追加する）
@@ -112,6 +112,8 @@ sequenceDiagram
 S3 への PUT はトランザクションの外で行い、DB の書き込みだけをトランザクションにする。S3 の削除はコミットの後で行う（[error-handling-design.md](error-handling-design.md) の 3 章）。
 
 S3 への保存が途中で失敗したときも、それまでに上げた分を消して 500 を返す。
+
+受け入れているリスクが 1 つある。DB の書き込みが例外になっても、実際にはコミットが済んでいることがある（コミットの後で接続が切れたときなど）。そのとき後始末は、新しく上げたキーを消してしまい、保存された行からその画像が参照されて壊れて見える。まれにしか起きず、アイコンは上げ直せば直るので、受け入れる（コードでは防がない）。アイコンの差し替えも同じ。
 
 画像は並行に上げず、1 枚ずつ順に上げる。理由は 3 つ。
 
@@ -164,7 +166,7 @@ public interface ImageStorage {
 | 実装 | 用途 |
 | --- | --- |
 | `S3ImageStorage` | 本番とローカルの実行時。AWS SDK for Java v2 の `S3Client` を使う。数十行の薄い部品にとどめる |
-| `DisabledImageStorage` | S3 の設定（`S3_BUCKET`）が無いときに使う。`isAvailable()` は false で、`put` と `deleteAll` は `ImageStorageUnavailableException` を投げ、503 になる。`urlOf` は null を返す。設定が無くてもアプリが起動するため |
+| `DisabledImageStorage` | S3 の設定（`S3_BUCKET`）が無いときに使う。`isAvailable()` は false で、`put` は `ImageStorageUnavailableException` を投げ、503 になる。`deleteAll` も例外を投げるが、呼ぶのは `ImageCleaner` だけで、WARN にとどめる。`urlOf` は null を返す。設定が無くてもアプリが起動するため |
 | Mockito の代役、または `InMemoryImageStorage`（テスト用） | 自動テスト。どこにも保存しない（[test-strategy.md](test-strategy.md)）。テストのプロファイルは `image-storage.bucket=` と空にして、自動テストが本物の S3 に届かないようにする |
 
 - 画像の形式判定は `ImageTypeDetector`（先頭バイトを見る）に分け、単体テストで確かめる
