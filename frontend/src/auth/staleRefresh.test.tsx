@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthResponse, Me } from '../api/auth'
-import { ApiError } from '../api/client'
+import { apiFetch, ApiError } from '../api/client'
 import { queryClient } from '../lib/queryClient'
 import { AuthProvider, useAuth } from './AuthProvider'
 import { refreshSession } from './refresh'
@@ -119,5 +119,37 @@ describe('古い更新の結果を捨てる（本物の refresh と AuthProvider
     expect(getAccessToken()).toBeNull()
     expect(screen.getByTestId('status')).toHaveTextContent('anonymous')
     expect(screen.getByTestId('user')).toHaveTextContent('none')
+  })
+
+  it('期限切れで未ログインになると、TanStack Query のキャッシュを消す', async () => {
+    apiRefresh.mockResolvedValueOnce(alice)
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+    queryClient.setQueryData(['x'], 1)
+
+    // 画面の途中の API が 401 になり、更新も 401（リフレッシュトークンの期限切れ）になる。
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ status: 401, code: 'UNAUTHENTICATED', detail: 'x', errors: [], requestId: 'r' }),
+          { status: 401, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    apiRefresh.mockRejectedValueOnce(unauthorized())
+    try {
+      await act(async () => {
+        await expect(apiFetch('/api/posts')).rejects.toMatchObject({ status: 401 })
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+
+    expect(screen.getByTestId('status')).toHaveTextContent('anonymous')
+    expect(queryClient.getQueryData(['x'])).toBeUndefined()
   })
 })

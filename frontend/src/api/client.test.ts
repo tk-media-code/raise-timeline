@@ -146,6 +146,23 @@ describe('apiFetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('更新で別の利用者が返ったら、元の要求をやり直さずに 401 を投げる', async () => {
+    fetchMock
+      .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))
+      .mockResolvedValueOnce(ok({ accessToken: 'other', user: { ...me, id: '2' } }))
+    const { apiFetch, ApiError, setAccessToken, setSessionUserId, getAccessToken } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+
+    const error = await apiFetch('/api/users/me').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 401, code: 'UNAUTHENTICATED' })
+    // 元の要求と更新だけ。3 回目（別の利用者のトークンでのやり直し）は無い。
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(getAccessToken()).toBeNull()
+  })
+
   it('やり直しでも 401 なら ApiError を投げ、更新は繰り返さない', async () => {
     fetchMock
       .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))

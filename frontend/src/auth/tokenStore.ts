@@ -23,3 +23,18 @@ export function getSessionGeneration(): number {
 export function advanceSessionGeneration(): void {
   sessionGeneration += 1
 }
+
+// このタブが覚えている利用者の id。更新で別の利用者が返ったかどうかを見比べるために使う。
+// リフレッシュ Cookie は全タブで共有されるので、別のタブでログインし直されると、
+// こちらのタブの次の更新は別の利用者のトークンを返す。画面は元の利用者のままなので、
+// 見比べて違えば、そのトークンは使わない。
+// null は「まだ覚えていない」（起動時）か「ログアウト状態」。
+let sessionUserId: string | null = null
+
+export function getSessionUserId(): string | null {
+  return sessionUserId
+}
+
+export function setSessionUserId(id: string | null): void {
+  sessionUserId = id
+}
