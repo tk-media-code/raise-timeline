@@ -2,11 +2,14 @@ package com.tkmedia.raisetimeline.image;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import org.apache.commons.imaging.Imaging;
+import org.apache.commons.imaging.bytesource.ByteSource;
 import org.apache.commons.imaging.common.ImageMetadata;
 import org.apache.commons.imaging.formats.jpeg.JpegImageMetadata;
 import org.apache.commons.imaging.formats.jpeg.exif.ExifRewriter;
-import org.apache.commons.imaging.formats.jpeg.xmp.JpegXmpRewriter;
+import org.apache.commons.imaging.formats.jpeg.xmp.JpegRewriter;
 import org.apache.commons.imaging.formats.tiff.TiffImageMetadata;
 import org.apache.commons.imaging.formats.tiff.constants.TiffDirectoryConstants;
 import org.apache.commons.imaging.formats.tiff.write.TiffOutputDirectory;
@@ -17,7 +20,8 @@ import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet;
  *
  * <p>Exif は GPS のディレクトリ（撮影地の座標）だけを除き、Orientation（写真の向き）など他のタグは残す。
  * 向きのタグまで消すと、縦に撮った写真が横倒しで表示されてしまうため。書き戻しは画素に触れない
- * （lossless）。XMP は {@code exif:GPSLatitude} などが入ることがあるので、丸ごと取り除く。
+ * （lossless）。XMP は {@code exif:GPSLatitude} などが入ることがあるので、標準の XMP と、64KB を超えたときに
+ * 使われる Extended XMP のどちらも丸ごと取り除く。
  *
  * <p>GPS が無い JPEG は Exif を書き換えない。書き換えるほど元の Exif を壊す機会が増えるだけで、
  * 得るものが無いため。
@@ -36,7 +40,7 @@ public final class GpsMetadataRemover {
 		try {
 			byte[] withoutGps = removeGpsFromExif(jpeg);
 			ByteArrayOutputStream out = new ByteArrayOutputStream(withoutGps.length);
-			new JpegXmpRewriter().removeXmpXml(withoutGps, out);
+			new XmpSegmentRemover().remove(withoutGps, out);
 			return out.toByteArray();
 		} catch (IOException | RuntimeException e) {
 			throw new UnreadableImageException(e);
@@ -65,6 +69,47 @@ public final class GpsMetadataRemover {
 		ByteArrayOutputStream out = new ByteArrayOutputStream(jpeg.length);
 		new ExifRewriter().updateExifMetadataLossless(jpeg, out, outputSet);
 		return out.toByteArray();
+	}
+
+	/**
+	 * XMP を入れた APP1 を、標準のものも Extended XMP のものも取り除く。
+	 *
+	 * <p>ライブラリの {@code removeXmpXml} が消すのは標準の XMP（識別子 {@code http://ns.adobe.com/xap/1.0/}）だけで、
+	 * Extended XMP（識別子 {@code http://ns.adobe.com/xmp/extension/}）の APP1 は残り、GPS が漏れる。
+	 * 取り除く条件を差し替えるために、ライブラリの {@link JpegRewriter} を継承して書き出す。
+	 */
+	private static final class XmpSegmentRemover extends JpegRewriter {
+
+		private static final int APP1_MARKER = 0xFFE1;
+		private static final byte[] EXTENDED_XMP_IDENTIFIER =
+				"http://ns.adobe.com/xmp/extension/\0".getBytes(StandardCharsets.US_ASCII);
+
+		void remove(byte[] jpeg, ByteArrayOutputStream out) throws IOException {
+			List<JFIFPiece> kept = analyzeJfif(ByteSource.array(jpeg)).pieces.stream()
+					.filter(piece -> !isXmpSegment(piece))
+					.toList();
+			writeSegments(out, kept);
+		}
+
+		private static boolean isXmpSegment(JFIFPiece piece) {
+			if (!(piece instanceof JFIFPieceSegment segment) || segment.marker != APP1_MARKER) {
+				return false;
+			}
+			return segment.isXmpSegment() || startsWith(segment.getSegmentData(), EXTENDED_XMP_IDENTIFIER);
+		}
+
+		private static boolean startsWith(byte[] data, byte[] prefix) {
+			if (data.length < prefix.length) {
+				return false;
+			}
+			for (int i = 0; i < prefix.length; i++) {
+				if (data[i] != prefix[i]) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 	}
 
 }

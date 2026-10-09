@@ -4,6 +4,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import javax.imageio.ImageIO;
@@ -86,6 +87,28 @@ final class TestImages {
 		} catch (IOException e) {
 			throw new IllegalStateException("テスト用の JPEG を作れない", e);
 		}
+	}
+
+	/**
+	 * Extended XMP の APP1 に {@code exif:GPSLatitude} を入れた JPEG。XMP が 64KB を超えるときに使われる別の入れ物で、
+	 * 標準の XMP とは識別子が違う。JPEG の先頭（SOI）の直後に差し込む。
+	 */
+	static byte[] jpegWithExtendedXmpGps() {
+		byte[] identifier = "http://ns.adobe.com/xmp/extension/\0".getBytes(StandardCharsets.US_ASCII);
+		byte[] guid = "0123456789ABCDEF0123456789ABCDEF".getBytes(StandardCharsets.US_ASCII);
+		byte[] payload = ("<rdf:Description xmlns:exif=\"http://ns.adobe.com/exif/1.0/\" "
+				+ "exif:GPSLatitude=\"35,36.0N\" exif:GPSLongitude=\"139,42.0E\"/>")
+				.getBytes(StandardCharsets.UTF_8);
+		int dataLength = identifier.length + guid.length + 4 + 4 + payload.length;
+		ByteBuffer app1 = ByteBuffer.allocate(2 + 2 + dataLength);
+		app1.put((byte) 0xFF).put((byte) 0xE1).putShort((short) (2 + dataLength));
+		app1.put(identifier).put(guid).putInt(payload.length).putInt(0).put(payload);
+		byte[] base = jpeg();
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		out.write(base, 0, 2);
+		out.writeBytes(app1.array());
+		out.write(base, 2, base.length - 2);
+		return out.toByteArray();
 	}
 
 	/** 先頭だけ JPEG で、中身がでたらめなデータ。「読み取れない JPEG」（422）の期待に使う。 */

@@ -70,6 +70,19 @@ class GpsMetadataRemoverTest {
 	}
 
 	@Test
+	@DisplayName("Extended XMP に GPS がある JPEG は、その APP1 ごと無くなる")
+	void removesExtendedXmp() throws Exception {
+		byte[] source = TestImages.jpegWithExtendedXmpGps();
+		assertThat(new String(source, StandardCharsets.ISO_8859_1)).contains("GPSLatitude");
+
+		byte[] stripped = GpsMetadataRemover.strip(source);
+
+		String text = new String(stripped, StandardCharsets.ISO_8859_1);
+		assertThat(text).doesNotContain("GPSLatitude").doesNotContain("http://ns.adobe.com/xmp/extension/");
+		assertDecodesWithSameSize(stripped);
+	}
+
+	@Test
 	@DisplayName("Exif の無い JPEG は通り、読み直せる")
 	void passesJpegWithoutExif() throws Exception {
 		byte[] stripped = GpsMetadataRemover.strip(TestImages.jpeg());
