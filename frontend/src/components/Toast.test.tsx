@@ -34,16 +34,43 @@ describe('Toast', () => {
     vi.useRealTimers()
   })
 
-  it('成功の通知は role="status" で出て、4000 ms で消える', () => {
-    renderToasts([['投稿しました']])
+  it('成功の通知は、通知を出す前からある role="status"（名前「通知」）の中に出て、4000 ms で消える', () => {
+    render(
+      <ToastProvider>
+        <Trigger messages={[['投稿しました']]} />
+      </ToastProvider>,
+    )
+    // 読み上げソフトは、領域ごと後から差し込まれた status を読まないことがある。出す前に取った参照で確かめる。
+    const region = screen.getByRole('status', { name: '通知' })
+    expect(region).toBeEmptyDOMElement()
 
-    expect(screen.getByRole('status')).toHaveTextContent('投稿しました')
+    fireEvent.click(screen.getByRole('button', { name: '出す' }))
+    expect(screen.getByRole('status', { name: '通知' })).toBe(region)
+    expect(region).toHaveTextContent('投稿しました')
 
     advance(3999)
-    expect(screen.getByRole('status')).toBeInTheDocument()
+    expect(region).toHaveTextContent('投稿しました')
 
     advance(1)
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(region).not.toHaveTextContent('投稿しました')
+  })
+
+  it('成功の通知が消えた後も、領域は残る', () => {
+    renderToasts([['投稿しました']])
+    const region = screen.getByRole('status', { name: '通知' })
+
+    advance(4000)
+
+    expect(region).toBeInTheDocument()
+    expect(region).toBeEmptyDOMElement()
+  })
+
+  it('失敗の通知は領域に入れず、それぞれ role="alert" で出る', () => {
+    renderToasts([['成功です'], ['失敗です', 'error']])
+
+    expect(screen.getByRole('status', { name: '通知' })).toHaveTextContent('成功です')
+    expect(screen.getByRole('alert')).toHaveTextContent('失敗です')
+    expect(screen.getByRole('status', { name: '通知' })).not.toHaveTextContent('失敗です')
   })
 
   it('kind を省くと成功として出る', () => {
