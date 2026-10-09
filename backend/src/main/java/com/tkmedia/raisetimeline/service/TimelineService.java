@@ -1,10 +1,8 @@
 package com.tkmedia.raisetimeline.service;
 
-import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -26,17 +24,9 @@ public class TimelineService {
 		this.assembler = assembler;
 	}
 
-	/**
-	 * 次のページがあるかを知るために、{@code limit} より 1 行多く読む。
-	 * 余分な 1 行は返さず、あったことだけを {@code nextCursor}（返す最後の投稿の id）で知らせる。
-	 */
+	/** ページの打ち切り方（{@code limit} より 1 行多く読む理由）は {@link PostPages}。 */
 	public PageResponse<PostResponse> all(UUID cursor, int limit) {
-		List<PostWithAuthor> rows = postMapper.findAll(cursor, limit + 1);
-		if (rows.size() <= limit) {
-			return new PageResponse<>(assembler.toResponses(rows), null);
-		}
-		List<PostWithAuthor> page = rows.subList(0, limit);
-		return new PageResponse<>(assembler.toResponses(page), page.get(limit - 1).id());
+		return PostPages.of(postMapper.findAll(cursor, limit + 1), limit, assembler);
 	}
 
 }

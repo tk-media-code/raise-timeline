@@ -2,6 +2,7 @@ package com.tkmedia.raisetimeline.dto;
 
 import com.tkmedia.raisetimeline.validation.CodePointSize;
 import com.tkmedia.raisetimeline.validation.NoNul;
+import com.tkmedia.raisetimeline.validation.Usernames;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
@@ -17,7 +18,7 @@ import jakarta.validation.constraints.Pattern;
  */
 public record RegisterRequest(
 		@NotBlank(message = "3〜20 文字の英数字と _ で入力してください")
-		@Pattern(regexp = "^[A-Za-z0-9_]{3,20}$", message = "3〜20 文字の英数字と _ で入力してください")
+		@Pattern(regexp = Usernames.PATTERN, message = "3〜20 文字の英数字と _ で入力してください")
 		@NoNul
 		String username,
 		@NotBlank(message = "1〜50 文字で入力してください")
