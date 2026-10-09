@@ -20,3 +20,21 @@ if (!HTMLDialogElement.prototype.showModal) {
     this.removeAttribute('open')
   }
 }
+
+// jsdom には IntersectionObserver が無い。無限スクロールの部品が使うので、何もしない代役を置く
+// （監視しても何も知らせない。表示が崩れず、無関係なテストが落ちないための最小限）。
+// 「見えた」を送りたいテストは test/intersectionObserver.ts の installFakeIntersectionObserver を使う。
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  globalThis.IntersectionObserver = class NoopIntersectionObserver implements IntersectionObserver {
+    readonly root = null
+    readonly rootMargin = ''
+    readonly scrollMargin = ''
+    readonly thresholds: ReadonlyArray<number> = []
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return []
+    }
+  }
+}
