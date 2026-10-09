@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tkmedia.raisetimeline.mapper.PostMapper">
+
+	<!-- users からは表示に要る 3 列だけを読む。email と password_hash は読まない。 -->
+	<sql id="columns">
+		p.id, p.user_id, p.body, p.created_at, p.updated_at, u.username, u.display_name, u.avatar_key
+	</sql>
+
+	<!-- UserMapper.insert と同じ理由で、INSERT ... RETURNING id を <select> で実行する。 -->
+	<select id="insert" resultType="java.util.UUID" flushCache="true" useCache="false">
+		INSERT INTO posts (user_id, body, created_at, updated_at)
+		VALUES (#{userId}, #{body}, #{createdAt}, #{updatedAt})
+		RETURNING id
+	</select>
+
+	<select id="findById" resultType="com.tkmedia.raisetimeline.domain.PostWithAuthor">
+		SELECT <include refid="columns"/>
+		FROM posts p JOIN users u ON u.id = p.user_id
+		WHERE p.id = #{id}
+	</select>
+
+	<update id="updateBody">
+		UPDATE posts SET body = #{body}, updated_at = #{updatedAt} WHERE id = #{id}
+	</update>
+
+	<delete id="delete">
+		DELETE FROM posts WHERE id = #{id}
+	</delete>
+
+	<!--
+		cursor が null のときは絞らない。`(#{cursor} IS NULL OR ...)` と書くと、null の型を PostgreSQL に
+		推測させることになるので、<if> で条件ごと出し分ける。
+	-->
+	<select id="findAll" resultType="com.tkmedia.raisetimeline.domain.PostWithAuthor">
+		SELECT <include refid="columns"/>
+		FROM posts p JOIN users u ON u.id = p.user_id
+		<where>
+			<if test="cursor != null">p.id &lt; #{cursor}</if>
+		</where>
+		ORDER BY p.id DESC
+		LIMIT #{limit}
+	</select>
+
+</mapper>
