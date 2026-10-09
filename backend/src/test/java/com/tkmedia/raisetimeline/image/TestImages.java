@@ -12,6 +12,7 @@ import org.apache.commons.imaging.Imaging;
 import org.apache.commons.imaging.formats.jpeg.JpegImageMetadata;
 import org.apache.commons.imaging.formats.jpeg.exif.ExifRewriter;
 import org.apache.commons.imaging.formats.jpeg.xmp.JpegXmpRewriter;
+import org.apache.commons.imaging.formats.tiff.constants.GpsTagConstants;
 import org.apache.commons.imaging.formats.tiff.constants.TiffTagConstants;
 import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet;
 
@@ -32,9 +33,15 @@ public final class TestImages {
 	private TestImages() {
 	}
 
-	/** {@link ImageIO} で作る 16×16 の本物の JPEG。Exif も XMP も持たない。 */
+	/** {@link ImageIO} で作る 16×16 の本物の JPEG。Exif も XMP も持たない。画素は一様ではない。 */
 	public static byte[] jpeg() {
 		BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
+		// 画素が一様だと、圧縮したデータがほぼ空になり、「画素が変わっていない」ことを確かめる意味が薄い。
+		for (int y = 0; y < HEIGHT; y++) {
+			for (int x = 0; x < WIDTH; x++) {
+				image.setRGB(x, y, ((x * 16) << 16) | ((y * 16) << 8) | ((x + y) * 8));
+			}
+		}
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		try {
 			if (!ImageIO.write(image, "jpg", out)) {
@@ -58,6 +65,66 @@ public final class TestImages {
 		} catch (IOException e) {
 			throw new IllegalStateException("テスト用の JPEG を作れない", e);
 		}
+	}
+
+	/**
+	 * {@link #jpegWithGpsAndOrientation()} の GPS のディレクトリに、{@code marker}（ASCII）を
+	 * GPSProcessingMethod として書き足したもの。座標の数値は Exif の中で 2 進の分数になり文字列として探せないが、
+	 * これは文字列のまま入るので、バイト列に残っているかどうかを直接調べられる。
+	 */
+	public static byte[] jpegWithGpsMarker(String marker) {
+		try {
+			TiffOutputSet outputSet = new TiffOutputSet();
+			outputSet.getOrCreateRootDirectory().add(TiffTagConstants.TIFF_TAG_ORIENTATION, (short) 6);
+			outputSet.setGpsInDegrees(139.7, 35.6);
+			outputSet.getOrCreateGpsDirectory().add(GpsTagConstants.GPS_TAG_GPS_PROCESSING_METHOD, marker);
+			ByteArrayOutputStream out = new ByteArrayOutputStream();
+			new ExifRewriter().updateExifMetadataLossless(jpeg(), out, outputSet);
+			return out.toByteArray();
+		} catch (IOException e) {
+			throw new IllegalStateException("テスト用の JPEG を作れない", e);
+		}
+	}
+
+	/**
+	 * 画素を符号化したデータ。最初の SOS（{@code FF DA}）のマーカーから末尾（EOI まで）のバイト列。
+	 * JPEG の先頭からセグメントを長さでたどって SOS を探す（データの中の {@code FF DA} に引っかからないように）。
+	 */
+	public static byte[] scanData(byte[] jpeg) {
+		int position = 2;
+		while (position + 4 <= jpeg.length) {
+			if ((jpeg[position] & 0xFF) != 0xFF) {
+				throw new IllegalStateException("マーカーの位置がずれた: " + position);
+			}
+			int marker = jpeg[position + 1] & 0xFF;
+			if (marker == 0xDA) {
+				return Arrays.copyOfRange(jpeg, position, jpeg.length);
+			}
+			int length = ((jpeg[position + 2] & 0xFF) << 8) | (jpeg[position + 3] & 0xFF);
+			position += 2 + length;
+		}
+		throw new IllegalStateException("SOS が見つからない");
+	}
+
+	/**
+	 * 位置情報を持たない JPEG の先頭（SOI の直後）に、壊れた APP13（Photoshop / IPTC の入れ物）を差し込んだもの。
+	 * Photoshop の識別子と {@code 8BIM} までは正しく、その先の資源の大きさが残りのバイト数を大きく超えている。
+	 */
+	public static byte[] jpegWithMalformedApp13() {
+		byte[] identifier = "Photoshop 3.0\0".getBytes(StandardCharsets.US_ASCII);
+		byte[] resource = {
+			'8', 'B', 'I', 'M', 0x04, 0x04, 0x00, 0x00,
+			0x7F, (byte) 0xFF, (byte) 0xFF, (byte) 0xF0, 0x01, 0x02 };
+		int dataLength = identifier.length + resource.length;
+		ByteBuffer app13 = ByteBuffer.allocate(2 + 2 + dataLength);
+		app13.put((byte) 0xFF).put((byte) 0xED).putShort((short) (2 + dataLength));
+		app13.put(identifier).put(resource);
+		byte[] base = jpeg();
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		out.write(base, 0, 2);
+		out.writeBytes(app13.array());
+		out.write(base, 2, base.length - 2);
+		return out.toByteArray();
 	}
 
 	/** Exif は持つが GPS のディレクトリは持たない JPEG。{@code Orientation=6} だけを入れてある。 */

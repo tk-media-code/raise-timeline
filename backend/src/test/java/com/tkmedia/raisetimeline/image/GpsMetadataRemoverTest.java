@@ -83,6 +83,44 @@ class GpsMetadataRemoverTest {
 	}
 
 	@Test
+	@DisplayName("GPS の中の文字列（GPSProcessingMethod）が、出力のバイト列から無くなる")
+	void removesGpsTextFromBytes() throws Exception {
+		String marker = "SECRET-GPS-MARKER-TOKYO";
+		byte[] source = TestImages.jpegWithGpsMarker(marker);
+		// 前提: 入力には文字列がそのまま入っている（入っていなければ、この検査は何も確かめない）。
+		assertThat(new String(source, StandardCharsets.ISO_8859_1)).contains(marker);
+
+		byte[] stripped = GpsMetadataRemover.strip(source);
+
+		assertThat(new String(stripped, StandardCharsets.ISO_8859_1)).doesNotContain(marker);
+		assertDecodesWithSameSize(stripped);
+	}
+
+	@Test
+	@DisplayName("画素を符号化したデータ（SOS から EOI まで）は、取り除く前と 1 バイトも変わらない")
+	void keepsScanDataByteIdentical() throws Exception {
+		byte[] source = TestImages.jpegWithGpsMarker("SECRET-GPS-MARKER-TOKYO");
+
+		byte[] stripped = GpsMetadataRemover.strip(source);
+
+		// 恒等関数でも画素は変わらないので、メタデータが実際に変わっていること（前提）も合わせて確かめる。
+		assertThat(stripped).isNotEqualTo(source);
+		assertThat(exifOf(stripped).findDirectory(TiffDirectoryConstants.DIRECTORY_TYPE_GPS)).isNull();
+		assertThat(TestImages.scanData(stripped)).isNotEmpty().isEqualTo(TestImages.scanData(source));
+		assertThat(TestImages.scanData(source)).isEqualTo(TestImages.scanData(TestImages.jpeg()));
+	}
+
+	@Test
+	@DisplayName("壊れた APP13 を持つ JPEG も通り、読み直せる（Exif 以外の壊れた部分では弾かない）")
+	void passesJpegWithMalformedApp13() throws Exception {
+		byte[] source = TestImages.jpegWithMalformedApp13();
+
+		byte[] stripped = GpsMetadataRemover.strip(source);
+
+		assertDecodesWithSameSize(stripped);
+	}
+
+	@Test
 	@DisplayName("Exif の無い JPEG は通り、読み直せる")
 	void passesJpegWithoutExif() throws Exception {
 		byte[] stripped = GpsMetadataRemover.strip(TestImages.jpeg());

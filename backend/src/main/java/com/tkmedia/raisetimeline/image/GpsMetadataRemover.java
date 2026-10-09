@@ -4,13 +4,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import org.apache.commons.imaging.Imaging;
 import org.apache.commons.imaging.bytesource.ByteSource;
-import org.apache.commons.imaging.common.ImageMetadata;
-import org.apache.commons.imaging.formats.jpeg.JpegImageMetadata;
+import org.apache.commons.imaging.formats.jpeg.JpegImageParser;
 import org.apache.commons.imaging.formats.jpeg.exif.ExifRewriter;
 import org.apache.commons.imaging.formats.jpeg.xmp.JpegRewriter;
 import org.apache.commons.imaging.formats.tiff.TiffImageMetadata;
+import org.apache.commons.imaging.formats.tiff.TiffImagingParameters;
 import org.apache.commons.imaging.formats.tiff.constants.TiffDirectoryConstants;
 import org.apache.commons.imaging.formats.tiff.write.TiffOutputDirectory;
 import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet;
@@ -22,6 +21,9 @@ import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet;
  * 向きのタグまで消すと、縦に撮った写真が横倒しで表示されてしまうため。書き戻しは画素に触れない
  * （lossless）。XMP は {@code exif:GPSLatitude} などが入ることがあるので、標準の XMP と、64KB を超えたときに
  * 使われる Extended XMP のどちらも丸ごと取り除く。
+ *
+ * <p>メタデータは Exif だけを読む。{@code Imaging.getMetadata} は Photoshop / IPTC（APP13）も解析し、
+ * そこが壊れていると例外にする。位置情報と関係の無い部分の不具合で、本物の写真を弾かないため。
  *
  * <p>GPS が無い JPEG は Exif を書き換えない。書き換えるほど元の Exif を壊す機会が増えるだけで、
  * 得るものが無いため。
@@ -48,11 +50,9 @@ public final class GpsMetadataRemover {
 	}
 
 	private static byte[] removeGpsFromExif(byte[] jpeg) throws IOException {
-		ImageMetadata metadata = Imaging.getMetadata(jpeg);
-		if (!(metadata instanceof JpegImageMetadata jpegMetadata)) {
-			return jpeg;
-		}
-		TiffImageMetadata exif = jpegMetadata.getExif();
+		// Imaging.getMetadata は APP13（Photoshop / IPTC）なども解析し、そこが壊れていると例外にする。
+		// 位置情報に関係の無い部分の不具合で本物の写真を弾かないよう、Exif だけを読む。
+		TiffImageMetadata exif = new JpegImageParser().getExifMetadata(ByteSource.array(jpeg), new TiffImagingParameters());
 		if (exif == null || exif.findDirectory(TiffDirectoryConstants.DIRECTORY_TYPE_GPS) == null) {
 			return jpeg;
 		}
