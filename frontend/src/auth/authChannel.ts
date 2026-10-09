@@ -38,7 +38,7 @@ export function announceAuthChanged(): void {
       channel.postMessage(message)
       return
     }
-    // 購読者が居ないとき（ログイン画面など）は、一時的なチャンネルで送ってすぐ閉じる。
+    // 購読者が 1 つも居ないときは、一時的なチャンネルで送ってすぐ閉じる。
     // 開いたままにすると、閉じ時が無くなる。
     const temporary = new BroadcastChannel(AUTH_CHANNEL_NAME)
     try {
