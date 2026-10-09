@@ -36,6 +36,9 @@ dependencies {
 	// Flyway 10 以降、PostgreSQL 対応は本体から分かれた。これが無いと PostgreSQL に繋げない。
 	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 	runtimeOnly 'org.postgresql:postgresql'
+	// 画像の Exif を、画素に触れずに書き換えて GPS を除く。これができる Java のライブラリは事実上これだけで、
+	// 正式版が無い（alpha が最新）ため、版を固定して勝手に変わらないようにする。
+	implementation 'org.apache.commons:commons-imaging:1.0.0-alpha6'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	// @WebMvcTest で認証済みの要求を作る（jwt()）ため。
 	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'

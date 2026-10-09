@@ -20,6 +20,8 @@ public enum ErrorCode {
 	USERNAME_TAKEN(HttpStatus.CONFLICT, "このユーザー名は使われています"),
 	EMAIL_TAKEN(HttpStatus.CONFLICT, "このメールアドレスは登録済みです"),
 	UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "要求の形式が正しくありません"),
+	FILE_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "画像が大きすぎます"),
+	UNSUPPORTED_IMAGE_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "JPEG、PNG、GIF、WebP の画像を選んでください"),
 	VALIDATION_ERROR(HttpStatus.UNPROCESSABLE_CONTENT, "入力内容に誤りがあります"),
 	IMAGE_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "画像の保存が設定されていません"),
 	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "問題が起きました。時間をおいて再試行してください");

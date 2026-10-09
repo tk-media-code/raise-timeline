@@ -44,9 +44,11 @@
 		<!-- 特定のクラスのimport自体を禁止する。jakarta.transaction.Transactionalは
 		     org.springframework.transaction.annotation.Transactionalとよく似た名前を持つが
 		     readOnly属性を持たず、誤ってimportしてもコンパイルは通ってしまう。同様の理由でjavax.*系（Jakarta EE移行前の
-		     パッケージ）の混入も防ぐ。 -->
+		     パッケージ）の混入も防ぐ。ただしjavax.imageioはJDKの画像入出力で、Jakarta EEとは無関係なので除く
+		     （画像のテストデータをImageIOで作り、読み直して確かめるため）。 -->
 		<module name="IllegalImport">
-			<property name="illegalPkgs" value="javax" />
+			<property name="illegalPkgs" value="javax(?!\.imageio)" />
+			<property name="regexp" value="true" />
 			<property name="illegalClasses" value="jakarta.transaction.Transactional" />
 		</module>
 	</module>
