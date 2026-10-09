@@ -23,6 +23,7 @@ import com.tkmedia.raisetimeline.error.ErrorCode;
 import com.tkmedia.raisetimeline.error.FieldError;
 import com.tkmedia.raisetimeline.error.InvalidCredentialsException;
 import com.tkmedia.raisetimeline.error.InvalidRefreshTokenException;
+import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
 import com.tkmedia.raisetimeline.mapper.RefreshTokenMapper;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
 import ch.qos.logback.classic.Logger;
@@ -72,7 +73,7 @@ class AuthServiceTest {
 	private final List<Boolean> encoderCallsInTransaction = new ArrayList<>();
 	private final PasswordEncoder passwordEncoder = spy(new RecordingEncoder(transactions, encoderCallsInTransaction));
 	private final TokenService tokenService = tokenService();
-	private final UserService userService = new UserService(userMapper, clock);
+	private final UserService userService = new UserService(userMapper, new InMemoryImageStorage(), clock);
 	private final AuthService service = new AuthService(userMapper, refreshTokenMapper, tokenService, passwordEncoder,
 			userService, properties(), clock, transactions);
 

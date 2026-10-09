@@ -1,32 +1,40 @@
 package com.tkmedia.raisetimeline.controller;
 
+import com.tkmedia.raisetimeline.dto.AvatarResponse;
 import com.tkmedia.raisetimeline.dto.Me;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
 import com.tkmedia.raisetimeline.dto.UserDetail;
+import com.tkmedia.raisetimeline.service.AvatarService;
 import com.tkmedia.raisetimeline.service.UserPostsService;
 import com.tkmedia.raisetimeline.service.UserService;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 public class UserController {
 
 	private final UserService userService;
 	private final UserPostsService userPostsService;
+	private final AvatarService avatarService;
 
-	public UserController(UserService userService, UserPostsService userPostsService) {
+	public UserController(UserService userService, UserPostsService userPostsService,
+			AvatarService avatarService) {
 		this.userService = userService;
 		this.userPostsService = userPostsService;
+		this.avatarService = avatarService;
 	}
 
 	/** ログイン中の本人の情報。利用者 id は、署名を確かめた JWT の sub から取る。 */
@@ -42,6 +50,15 @@ public class UserController {
 	@PatchMapping("/api/users/me")
 	public Me updateMe(@Valid @RequestBody UpdateProfileRequest request, @AuthenticationPrincipal Jwt jwt) {
 		return userService.updateProfile(CurrentUser.idOf(jwt), request);
+	}
+
+	/**
+	 * 本人のアイコンを差し替える。対象は JWT の sub の本人だけ。保存先が使えないときの 503 や、大きさ・形式の検査は
+	 * サービスの仕事で、ここでは判定しない。{@code file} の部品が無ければ Spring が 400 にする。
+	 */
+	@PutMapping(path = "/api/users/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	public AvatarResponse replaceAvatar(@AuthenticationPrincipal Jwt jwt, @RequestParam("file") MultipartFile file) {
+		return avatarService.replace(CurrentUser.idOf(jwt), file);
 	}
 
 	/**
