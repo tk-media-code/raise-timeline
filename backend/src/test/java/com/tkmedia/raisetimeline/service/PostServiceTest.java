@@ -3,6 +3,7 @@ package com.tkmedia.raisetimeline.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -41,6 +42,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionOperations;
 
 class PostServiceTest {
@@ -360,6 +363,32 @@ class PostServiceTest {
 	}
 
 	@Test
+	@DisplayName("投稿の行と画像の行は、同じ 1 回のトランザクションの中で入れる（外では入れない）")
+	void createInsertsPostAndImageRowsInsideOneTransaction() {
+		RecordingTransactions transactions = new RecordingTransactions();
+		PostService recording = new PostService(postMapper, new PostAssembler(postMapper, storage), storage,
+				new ImageCleaner(storage), transactions, Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
+		// 呼ばれた瞬間にトランザクションの中だったかを記録する。範囲を外すと false が残って落ちる。
+		List<Boolean> insertCalls = new ArrayList<>();
+		List<Boolean> insertImagesCalls = new ArrayList<>();
+		when(postMapper.insert(any())).thenAnswer(invocation -> {
+			insertCalls.add(transactions.active);
+			return POST_ID;
+		});
+		doAnswer(invocation -> {
+			insertImagesCalls.add(transactions.active);
+			return null;
+		}).when(postMapper).insertImages(any(), any());
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "本文")));
+
+		recording.create(ME, "本文", List.of(part(TestImages.png()), part(TestImages.gif())));
+
+		assertThat(transactions.executions).isEqualTo(1);
+		assertThat(insertCalls).containsExactly(true);
+		assertThat(insertImagesCalls).containsExactly(true);
+	}
+
+	@Test
 	@DisplayName("投稿者の外部キー違反は UnauthenticatedException になり、上げたキーが消される")
 	void createTranslatesForeignKeyViolationAndCleansKeys() {
 		when(postMapper.insert(any())).thenThrow(violation("posts_user_id_fkey"));
@@ -456,6 +485,26 @@ class PostServiceTest {
 		assertThatThrownBy(() -> service.delete(ME, POST_ID)).isInstanceOf(NotFoundException.class);
 
 		assertThat(storage.deletedKeys()).isEmpty();
+	}
+
+	/** トランザクションの中にいる間だけ {@code active} が true になる、記録用の {@link TransactionOperations}。 */
+	private static final class RecordingTransactions implements TransactionOperations {
+
+		boolean active;
+		int executions;
+
+		@Override
+		public <T> T execute(TransactionCallback<T> action) {
+			executions++;
+			active = true;
+			try {
+				return action.doInTransaction(new SimpleTransactionStatus());
+			}
+			finally {
+				active = false;
+			}
+		}
+
 	}
 
 }
