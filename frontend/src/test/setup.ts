@@ -16,8 +16,11 @@ if (!HTMLDialogElement.prototype.showModal) {
   HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
     this.setAttribute('open', '')
   }
+  // 本物は閉じたあとに close イベントを出す（開いていないときは出さない）。ModalDialog がこれを受けて親の状態を合わせる。
   HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    if (!this.hasAttribute('open')) return
     this.removeAttribute('open')
+    this.dispatchEvent(new Event('close'))
   }
 }
 

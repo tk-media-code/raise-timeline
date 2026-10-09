@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from 'react'
 import { useToast } from '../../components/Toast'
 import { BodyField } from './BodyField'
 import { failureMessage, toValidationFailure, useCreatePost } from './mutations'
+import { useIsMounted } from './useIsMounted'
 import { canSubmitBody } from './validation'
 
 type PostFormProps = {
@@ -20,6 +21,7 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
   const toast = useToast()
   // isPending の反映は少し遅れるので、素早い 2 回目の押下は ref で止める。
   const submitting = useRef(false)
+  const mounted = useIsMounted()
 
   const canSubmit = canSubmitBody(body) && !create.isPending
 
@@ -38,9 +40,12 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
       await create.mutateAsync(body)
     } catch (error) {
       const validation = toValidationFailure(error)
-      if (validation) {
+      if (validation && mounted.current) {
         setBodyError(validation.bodyMessage)
         setFormError(validation.formMessage)
+      } else if (validation) {
+        // 送信中に閉じられた。誤りを見せる欄が無いので、通知で伝える。
+        toast.show(validation.bodyMessage ?? validation.formMessage ?? failureMessage(error), 'error')
       } else {
         // 入力は残す。直して、あるいはそのまま、もう一度送れるように。
         toast.show(failureMessage(error), 'error')
@@ -51,7 +56,8 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
     }
     setBody('')
     toast.show('投稿しました')
-    onPosted?.()
+    // 送信中に閉じられていたら呼ばない（開き直した別のダイアログを閉じてしまう）。
+    if (mounted.current) onPosted?.()
   }
 
   return (

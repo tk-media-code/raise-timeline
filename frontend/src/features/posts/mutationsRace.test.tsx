@@ -98,6 +98,20 @@ describe('次のページを読み込んでいる最中の操作の成功', () =
     expect(client.getQueryData<Post>(postKey('a'))?.body).toBe('直した本文')
   })
 
+  it('取り消されたあとも、一覧は次のページを読み直せる', async () => {
+    api.deletePost.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useDeletePost(), { wrapper })
+    await act(() => result.current.mutateAsync('a'))
+    expect(observer.getCurrentResult().isFetchingNextPage).toBe(false)
+    release({ items: [makePost('c')], nextCursor: null })
+
+    await act(async () => {
+      await observer.fetchNextPage()
+    })
+
+    expect(allItems().map((post) => post.id)).toEqual(['b', 'c'])
+  })
+
   it('新しい投稿は、遅れて届いたページで先頭から消えない', async () => {
     api.createPost.mockResolvedValue(makePost('new', '新しい本文'))
     const { result } = renderHook(() => useCreatePost(), { wrapper })
@@ -106,5 +120,35 @@ describe('次のページを読み込んでいる最中の操作の成功', () =
     await releaseLatePage()
 
     expect(allItems().map((post) => post.id)[0]).toBe('new')
+  })
+})
+
+// 最初の読み込みを取り消すと、待機中に戻って誰も取り直さず、一覧が読み込み中のまま止まる。
+describe('最初の読み込みの最中の操作の成功', () => {
+  it('投稿が成功しても、最初の読み込みは中断されず、届いたら一覧が出る', async () => {
+    const client = createQueryClient()
+    let release!: (page: Page<Post>) => void
+    const observer = new InfiniteQueryObserver(client, {
+      queryKey: timelineKeys.all,
+      queryFn: () => new Promise<Page<Post>>((resolve) => (release = resolve)),
+      initialPageParam: null as string | null,
+      getNextPageParam: (last: Page<Post>) => last.nextCursor,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await vi.waitFor(() => expect(observer.getCurrentResult().isFetching).toBe(true))
+    api.createPost.mockResolvedValue(makePost('new'))
+    const { result } = renderHook(() => useCreatePost(), {
+      wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    })
+
+    await act(() => result.current.mutateAsync('本文'))
+    expect(observer.getCurrentResult().isFetching).toBe(true)
+    await act(async () => {
+      release({ items: [makePost('a')], nextCursor: null })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    expect(observer.getCurrentResult().data?.pages[0]?.items.map((post) => post.id)).toEqual(['a'])
+    unsubscribe()
   })
 })

@@ -22,8 +22,9 @@ export function ModalDialog({ open, labelledBy, onCancel, children }: ModalDialo
       dialog.showModal()
       // 中身が先に描かれた時点ではダイアログが開いていないので、React の autoFocus は空振りする。開いてから改めて合わせる。
       dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus()
-    } else if (!open && dialog.open) {
-      dialog.close()
+    } else if (!open) {
+      // ブラウザが先に閉じていた場合（下の onClose）も通る。dialog.open が false なら close() は要らない。
+      if (dialog.open) dialog.close()
       // 閉じたら、開く前にいた場所へ明示的に戻す。open が false になった描画で中身（フォーカスのあった入力欄）が
       // close() より先に消えてフォーカスが body に落ちるので、ブラウザの復元に頼らない。
       const target = returnFocusRef.current
@@ -40,6 +41,12 @@ export function ModalDialog({ open, labelledBy, onCancel, children }: ModalDialo
       onCancel={(event) => {
         event.preventDefault()
         onCancel()
+      }}
+      // ブラウザが利用者の操作とは別に閉じることがある（Esc を重ねたときの強制的な close、Android の戻る操作など）。
+      // 親の open が true のままだと、親の状態と画面が食い違い、以後開き直せなくなる。親がまだ開いていると思っていれば閉じさせる。
+      // 親の指示で閉じた場合は、この時点で open が false なので何もしない。
+      onClose={() => {
+        if (open) onCancel()
       }}
       className="m-auto w-[min(92vw,32rem)] rounded-lg bg-white p-4 text-black shadow-xl backdrop:bg-black/40"
     >

@@ -1,6 +1,7 @@
 import type { InfiniteData } from '@tanstack/react-query'
 import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/client'
 import type { Page, Post } from '../../api/posts'
@@ -142,16 +143,22 @@ describe('EditPostDialog', () => {
     expect(api.updatePost).not.toHaveBeenCalled()
   })
 
-  it('保存中は「取り消し」も Esc も効かない', async () => {
-    api.updatePost.mockReturnValue(new Promise(() => {}))
-    const { onClose } = renderDialog()
+  it('保存中に閉じられたあと失敗したら、通知だけで伝える', async () => {
+    let reject!: (error: unknown) => void
+    api.updatePost.mockReturnValue(new Promise((_resolve, r) => (reject = r)))
+    function Harness() {
+      const [open, setOpen] = useState(true)
+      return <EditPostDialog post={makePost()} open={open} onClose={() => setOpen(false)} />
+    }
+    renderWithProviders(<Harness />)
     const user = await replaceBody('直した本文')
-
     await user.click(screen.getByRole('button', { name: '保存' }))
-    await vi.waitFor(() => expect(screen.getByRole('button', { name: '取り消し' })).toBeDisabled())
-    fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }))
 
-    expect(onClose).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '取り消し' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    reject(apiError({ status: 422, detail: '入力内容に誤りがあります', errors: [{ field: 'body', message: '使えない文字が含まれています' }] }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('使えない文字が含まれています')
   })
 
   it('422 の誤りは欄の下に出て、ダイアログは閉じない', async () => {

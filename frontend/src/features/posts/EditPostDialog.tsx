@@ -1,17 +1,11 @@
-import { useIsMutating, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useId, useRef, useState, type FormEvent } from 'react'
 import type { Post } from '../../api/posts'
 import { ModalDialog } from '../../components/ModalDialog'
 import { useToast } from '../../components/Toast'
 import { BodyField } from './BodyField'
-import {
-  failureMessage,
-  forgetMissingPost,
-  isApiError,
-  toValidationFailure,
-  UPDATE_POST_KEY,
-  useUpdatePost,
-} from './mutations'
+import { failureMessage, forgetMissingPost, isApiError, toValidationFailure, useUpdatePost } from './mutations'
+import { useIsMounted } from './useIsMounted'
 import { canSubmitBody } from './validation'
 
 type EditPostDialogProps = {
@@ -24,29 +18,18 @@ type EditPostDialogProps = {
 
 export function EditPostDialog({ post, open, onClose, onRemoved }: EditPostDialogProps) {
   const titleId = useId()
-  // 保存中に閉じると、失敗しても誤りを見せられない。保存が終わるまで、Esc と「取り消し」は効かせない。
-  // 保存できたとき・403・404 の閉じ方は保存が終わった後なので、そのまま onClose を呼ぶ。
-  const saving = useIsMutating({ mutationKey: UPDATE_POST_KEY }) > 0
-  function cancel() {
-    if (!saving) onClose()
-  }
   return (
-    <ModalDialog open={open} labelledBy={titleId} onCancel={cancel}>
+    <ModalDialog open={open} labelledBy={titleId} onCancel={onClose}>
       <h2 id={titleId} className="mb-3 text-lg font-bold">
         投稿を編集
       </h2>
-      <EditForm post={post} onClose={onClose} onCancel={cancel} saving={saving} onRemoved={onRemoved} />
+      <EditForm post={post} onClose={onClose} onRemoved={onRemoved} />
     </ModalDialog>
   )
 }
 
 // ダイアログが開いている間だけ描かれるので、開くたびに元の本文から始まる。
-type EditFormProps = Pick<EditPostDialogProps, 'post' | 'onClose' | 'onRemoved'> & {
-  onCancel: () => void
-  saving: boolean
-}
-
-function EditForm({ post, onClose, onCancel, saving, onRemoved }: EditFormProps) {
+function EditForm({ post, onClose, onRemoved }: Pick<EditPostDialogProps, 'post' | 'onClose' | 'onRemoved'>) {
   const [body, setBody] = useState(post.body)
   const [bodyError, setBodyError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
@@ -54,6 +37,7 @@ function EditForm({ post, onClose, onCancel, saving, onRemoved }: EditFormProps)
   const update = useUpdatePost()
   const toast = useToast()
   const submitting = useRef(false)
+  const mounted = useIsMounted()
 
   // 元と同じ本文では保存させない。押せると、中身が同じでも「編集済み」が付いてしまう。
   const canSave = canSubmitBody(body) && body !== post.body && !update.isPending
@@ -72,20 +56,24 @@ function EditForm({ post, onClose, onCancel, saving, onRemoved }: EditFormProps)
     try {
       await update.mutateAsync({ id: post.id, body })
       // 編集の成功は通知しない。ダイアログが閉じて、カードが変わるのが答え。
-      onClose()
+      // 保存中に閉じられていたら呼ばない（開き直した別のダイアログを閉じてしまう）。
+      if (mounted.current) onClose()
     } catch (error) {
       const validation = toValidationFailure(error)
-      if (validation) {
+      if (validation && mounted.current) {
         setBodyError(validation.bodyMessage)
         setFormError(validation.formMessage)
+      } else if (validation) {
+        // 保存中に閉じられた。誤りを見せる欄が無いので、通知で伝える。
+        toast.show(validation.bodyMessage ?? validation.formMessage ?? failureMessage(error), 'error')
       } else if (isApiError(error, 403)) {
         toast.show(failureMessage(error), 'error')
-        onClose()
+        if (mounted.current) onClose()
       } else if (isApiError(error, 404)) {
         toast.show(failureMessage(error), 'error')
         await forgetMissingPost(client, post.id)
         onRemoved?.()
-        onClose()
+        if (mounted.current) onClose()
       } else {
         // 入力は残して開いたままにする。
         toast.show(failureMessage(error), 'error')
@@ -106,9 +94,8 @@ function EditForm({ post, onClose, onCancel, saving, onRemoved }: EditFormProps)
       <div className="flex justify-end gap-3">
         <button
           type="button"
-          onClick={onCancel}
-          disabled={saving}
-          className="min-h-11 min-w-11 rounded-md border border-gray-400 bg-white px-4 text-black focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 disabled:cursor-not-allowed disabled:text-gray-500"
+          onClick={onClose}
+          className="min-h-11 min-w-11 rounded-md border border-gray-400 bg-white px-4 text-black focus:outline-2 focus:outline-offset-2 focus:outline-sky-600"
         >
           取り消し
         </button>

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -120,6 +120,22 @@ describe('AppLayout', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: '閉じる' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(api.createPost).not.toHaveBeenCalled()
+  })
+
+  it('ブラウザが先にダイアログを閉じても（open のまま close()）、状態が合い、もう一度開ける', async () => {
+    renderLayout()
+    const nav = screen.getByRole('navigation', { name: 'メインメニュー' })
+    await userEvent.click(within(nav).getByRole('button', { name: '投稿する' }))
+    const dialog = screen.getByRole('dialog', { name: '新しい投稿' })
+
+    // Esc を重ねたときの強制的な close や、Android の戻る操作は、ページの状態を経ずにブラウザが閉じる。
+    act(() => {
+      ;(dialog as HTMLDialogElement).close()
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await userEvent.click(within(nav).getByRole('button', { name: '投稿する' }))
+    expect(screen.getByRole('dialog', { name: '新しい投稿' })).toBeInTheDocument()
   })
 
   it('/posts/x では上部バーの画面名が「投稿」', () => {
