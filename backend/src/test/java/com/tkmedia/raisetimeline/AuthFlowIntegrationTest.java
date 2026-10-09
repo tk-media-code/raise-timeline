@@ -183,6 +183,8 @@ class AuthFlowIntegrationTest {
 		assertThat(statusOf(registered)).isEqualTo(201);
 		String accessToken = body(registered, "$.accessToken");
 		assertThat(cookieValue(registered)).isNotBlank();
+		// API の日時は秒まで。DB の精度の小数秒が応答に漏れていないことを守る。
+		assertThat(body(registered, "$.user.createdAt")).matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$");
 
 		mockMvc.perform(get("/api/users/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
 				.andExpect(status().isOk())
