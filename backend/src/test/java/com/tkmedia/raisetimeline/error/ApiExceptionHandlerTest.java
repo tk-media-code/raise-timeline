@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.tkmedia.raisetimeline.config.ClockConfig;
 import com.tkmedia.raisetimeline.config.LoggingConfig;
+import com.tkmedia.raisetimeline.config.SecurityConfig;
 import com.tkmedia.raisetimeline.logging.LogLines;
 import com.tkmedia.raisetimeline.web.RequestLogFilter;
 import jakarta.servlet.Filter;
@@ -55,7 +57,7 @@ import org.springframework.web.multipart.MultipartException;
 
 @WebMvcTest(controllers = ApiExceptionHandlerTest.ThrowingController.class)
 @Import({ ApiExceptionHandlerTest.ThrowingController.class, LoggingConfig.class, ClockConfig.class,
-		ProblemDetailWriter.class })
+		ProblemDetailWriter.class, SecurityConfig.class })
 @ExtendWith(OutputCaptureExtension.class)
 class ApiExceptionHandlerTest {
 
@@ -68,7 +70,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("業務の例外は RFC 9457 の形（type・title・detail・status・instance・code・requestId）で返り、要求ログに code が載る")
 	void apiExceptionHasProblemShape(CapturedOutput output) throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/t/not-found").header("X-Request-Id", "problem-1"))
+		MvcResult result = mockMvc.perform(get("/api/t/not-found").header("X-Request-Id", "problem-1").with(jwt()))
 				.andExpect(status().isNotFound())
 				.andExpect(header().string("Content-Type", startsWith(PROBLEM_JSON)))
 				.andExpect(jsonPath("$.type").value("about:blank"))
@@ -92,7 +94,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("業務の例外が持つ項目ごとの誤りは errors に入る")
 	void apiExceptionCarriesFieldErrors() throws Exception {
-		mockMvc.perform(get("/api/t/invalid"))
+		mockMvc.perform(get("/api/t/invalid").with(jwt()))
 				.andExpect(status().isUnprocessableContent())
 				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
 				.andExpect(jsonPath("$.errors[0].field").value("body"))
@@ -102,7 +104,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("Bean Validation の失敗は 422 の VALIDATION_ERROR になり、errors に項目名が入る")
 	void beanValidationReturns422() throws Exception {
-		mockMvc.perform(post("/api/t/validation").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"\"}"))
+		mockMvc.perform(post("/api/t/validation").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"\"}").with(jwt()))
 				.andExpect(status().isUnprocessableContent())
 				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
 				.andExpect(jsonPath("$.errors[0].field").value("name"));
@@ -111,7 +113,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("壊れた JSON は 400 の BAD_REQUEST になり、WARN も ERROR も書かない")
 	void malformedJsonReturns400(CapturedOutput output) throws Exception {
-		mockMvc.perform(post("/api/t/validation").contentType(MediaType.APPLICATION_JSON).content("{"))
+		mockMvc.perform(post("/api/t/validation").contentType(MediaType.APPLICATION_JSON).content("{").with(jwt()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("BAD_REQUEST"))
 				.andExpect(jsonPath("$.detail").value("要求の形式が正しくありません"));
@@ -120,9 +122,9 @@ class ApiExceptionHandlerTest {
 	}
 
 	@Test
-	@DisplayName("存在しない URL（ルートを含む）は 404 の NOT_FOUND になり、WARN も ERROR も書かない")
-	void rootIsNotFoundAfterMove(CapturedOutput output) throws Exception {
-		mockMvc.perform(get("/"))
+	@DisplayName("存在しない URL は 404 の NOT_FOUND になり、WARN も ERROR も書かない")
+	void unknownPathIsNotFound(CapturedOutput output) throws Exception {
+		mockMvc.perform(get("/api/t/none").with(jwt()))
 				.andExpect(status().isNotFound())
 				.andExpect(header().string("Content-Type", startsWith(PROBLEM_JSON)))
 				.andExpect(jsonPath("$.code").value("NOT_FOUND"));
@@ -133,7 +135,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("メソッド違いは 405 で、Spring が付けた Allow ヘッダーを残し、WARN も ERROR も書かない")
 	void wrongMethodReturns405WithAllowAndNoWarn(CapturedOutput output) throws Exception {
-		mockMvc.perform(delete("/api/t/not-found"))
+		mockMvc.perform(delete("/api/t/not-found").with(jwt()))
 				.andExpect(status().isMethodNotAllowed())
 				.andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"))
 				.andExpect(header().string("Allow", containsString("GET")));
@@ -144,7 +146,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("JSON の API に JSON 以外の Content-Type で送ると 415 の UNSUPPORTED_MEDIA_TYPE になる")
 	void nonJsonContentTypeReturns415() throws Exception {
-		mockMvc.perform(post("/api/t/validation").contentType(MediaType.TEXT_PLAIN).content("x"))
+		mockMvc.perform(post("/api/t/validation").contentType(MediaType.TEXT_PLAIN).content("x").with(jwt()))
 				.andExpect(status().isUnsupportedMediaType())
 				.andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"));
 	}
@@ -152,7 +154,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("想定外の例外は 500 で固定文言だけを返し、例外の中身は本文に出さず、ERROR を 1 回だけ書く")
 	void unexpectedExceptionIsLoggedOnceAndHidden(CapturedOutput output) throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/t/boom").header("X-Request-Id", "boom-1"))
+		MvcResult result = mockMvc.perform(get("/api/t/boom").header("X-Request-Id", "boom-1").with(jwt()))
 				.andExpect(status().isInternalServerError())
 				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
 				.andExpect(jsonPath("$.detail").value(INTERNAL_DETAIL))
@@ -177,7 +179,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("フィルタから漏れた例外も 500 の Problem Details になり、code と requestId は最上位に出て、ERROR は 1 回だけ")
 	void exceptionInFilterBecomesProblem500(CapturedOutput output) throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/t/filter-boom").header("X-Request-Id", "filter-boom-1"))
+		MvcResult result = mockMvc.perform(get("/api/t/filter-boom").header("X-Request-Id", "filter-boom-1").with(jwt()))
 				.andExpect(status().isInternalServerError())
 				.andExpect(header().string("Content-Type", startsWith(PROBLEM_JSON)))
 				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
@@ -202,7 +204,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("確定済みの応答には本文を足さず、ERROR は 1 回だけ書き、要求ログに code を残す")
 	void committedResponseIsNotRewrittenAndErrorIsLoggedOnce(CapturedOutput output) throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/t/committed-boom").header("X-Request-Id", "committed-1"))
+		MvcResult result = mockMvc.perform(get("/api/t/committed-boom").header("X-Request-Id", "committed-1").with(jwt()))
 				.andExpect(status().isOk())
 				.andReturn();
 
@@ -219,7 +221,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("クライアントが切断した例外は、こちらの失敗ではないので WARN にも ERROR にもしない")
 	void clientDisconnectIsNotLoggedAsError(CapturedOutput output) throws Exception {
-		mockMvc.perform(get("/api/t/disconnect").header("X-Request-Id", "disconnect-1"));
+		mockMvc.perform(get("/api/t/disconnect").header("X-Request-Id", "disconnect-1").with(jwt()));
 
 		assertNoWarnOrError(output);
 		Map<String, Object> requestLine = onlyRequestLine(output, "disconnect-1");
@@ -229,7 +231,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("型が合わない入力（束縛の失敗）の errors には、例外の文言ではなく固定の文を返す")
 	void bindingFailureMessageIsFixedText() throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/t/bind?limit=abc"))
+		MvcResult result = mockMvc.perform(get("/api/t/bind?limit=abc").with(jwt()))
 				.andExpect(status().isUnprocessableContent())
 				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
 				.andExpect(jsonPath("$.errors[0].field").value("limit"))
@@ -244,7 +246,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("サーバー側の失敗の原因が Broken pipe でも、切断とは見なさず 500 と ERROR にする")
 	void serverSideBrokenPipeIsStillAnError(CapturedOutput output) throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/t/broken-pipe").header("X-Request-Id", "serverSideBrokenPipeIsStillAnError-1"))
+		MvcResult result = mockMvc.perform(get("/api/t/broken-pipe").header("X-Request-Id", "serverSideBrokenPipeIsStillAnError-1").with(jwt()))
 				.andExpect(status().isInternalServerError())
 				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
 				.andReturn();
@@ -260,7 +262,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("サーバー側の失敗の原因が EOFException でも、切断とは見なさず 500 と ERROR にする")
 	void serverSideEofIsStillAnError(CapturedOutput output) throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/t/eof").header("X-Request-Id", "serverSideEofIsStillAnError-1"))
+		MvcResult result = mockMvc.perform(get("/api/t/eof").header("X-Request-Id", "serverSideEofIsStillAnError-1").with(jwt()))
 				.andExpect(status().isInternalServerError())
 				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
 				.andReturn();
@@ -276,7 +278,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("書き込みの失敗に包まれたクライアントの切断も、WARN にも ERROR にもしない")
 	void wrappedClientAbortIsNotLoggedAsError(CapturedOutput output) throws Exception {
-		mockMvc.perform(get("/api/t/wrapped-disconnect").header("X-Request-Id", "wrapped-1"));
+		mockMvc.perform(get("/api/t/wrapped-disconnect").header("X-Request-Id", "wrapped-1").with(jwt()));
 
 		assertNoWarnOrError(output);
 		Map<String, Object> requestLine = onlyRequestLine(output, "wrapped-1");
@@ -286,7 +288,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("形の壊れた multipart は利用者の入力の誤りなので 400 の BAD_REQUEST になり、例外の文言は出さず、WARN も ERROR も書かない")
 	void malformedMultipartReturns400WithoutError(CapturedOutput output) throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/t/multipart-broken").header("X-Request-Id", "multipart-1"))
+		MvcResult result = mockMvc.perform(get("/api/t/multipart-broken").header("X-Request-Id", "multipart-1").with(jwt()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("BAD_REQUEST"))
 				.andExpect(jsonPath("$.detail").value("要求の形式が正しくありません"))
@@ -301,7 +303,7 @@ class ApiExceptionHandlerTest {
 	@Test
 	@DisplayName("アップロードの大きさ超過（MultipartException の派生）は専用の処理が優先され、今は 400 の BAD_REQUEST のまま")
 	void maxUploadSizeStillGoesThroughParentHandler(CapturedOutput output) throws Exception {
-		mockMvc.perform(get("/api/t/multipart-too-large"))
+		mockMvc.perform(get("/api/t/multipart-too-large").with(jwt()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("BAD_REQUEST"));
 
@@ -313,7 +315,7 @@ class ApiExceptionHandlerTest {
 	void malformedFormBodyIsNotAnError(CapturedOutput output) throws Exception {
 		MvcResult result = mockMvc.perform(delete("/api/t/not-found")
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
-				.content("a=%zz"))
+				.content("a=%zz").with(jwt()))
 				.andReturn();
 
 		assertThat(result.getResponse().getStatus()).isEqualTo(405);

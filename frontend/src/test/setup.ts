@@ -8,3 +8,15 @@ import { afterEach } from 'vitest'
 afterEach(() => {
   cleanup()
 })
+
+// jsdom は <dialog> の showModal() / close() を実装していない（呼ぶと TypeError）。
+// open 属性の付け外しで代用し、ConfirmDialog の開閉をテストできるようにする。
+// 将来 jsdom が実装したときは、そちらを優先する。
+if (!HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '')
+  }
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open')
+  }
+}

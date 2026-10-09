@@ -217,7 +217,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 
 1. `docker compose up -d --build` で起動し、`http://localhost:5173/register` で登録する → `/` に移る
 2. リロードしても ログイン状態が続く（起動時の更新が通る）
-3. ログアウト → `/login` に移り、`/` を開くと `/login?next=/` に戻される
+3. ログアウト → `/login` に移り、アドレスバーに `/` を入力して開くと `/login?next=%2F` に戻される
 4. ログイン → `/` に戻る
 5. ブラウザの開発者ツールで、Cookie に `refresh_token`（HttpOnly）があり、localStorage に何も無いことを見る
 6. 同じユーザー名で再登録すると、項目の下に重複の文言が出る

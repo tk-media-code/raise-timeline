@@ -67,7 +67,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 
 ### 入力検証
 
-- JSON の入力は Bean Validation（`@Valid` と `@NotBlank` `@Size` `@Pattern` `@Email`）で検証し、`MethodArgumentNotValidException` を 422 に変換する。`errors` には項目ごとの文言を日本語で入れる
+- JSON の入力は Bean Validation（`@Valid` と `@NotBlank` `@Size` `@Pattern`）で検証し、`MethodArgumentNotValidException` を 422 に変換する。`errors` には項目ごとの文言を日本語で入れる。メールアドレスは `@Email` を使わず、画面と同じ `@Pattern`（`(?U)^[^\s@]+@[^\s@]+$`）と `@CodePointSize(max = 254)` で検証する（`@Email` は画面の正規表現より厳しく、画面が通した値を 422 にしてしまうため）
 - 文字数は Unicode のコードポイント数で数える。標準の `@Size` は UTF-16 の単位で数えるので、コードポイントで数える独自の検証（`@CodePointSize`）を作る
 - 文字列の入力に NUL（U+0000）があれば 422。PostgreSQL が保存できず、通すと 500 になるため。共通の検証で、JSON の文字列・multipart のテキスト・クエリの文字列のすべてに当てる（[api-conventions.md](api-conventions.md)）。検査は、前後の空白の除去と CRLF の変換より前に、受け取ったままの文字列に当てる（`String.trim()` は NUL も取り除くので、後に当てると末尾の NUL が黙って消える）
 - JPEG の位置情報を取り除く処理で画像を読み取れなかったときは 422。文言は「画像を読み取れませんでした」、`errors` の `field` は画像の部品名（投稿は `images`、アイコンは `file`）。位置情報を消せないまま保存はしない（[image-storage-design.md](image-storage-design.md) の 3 章）

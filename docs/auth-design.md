@@ -161,8 +161,10 @@ flowchart TD
 | 項目 | 内容 |
 | --- | --- |
 | セッション | `STATELESS`。`JSESSIONID` を発行しない |
-| JWT の検証 | `spring-boot-starter-security-oauth2-resource-server`（Spring Boot 4 で `spring-boot-starter-oauth2-resource-server` から改名された）の `NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256)` を使う。`iss` の検証は既定では行われないので、`JwtValidators.createDefaultWithIssuer("raise-timeline")` を設定する。`Authorization: Bearer` を自動で読み、`sub` を認証情報にする |
+| JWT の検証 | `spring-boot-starter-security-oauth2-resource-server`（Spring Boot 4 で `spring-boot-starter-oauth2-resource-server` から改名された）の `NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256)` を使う。`iss` の検証は既定では行われないので、`JwtValidators.createDefaultWithValidators(...)` に、`Clock` を設定した `JwtTimestampValidator`（期限。テストで時刻を固定するため）と `JwtIssuerValidator("raise-timeline")` を渡して設定する。この関数は渡した検証と同じ型の既定の検証を重ねないので `Clock` つきの期限検証が残り、既定の `typ`（`JwtTypeValidator`）と thumbprint の検証も加わる。`Authorization: Bearer` を自動で読み、`sub` を認証情報にする |
 | JWT の発行 | 同じ依存に含まれる `NimbusJwtEncoder`。鍵は `ImmutableSecret` で渡す。既定は RS256 なので、発行時に `JwsHeader.with(MacAlgorithm.HS256)` を指定する。追加の JWT ライブラリは入れない |
+| Bearer を読まない範囲 | `/api/auth/` で始まるパスでは `Authorization: Bearer` を読まない（`BearerTokenResolver` を差し替える）。この配下は Cookie か本文で認証する口なので、期限切れのアクセストークンがヘッダーに付いたままでも、先に検証されて 401 にならず、更新とログアウトが動く。画面も Bearer を付けないが、サーバー側でも守る |
+| `/api/auth/**` に置けないもの | 認証が要るエンドポイントを `/api/auth/**` の下に置かない。この配下は Bearer を読まないので、`@AuthenticationPrincipal` が null になる |
 | 401 と 403 の応答 | `AuthenticationEntryPoint` と `AccessDeniedHandler` を差し替え、Problem Details の形で返す（[error-handling-design.md](error-handling-design.md)） |
 | CSRF 対策 | Spring Security の CSRF トークンは無効にする。状態を変える API は Bearer ヘッダーで認証し、Cookie だけで動くのは更新とログアウトのみ。その 2 つは `SameSite=Lax` で他サイトからの POST を防ぎ、応答（アクセストークン）も他サイトからは読めない |
 | パスワード | `BCryptPasswordEncoder` |
@@ -177,12 +179,13 @@ flowchart TD
 
 | 項目 | 内容 |
 | --- | --- |
-| 状態の置き場 | React の Context（`AuthProvider`）。`accessToken`、`user`、`status`（`loading` / `authenticated` / `anonymous`）を持つ |
+| 状態の置き場 | React の Context（`AuthProvider`）が `status`（`loading` / `authenticated` / `anonymous`）、`user`、`signedOut`（自分でログアウトしたか）を持つ。アクセストークンは Context に入れず、`frontend/src/auth/tokenStore.ts` のモジュール変数に置く（API クライアントが画面の再描画と無関係に読むため） |
 | 起動時 | `AuthProvider` が、API クライアントと同じ「更新を 1 本にまとめる関数」で `POST /api/auth/refresh` を 1 回呼ぶ。終わるまで `loading` |
-| 保護された画面 | `status` が `anonymous` なら `/login?next=<元のパス>` へ移す。ログイン後に `next` へ戻す。`next` は `/` で始まり、`//` と `/\` で始まらず、制御文字（タブ・改行）を含まない値だけを受け付ける（外部サイトへ飛ばされないため。ブラウザは URL のタブと改行を取り除くので、`/<タブ>/evil.example` は `//evil.example` になる）。それ以外は `/` へ |
-| ログイン済みで `/login` `/register` | `/` へ移す |
-| API クライアント | `fetch` を包む 1 つの関数。Bearer を付ける。401 `UNAUTHENTICATED` なら更新を 1 回試してやり直す。更新は同じタブでは 1 本だけ（進行中の Promise を共有する）、タブの間では Web Locks API で順番に並べる |
-| ログアウト | API を呼んでから状態を捨て、TanStack Query のキャッシュも消す（他人のデータを残さない） |
+| 保護された画面 | `status` が `anonymous` なら（自分でログアウトした直後を除き）`/login?next=<元のパス>` へ移す。ログイン後に `next` へ戻す。`next` は `/` で始まり、`//` と `/\` で始まらず、制御文字（タブ・改行）を含まない値だけを受け付ける（外部サイトへ飛ばされないため。ブラウザは URL のタブと改行を取り除くので、`/<タブ>/evil.example` は `//evil.example` になる）。それ以外は `/` へ |
+| ログイン済みで `/login` `/register` | `next` があれば（`safeNext` を通して）そこへ、無ければ `/` へ移す。ログイン後・登録後の移動もこの仕組みが担う。ログイン画面は状態を更新するだけで自分では移動しない（両方が移動すると、後から走るほうが前の移動を上書きして `next` に戻れなくなるため） |
+| API クライアント | `fetch` を包む 1 つの関数。Bearer を付ける。ただし認証の 4 つの API（登録・ログイン・更新・ログアウト）には Bearer を付けず、401 でも更新してやり直さない（本文か Cookie で認証する口なので、二重の守りにしている。サーバーはこの配下で Bearer を読まず（6 章）、画面も付けない）。401 `UNAUTHENTICATED` なら更新を 1 回試してやり直す。更新は同じタブでは 1 本だけ（進行中の Promise を共有する）、タブの間では Web Locks API で順番に並べる |
+| ログアウト | API を呼んでから状態を捨て、TanStack Query のキャッシュも消す（他人のデータを残さない）。自分でログアウトしたあとは `next` を付けずに `/login` へ移す（付けると、次にログインした人が前の人の画面に着くため）。セッションの期限切れや、URL の直接入力・リロードで未ログインと分かったときは `/login?next=…` へ移す |
+| 描画の例外 | `ErrorBoundary` が受け止め、「問題が起きました。再読み込みしてください」の画面を出す |
 
 ## 8. 設定値
 

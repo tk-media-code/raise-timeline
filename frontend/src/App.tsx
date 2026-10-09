@@ -1,10 +1,26 @@
 import { Route, Routes } from 'react-router'
+import { RedirectIfAuthenticated } from './auth/RedirectIfAuthenticated'
+import { RequireAuth } from './auth/RequireAuth'
+import { AppLayout } from './components/layout/AppLayout'
 import HomePage from './pages/HomePage'
+import LoginPage from './pages/LoginPage'
+import NotFoundPage from './pages/NotFoundPage'
+import RegisterPage from './pages/RegisterPage'
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
+      <Route element={<RedirectIfAuthenticated />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
+      <Route element={<RequireAuth />}>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<HomePage />} />
+        </Route>
+      </Route>
+      {/* レイアウトの外。ナビを出さず、未ログインでも開ける。 */}
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   )
 }

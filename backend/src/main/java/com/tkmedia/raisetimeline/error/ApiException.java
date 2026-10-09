@@ -6,7 +6,7 @@ import java.util.List;
  * 業務の都合で返すエラー。サービス層が投げ、{@link ApiExceptionHandler} が Problem Details に変える。
  *
  * <p>抽象クラスにしているのは、{@link ErrorCode} を直接渡して投げず、
- * 「見つからない」「重複」のような意味のある名前の派生を通させるため。派生は投げる機能の Issue で足す。
+ * 「見つからない」「重複」のような意味のある名前の派生（{@link NotFoundException} など）を通させるため。
  */
 public abstract class ApiException extends RuntimeException {
 
