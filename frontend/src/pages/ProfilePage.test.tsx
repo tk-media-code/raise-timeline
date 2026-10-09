@@ -97,6 +97,17 @@ describe('ProfilePage', () => {
     expect(api.getUserPosts).not.toHaveBeenCalled()
   })
 
+  it.each(['me', 'ab', 'a'.repeat(21), 'a-b'])(
+    '/users/%s はユーザー名の規則に合わないので、APIを呼ばずに「見つかりません」を出す',
+    async (username) => {
+      renderProfile(username)
+
+      expect(await screen.findByRole('heading', { level: 1, name: '見つかりません' })).toBeInTheDocument()
+      expect(api.getUser).not.toHaveBeenCalled()
+      expect(api.getUserPosts).not.toHaveBeenCalled()
+    },
+  )
+
   it('500 では「読み込みに失敗しました」が出て、「再試行」で読み直すと出る', async () => {
     api.getUser.mockRejectedValueOnce(apiError({ status: 500 }))
     api.getUser.mockResolvedValueOnce(makeUser())

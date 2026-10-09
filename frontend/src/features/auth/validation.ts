@@ -11,7 +11,8 @@ const EMAIL_MESSAGE = 'メールアドレスの形式で入力してください
 const PASSWORD_MESSAGE = '8〜72 文字の半角英数字と記号で入力してください'
 const REQUIRED_MESSAGE = '入力してください'
 
-const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/
+// プロフィールの URL でも同じ規則で「ありえないユーザー名」を弾くので、export する。
+export const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/
 // 厳密な RFC の検証はしない。空白を含まない 2 つの部分を @ でつないだものだけを通す。
 // サーバーの RegisterRequest.email も同じ正規表現（(?U) で \s を Unicode の空白にして JS とそろえる）と、
 // コードポイントで数える 254 文字以内で検証する。同じ例を validation.test.ts と AuthControllerTest の両方に置いてあるので、片方だけ変えない。
