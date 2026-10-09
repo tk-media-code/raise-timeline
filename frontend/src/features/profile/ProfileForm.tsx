@@ -43,8 +43,11 @@ export function ProfileForm({ me }: { me: Me }) {
   // 元の値から変わっていて、自己紹介が上限内で、送信中でないときだけ押せる。
   // 表示名の誤りは、押したときに欄の下へ出す（登録画面と同じ）。
   const changed = displayName !== me.displayName || bio !== me.bio
-  // アイコンの送信中も押せない: 保存の応答で me が書き換わる時期が重なると、プレビューが古いほうに戻りうる。
-  const canSubmit = changed && bioRemaining(bio) >= 0 && !update.isPending && !avatar.isPending
+  // アイコンと保存は、片方が送信中のあいだ、もう片方を始められない（同時に送らない）。
+  // 保存の応答の Me が、左のナビやプロフィールのキャッシュを書き換える。アイコンの差し替えと重なると、
+  // 新しいアイコンの URL が古いものに戻り、その古い画像はもう保存先から消えている。
+  const avatarBusy = avatar.isPending || update.isPending
+  const canSubmit = changed && bioRemaining(bio) >= 0 && !avatarBusy
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -78,7 +81,7 @@ export function ProfileForm({ me }: { me: Me }) {
     const file = input.files?.[0]
     // 同じファイルをもう一度選んでも change が起きるよう、読み終えたら空にする。
     input.value = ''
-    if (!file || avatar.isPending) return
+    if (!file || avatarBusy) return
     setAvatarError(null)
     const problem = checkImageFile(file, AVATAR_MAX_BYTES)
     if (problem) {
@@ -135,7 +138,7 @@ export function ProfileForm({ me }: { me: Me }) {
           <div className="flex min-w-0 flex-col items-start gap-1">
             <button
               type="button"
-              disabled={avatar.isPending}
+              disabled={avatarBusy}
               aria-describedby={avatarError ? `${avatarCaptionId}-error` : undefined}
               onClick={() => avatarInputRef.current?.click()}
               className="min-h-11 min-w-11 rounded-full border border-sky-600 px-4 font-bold text-sky-700 hover:bg-sky-50 focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-500 disabled:hover:bg-transparent"

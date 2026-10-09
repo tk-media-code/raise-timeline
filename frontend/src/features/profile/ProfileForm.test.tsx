@@ -174,6 +174,24 @@ describe('ProfileForm のアイコン', () => {
     expect(saveButton()).toBeEnabled()
   })
 
+  it('保存を送っている間は「画像を変更」を押せない（保存の応答が新しいアイコンを古いものに戻さないため）', async () => {
+    const pending = deferred<Me>()
+    api.updateMe.mockReturnValue(pending.promise)
+    const { user } = await openForm()
+    await user.type(screen.getByRole('textbox', { name: '表示名' }), 'a')
+    expect(changeButton()).toBeEnabled()
+
+    await user.click(saveButton())
+
+    await waitFor(() => expect(api.updateMe).toHaveBeenCalled())
+    expect(changeButton()).toBeDisabled()
+    // 押せない間に選ばれても送らない。
+    await user.upload(fileInput(), makeImage())
+    expect(api.updateAvatar).not.toHaveBeenCalled()
+
+    pending.resolve(makeMe({ displayName: 'アリスa' }))
+  })
+
   it('入力途中の表示名は残り、元に戻すと「保存」を押せない', async () => {
     api.updateAvatar.mockResolvedValue({ avatarUrl: 'https://img.example.com/new.png' })
     const { user, container } = await openForm()
