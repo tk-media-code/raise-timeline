@@ -34,6 +34,12 @@ export class ApiError extends Error {
   }
 }
 
+// ID が UUID でない・ユーザー名が規則に合わない（400）も、対象が無い（404）も、打ち間違えた人にとっては「無い」。
+// 詳細系の画面はどちらも「見つかりません」にそろえる。
+export function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 400 || error.status === 404)
+}
+
 export type ApiFetchInit = Omit<RequestInit, 'body'> & {
   body?: unknown
   // false なら Bearer を付けない。

@@ -443,3 +443,24 @@ describe('認証の API', () => {
     ])
   })
 })
+
+describe('isNotFound', () => {
+  it.each([
+    [400, true],
+    [404, true],
+    [401, false],
+    [500, false],
+  ])('ApiError の status %i は %s', async (status, expected) => {
+    const { ApiError, isNotFound } = await import('./client')
+    const error = new ApiError({ status, code: null, detail: '問題が起きました', errors: [], requestId: null })
+
+    expect(isNotFound(error)).toBe(expected)
+  })
+
+  it('ApiError でないものは false', async () => {
+    const { isNotFound } = await import('./client')
+
+    expect(isNotFound(new Error('x'))).toBe(false)
+    expect(isNotFound(null)).toBe(false)
+  })
+})
