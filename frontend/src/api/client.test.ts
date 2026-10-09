@@ -76,6 +76,42 @@ describe('apiFetch', () => {
     expect(init.credentials).toBe('same-origin')
   })
 
+  it('FormData の本文はそのまま送り、Content-Type を付けない', async () => {
+    fetchMock.mockResolvedValueOnce(ok({}))
+    const { apiFetch } = await load()
+    const form = new FormData()
+    form.append('body', 'こんにちは')
+
+    await apiFetch('/api/x', { method: 'POST', body: form })
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    // 同じオブジェクトのまま渡す。Content-Type はブラウザが boundary 付きで決める。
+    expect(init.body).toBe(form)
+    expect(new Headers(init.headers).get('Content-Type')).toBeNull()
+  })
+
+  it('401 の後のやり直しでも、同じ FormData を送る', async () => {
+    fetchMock
+      .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))
+      .mockResolvedValueOnce(ok({ accessToken: 'new', user: me }))
+      .mockResolvedValueOnce(ok({}))
+    const { apiFetch, setAccessToken, setSessionUserId } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+    const form = new FormData()
+    form.append('body', 'こんにちは')
+
+    await apiFetch('/api/x', { method: 'POST', body: form })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    const first = fetchMock.mock.calls[0][1] as RequestInit
+    const retried = fetchMock.mock.calls[2][1] as RequestInit
+    expect(first.body).toBe(form)
+    expect(retried.body).toBe(form)
+    expect(new Headers(retried.headers).get('Content-Type')).toBeNull()
+    expect(authorizationOf(fetchMock.mock.calls[2])).toBe('Bearer new')
+  })
+
   it('204 は undefined を返す', async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
     const { apiFetch } = await load()

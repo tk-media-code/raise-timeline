@@ -103,8 +103,12 @@ async function send(path: string, init: ApiFetchInit): Promise<Response> {
     if (token) headers.set('Authorization', `Bearer ${token}`)
   }
 
-  let encodedBody: string | undefined
-  if (body !== undefined) {
+  let encodedBody: string | FormData | undefined
+  if (body instanceof FormData) {
+    // そのまま送る。Content-Type は付けない（ブラウザが boundary 付きで決める）。
+    // 401 のあとのやり直しでも同じオブジェクトを送る。FormData は何度でも送れる。
+    encodedBody = body
+  } else if (body !== undefined) {
     encodedBody = JSON.stringify(body)
     headers.set('Content-Type', 'application/json')
   }
