@@ -15,6 +15,12 @@ java {
 	}
 }
 
+// Spring Boot の依存管理は httpclient5 を 5.6.1 に決めており、AWS SDK（apache5-client）が求める 5.6.4 を
+// 5.6.1 に下げてしまう。5.6.1 には、Content-Encoding の展開に失敗すると接続が返らず、接続プールが尽きて
+// 応答できなくなる脆弱性がある（GHSA-hjcp-jmpx-g3qm / CVE-2026-64607、5.6.3 で修正）。
+// Spring Boot が管理する版を 5.6.4 に上書きする。Spring Boot が 5.6.3 以上に上がったらこの行は外す。
+ext['httpclient5.version'] = '5.6.4'
+
 repositories {
 	mavenCentral()
 }
