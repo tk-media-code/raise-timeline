@@ -3,14 +3,14 @@ import { InfiniteQueryObserver, QueryClient, QueryObserver } from '@tanstack/rea
 import { describe, expect, it } from 'vitest'
 import type { Page, Post } from '../../api/posts'
 import { prependPost, removePost, replacePost } from './postCache'
-import { postKey, timelineKeys } from './queryKeys'
+import { postKey, timelineKeys, userPostsKeys } from './queryKeys'
 
 type Data = InfiniteData<Page<Post>, string | null>
 
-function makePost(id: string, body = `本文 ${id}`): Post {
+function makePost(id: string, body = `本文 ${id}`, username = 'alice'): Post {
   return {
     id,
-    author: { id: 'u1', username: 'alice', displayName: 'アリス', avatarUrl: null },
+    author: { id: 'u1', username, displayName: 'アリス', avatarUrl: null },
     body,
     images: [],
     likeCount: 0,
@@ -70,6 +70,64 @@ describe('prependPost', () => {
   })
 })
 
+describe('prependPost（その人の投稿一覧）', () => {
+  it('作者 Alice の投稿は、userPostsKeys.of(alice) の読み込み済みの一覧の先頭に入り、ほかの人の一覧は変わらない', async () => {
+    const client = new QueryClient()
+    client.setQueryData(userPostsKeys.of('alice'), twoPages())
+    client.setQueryData(userPostsKeys.of('bob'), twoPages())
+
+    await prependPost(client, makePost('new', '新しい', 'Alice'))
+
+    const alice = client.getQueryData<Data>(userPostsKeys.of('alice'))
+    expect(ids(alice, 0)).toEqual(['new', 'a', 'b'])
+    expect(ids(alice, 1)).toEqual(['c', 'd'])
+    expect(ids(client.getQueryData<Data>(userPostsKeys.of('bob')), 0)).toEqual(['a', 'b'])
+  })
+
+  it('ユーザー名の大文字小文字が違っても、同じ一覧に入る', () => {
+    expect(userPostsKeys.of('Alice')).toEqual(userPostsKeys.of('alice'))
+  })
+
+  it('一覧が無ければ作らない', async () => {
+    const client = new QueryClient()
+
+    await prependPost(client, makePost('new'))
+
+    expect(client.getQueryData(userPostsKeys.of('alice'))).toBeUndefined()
+  })
+
+  it('その人の一覧の次のページを読み込み中なら、その読み込みは中断される', async () => {
+    const client = new QueryClient()
+    client.setQueryData<Data>(userPostsKeys.of('alice'), {
+      pages: [{ items: [makePost('a'), makePost('b')], nextCursor: 'c2' }],
+      pageParams: [null],
+    })
+    let aborted = false
+    const observer = new InfiniteQueryObserver(client, {
+      queryKey: userPostsKeys.of('alice'),
+      queryFn: ({ signal }): Promise<Page<Post>> => {
+        signal.addEventListener('abort', () => {
+          aborted = true
+        })
+        return new Promise(() => {})
+      },
+      initialPageParam: null as string | null,
+      getNextPageParam: (last: Page<Post>) => last.nextCursor,
+      staleTime: Infinity,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    void observer.fetchNextPage()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(client.getQueryState(userPostsKeys.of('alice'))?.fetchStatus).toBe('fetching')
+
+    await prependPost(client, makePost('new'))
+
+    expect(aborted).toBe(true)
+    expect(ids(client.getQueryData<Data>(userPostsKeys.of('alice')), 0)).toEqual(['new', 'a', 'b'])
+    unsubscribe()
+  })
+})
+
 describe('replacePost', () => {
   it('2 ページ目にある投稿と postKey を置き換える', async () => {
     const client = new QueryClient()
@@ -99,6 +157,30 @@ describe('replacePost', () => {
     await replacePost(client, makePost('c'))
 
     expect(client.getQueryData(postKey('c'))).toBeUndefined()
+  })
+})
+
+describe('replacePost・removePost（その人の投稿一覧）', () => {
+  it('replacePost は「すべて」とその人の一覧の両方で置き換える', async () => {
+    const client = new QueryClient()
+    client.setQueryData(timelineKeys.all, twoPages())
+    client.setQueryData(userPostsKeys.of('alice'), twoPages())
+
+    await replacePost(client, makePost('c', '直した本文'))
+
+    expect(client.getQueryData<Data>(timelineKeys.all)?.pages[1]?.items[0]?.body).toBe('直した本文')
+    expect(client.getQueryData<Data>(userPostsKeys.of('alice'))?.pages[1]?.items[0]?.body).toBe('直した本文')
+  })
+
+  it('removePost は「すべて」とその人の一覧の両方から除く', async () => {
+    const client = new QueryClient()
+    client.setQueryData(timelineKeys.all, twoPages())
+    client.setQueryData(userPostsKeys.of('alice'), twoPages())
+
+    await removePost(client, 'c')
+
+    expect(ids(client.getQueryData<Data>(timelineKeys.all), 1)).toEqual(['d'])
+    expect(ids(client.getQueryData<Data>(userPostsKeys.of('alice')), 1)).toEqual(['d'])
   })
 })
 
@@ -151,6 +233,52 @@ describe('最初の読み込み中の変更', () => {
     await prependPost(client, makePost('new'))
 
     await expect.poll(() => ids(client.getQueryData<Data>(timelineKeys.all), 0)).toEqual(['new', 'a'])
+    expect(calls).toBe(2)
+    unsubscribe()
+  })
+
+  it('その人の一覧の最初の読み込み中に投稿を足すと、読み直して最新を取る', async () => {
+    const client = new QueryClient()
+    let calls = 0
+    const observer = new InfiniteQueryObserver(client, {
+      queryKey: userPostsKeys.of('alice'),
+      queryFn: (): Promise<Page<Post>> => {
+        calls += 1
+        return calls === 1 ? new Promise(() => {}) : Promise.resolve({ items: [makePost('new'), makePost('a')], nextCursor: null })
+      },
+      initialPageParam: null as string | null,
+      getNextPageParam: (last: Page<Post>) => last.nextCursor,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await prependPost(client, makePost('new', '新しい', 'Alice'))
+
+    await expect.poll(() => ids(client.getQueryData<Data>(userPostsKeys.of('alice')), 0)).toEqual(['new', 'a'])
+    expect(calls).toBe(2)
+    unsubscribe()
+  })
+
+  it('その人の一覧の最初の読み込み中に投稿を編集すると、読み直して最新を取る', async () => {
+    const client = new QueryClient()
+    let calls = 0
+    const observer = new InfiniteQueryObserver(client, {
+      queryKey: userPostsKeys.of('alice'),
+      queryFn: (): Promise<Page<Post>> => {
+        calls += 1
+        return calls === 1
+          ? new Promise(() => {})
+          : Promise.resolve({ items: [makePost('a', '直した本文')], nextCursor: null })
+      },
+      initialPageParam: null as string | null,
+      getNextPageParam: (last: Page<Post>) => last.nextCursor,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await replacePost(client, makePost('a', '直した本文'))
+
+    await expect.poll(() => client.getQueryData<Data>(userPostsKeys.of('alice'))?.pages[0]?.items[0]?.body).toBe('直した本文')
     expect(calls).toBe(2)
     unsubscribe()
   })

@@ -2,7 +2,7 @@ import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-q
 import { ApiError, formatErrorMessage } from '../../api/client'
 import { createPost, deletePost, updatePost } from '../../api/posts'
 import { prependPost, removePost, replacePost } from './postCache'
-import { timelineKeys } from './queryKeys'
+import { timelineKeys, userPostsKeys } from './queryKeys'
 
 // 成功したら、結果をキャッシュへ直接書く（理由は postCache.ts）。通知や画面の閉じ方は呼び出し側が決める。
 // onSuccess が返す Promise は mutateAsync の完了前に待たれるので、書き終えてから呼び出し側の続きが動く。
@@ -58,4 +58,5 @@ export function toValidationFailure(error: unknown): ValidationFailure | null {
 export async function forgetMissingPost(client: QueryClient, postId: string): Promise<void> {
   await removePost(client, postId)
   void client.invalidateQueries({ queryKey: timelineKeys.root })
+  void client.invalidateQueries({ queryKey: userPostsKeys.root })
 }
