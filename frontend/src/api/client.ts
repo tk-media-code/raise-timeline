@@ -1,5 +1,5 @@
 import { refreshSession } from '../auth/refresh'
-import { getAccessToken } from '../auth/tokenStore'
+import { getAccessToken, getSessionGeneration, getSessionUserId } from '../auth/tokenStore'
 
 export type FieldError = { field: string; message: string }
 
@@ -123,14 +123,29 @@ async function readBody<T>(response: Response): Promise<T> {
 }
 
 export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promise<T> {
+  // 要求を送る時点の世代と利用者を控える。401 のあとの更新とやり直しが、
+  // 「この要求を送った人」のままで行われるかを確かめるため。
+  // 送ってから応答が来るまでの間に、他のタブの知らせでの取り直しや、別の利用者の食い違いの検出があると、
+  // 世代が進み、利用者 id も変わる。そのあとに更新すると、別の人のセッションが返ってきて、
+  // 元の人の要求が別の人のトークンでやり直されてしまう。
+  const generation = getSessionGeneration()
+  const userId = getSessionUserId()
+
   const response = await send(path, init)
   if (response.ok) return readBody<T>(response)
 
   const error = await toApiError(response)
   if (response.status === 401 && error.code === 'UNAUTHENTICATED' && init.retryOn401 !== false) {
+    // 更新もやり直しもせず、元の 401 を投げる場合:
+    // - 利用者 id が無い: このタブはログインしていない。起動時と取り直しの更新は AuthProvider が自分で呼ぶので、
+    //   ここからは更新しない（更新すると、無関係な人のセッションを受け入れてしまう）。
+    // - 世代が進んだ: 送ったあとに signIn・signOut・取り直し・利用者の食い違いがあった。
+    if (userId === null || getSessionGeneration() !== generation) throw error
     // 更新は 1 本にまとまっているので、同時に何本が 401 になっても更新の要求は 1 回で済む。
     const session = await refreshSession()
-    if (session) {
+    // 更新から戻ったあとも、世代が同じで、返った利用者が送った人と同じときだけやり直す。
+    // 違うなら、更新の側が期限切れとして扱っている。元の 401 を投げる。
+    if (session && getSessionGeneration() === generation && session.user.id === userId) {
       // やり直しは 1 回だけ。ここで 401 なら更新を繰り返さず、そのまま投げる。
       const retried = await send(path, init)
       if (retried.ok) return readBody<T>(retried)

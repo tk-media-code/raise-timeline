@@ -175,16 +175,26 @@ describe('refreshSession', () => {
 
   it('返った利用者がこのタブの利用者と違うと、トークンを置かずに null を返し、期限切れを知らせる', async () => {
     fetchMock.mockImplementation(async () => jsonResponse(200, { accessToken: 'other', user: { ...me, id: '2' } }))
-    const { refreshSession, onSessionExpired, getAccessToken, setAccessToken, getSessionUserId, setSessionUserId } =
-      await load()
+    const {
+      refreshSession,
+      onSessionExpired,
+      getAccessToken,
+      setAccessToken,
+      getSessionUserId,
+      setSessionUserId,
+      getSessionGeneration,
+    } = await load()
     setAccessToken('mine')
     setSessionUserId('1')
     const listener = vi.fn()
     onSessionExpired(listener)
+    const generationBefore = getSessionGeneration()
 
     const result = await refreshSession()
 
     expect(result).toBeNull()
+    // 飛んでいる最中の、元の人の別の要求が、後から更新やり直しをしないように世代を進める。
+    expect(getSessionGeneration()).toBe(generationBefore + 1)
     expect(getAccessToken()).toBeNull()
     expect(getSessionUserId()).toBeNull()
     expect(listener).toHaveBeenCalledTimes(1)

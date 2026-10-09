@@ -6,7 +6,7 @@ import type { AuthResponse, Me } from '../api/auth'
 import { queryClient } from '../lib/queryClient'
 import { AuthProvider, useAuth } from './AuthProvider'
 import { AUTH_CHANNEL_NAME } from './authChannel'
-import { getAccessToken, getSessionUserId, setAccessToken } from './tokenStore'
+import { getAccessToken, getSessionUserId, setAccessToken, setSessionUserId } from './tokenStore'
 
 const refreshSession = vi.hoisted(() => vi.fn())
 const onSessionExpired = vi.hoisted(() => vi.fn())
@@ -87,6 +87,7 @@ describe('AuthProvider', () => {
       }
     })
     setAccessToken(null)
+    setSessionUserId(null)
     queryClient.clear()
   })
 
@@ -289,7 +290,9 @@ describe('AuthProvider', () => {
     refreshSession.mockResolvedValueOnce(session)
     renderProvider()
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+    // refreshSession は mock なので、トークンと利用者 id は、更新が済んだ状態をテストが置く。
     setAccessToken('token-1')
+    setSessionUserId('1')
     queryClient.setQueryData(['x'], 1)
     const retry = deferred<AuthResponse | null>()
     refreshSession.mockReturnValueOnce(retry.promise)
@@ -351,6 +354,29 @@ describe('AuthProvider', () => {
     await act(async () => second.resolve(bobSession))
     await act(async () => first.resolve(session))
 
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    expect(screen.getByTestId('user')).toHaveTextContent('bob')
+  })
+
+  it('取り直しの最中にもう一度届いたら、先の取り直しが先に返っても、その結果は残らない', async () => {
+    refreshSession.mockResolvedValueOnce(session)
+    renderProvider()
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+    const first = deferred<AuthResponse | null>()
+    const second = deferred<AuthResponse | null>()
+    refreshSession.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+
+    otherTab.postMessage({ type: 'auth-changed' })
+    await waitFor(() => expect(refreshSession).toHaveBeenCalledTimes(2))
+    otherTab.postMessage({ type: 'auth-changed' })
+    await waitFor(() => expect(refreshSession).toHaveBeenCalledTimes(3))
+
+    // 先の取り直しが X で先に返る。状態はまだ loading だが、世代が違うので反映しない。
+    await act(async () => first.resolve(session))
+    expect(screen.getByTestId('status')).toHaveTextContent('loading')
+    expect(screen.getByTestId('user')).toHaveTextContent('none')
+
+    await act(async () => second.resolve(bobSession))
     expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
     expect(screen.getByTestId('user')).toHaveTextContent('bob')
   })

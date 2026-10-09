@@ -1,7 +1,13 @@
 import { refresh, type AuthResponse } from '../api/auth'
 import { ApiError } from '../api/client'
 import { withAuthLock } from './authLock'
-import { getSessionGeneration, getSessionUserId, setAccessToken, setSessionUserId } from './tokenStore'
+import {
+  advanceSessionGeneration,
+  getSessionGeneration,
+  getSessionUserId,
+  setAccessToken,
+  setSessionUserId,
+} from './tokenStore'
 
 // 進行中の更新。同じタブでは、同じ世代の間だけ更新を 1 本にまとめる。
 // リフレッシュトークンは使い捨てなので、同時に 2 本出すと片方が 401 になって
@@ -40,9 +46,13 @@ async function doRefresh(startedAt: number): Promise<AuthResponse | null> {
     // 返った利用者が、このタブが覚えている利用者と違う。リフレッシュ Cookie は全タブで共有なので、
     // 別のタブで別の人がログインし直したということ。このまま使うと、画面は元の人なのに操作は新しい人になる。
     // 期限切れと同じ扱いにして、トークンは置かない。null を返すので、apiFetch は元の要求もやり直さない。
+    // 世代も進める。飛んでいる最中の、元の人の別の要求が後から 401 を受けても、更新もやり直しもさせない
+    // （世代が違えば apiFetch は更新しない）。進めないと、その要求が新しく更新を始め、
+    // 利用者 id が null なので別の人を受け入れて、別の人のトークンでやり直してしまう。
     // まだ覚えていない（起動時）なら見比べる相手が無いので、そのまま受け入れる。
     const knownUserId = getSessionUserId()
     if (knownUserId !== null && knownUserId !== session.user.id) {
+      advanceSessionGeneration()
       setAccessToken(null)
       setSessionUserId(null)
       notifySessionExpired()
@@ -71,7 +81,8 @@ export function refreshSession(): Promise<AuthResponse | null> {
   const generation = getSessionGeneration()
   // 相乗りは同じ世代の間だけ。世代が進んだ後も相乗りすると、古い世代の結果（null）を受け取って、
   // 新しい世代で必要な更新が行われない。
-  // 世代の違う 2 本は、同じタブでも鍵で順番に並ぶ（Web Locks はタブの間でも、同じタブの中でも並べる）。
+  // 世代の違う 2 本は、Web Locks があるとき（navigator.locks）に限り、同じタブでも鍵で順番に並ぶ。
+  // 無い環境では並ばず、同時に走る。
   if (inFlight && inFlight.generation === generation) return inFlight.promise
   // タブの間は Web Locks で順番に並べる。後のタブは前のタブが受け取った新しい Cookie で成功する。
   const promise: Promise<AuthResponse | null> = withAuthLock(() => doRefresh(generation)).finally(() => {
