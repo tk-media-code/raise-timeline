@@ -214,16 +214,18 @@ describe('ProfileEditPage', () => {
       expect(api.updateMe).not.toHaveBeenCalled()
     })
 
-    it('表示名を直すと、欄の誤りは次の送信まで残り、通れば消える', async () => {
+    it('表示名を直すと、その欄の誤りはすぐ消え、そのまま送信できる', async () => {
       api.updateMe.mockReturnValue(new Promise(() => {}))
       const { user } = await openForm()
       await replaceText(user, nameInput(), '   ')
       await user.click(saveButton())
 
+      expect(screen.getByText('1〜50 文字で入力してください')).toBeInTheDocument()
+
       await replaceText(user, nameInput(), '新しい名前')
+      expect(screen.queryByText('1〜50 文字で入力してください')).not.toBeInTheDocument()
       await user.click(saveButton())
 
-      expect(screen.queryByText('1〜50 文字で入力してください')).not.toBeInTheDocument()
       expect(api.updateMe).toHaveBeenCalledTimes(1)
     })
   })
