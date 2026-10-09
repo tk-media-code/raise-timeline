@@ -236,6 +236,38 @@ describe('apiFetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('更新から戻ったときに返った利用者が送った利用者と違えば、やり直さずに 401 を投げる', async () => {
+    // 利用者 1 の要求 a と b が飛んでいる。a の更新は 401 で終わり、このタブは利用者 id を忘れる（世代は進まない）。
+    // その後、Cookie が利用者 2 のものに変わってから b が 401 を受けると、世代が同じなので新しく更新を始め、
+    // 利用者 id が null の doRefresh は利用者 2 をそのまま受け入れる。b がやり直されないのは、
+    // apiFetch が返った利用者と送った利用者を見比べるから。
+    const responders = new Map<string, (response: Response) => void>()
+    let refreshCalls = 0
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/auth/refresh') {
+        refreshCalls += 1
+        return refreshCalls === 1
+          ? problem(401, 'INVALID_REFRESH_TOKEN')
+          : ok({ accessToken: 'other', user: { ...me, id: '2' } })
+      }
+      return new Promise<Response>((r) => responders.set(path, r))
+    })
+    const { apiFetch, setAccessToken, setSessionUserId } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+
+    const a = apiFetch('/api/a').catch((e: unknown) => e)
+    const b = apiFetch('/api/b').catch((e: unknown) => e)
+    responders.get('/api/a')?.(problem(401, 'UNAUTHENTICATED'))
+    await expect(a).resolves.toMatchObject({ status: 401 })
+    responders.get('/api/b')?.(problem(401, 'UNAUTHENTICATED'))
+
+    await expect(b).resolves.toMatchObject({ status: 401 })
+    // a, b, 更新、更新の 4 回だけ。利用者 2 のトークン（Bearer other）での 5 回目は無い。
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock.mock.calls.map((call) => authorizationOf(call))).not.toContain('Bearer other')
+  })
+
   it('やり直しでも 401 なら ApiError を投げ、更新は繰り返さない', async () => {
     fetchMock
       .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))

@@ -144,7 +144,10 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
     // 更新は 1 本にまとまっているので、同時に何本が 401 になっても更新の要求は 1 回で済む。
     const session = await refreshSession()
     // 更新から戻ったあとも、世代が同じで、返った利用者が送った人と同じときだけやり直す。
-    // 違うなら、更新の側が期限切れとして扱っている。元の 401 を投げる。
+    // 更新の側の食い違いの検査は、タブが利用者 id を覚えているときにしか効かない。
+    // 別の要求の更新が 401 で終わって id を忘れたあと、Cookie が別の人のものに変わってから、この要求が
+    // 新しく更新を始めると、更新は別の人をそのまま受け入れて返す。ここで見比べないと、
+    // 送った人の要求が別の人のトークンでやり直されてしまう。違えば元の 401 を投げる。
     if (session && getSessionGeneration() === generation && session.user.id === userId) {
       // やり直しは 1 回だけ。ここで 401 なら更新を繰り返さず、そのまま投げる。
       const retried = await send(path, init)

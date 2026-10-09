@@ -11,7 +11,7 @@ export function setAccessToken(token: string | null): void {
   accessToken = token
 }
 
-// セッションの世代。signIn・signOut のたびに進める。
+// セッションの世代。signIn・signOut・他のタブの知らせでの取り直し・更新で利用者の食い違いが分かったときに進める。
 // 進行中の更新が終わったとき、始めた時と世代が違えば、その結果はもう古い。
 // 古い結果でトークンを書き換えたり消したりすると、直後にログインした人やログアウトした人の状態を壊す。
 let sessionGeneration = 0

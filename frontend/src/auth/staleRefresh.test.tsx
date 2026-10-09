@@ -158,7 +158,8 @@ describe('古い更新の結果を捨てる（本物の refresh と AuthProvider
   it('他のタブの auth-changed のあと、本物の refresh を通して、返った別の利用者でログイン状態になる', async () => {
     // alice で signIn したタブに、別のタブでの bob のログインが知らされる。
     // 取り直しで利用者 id を忘れていないと、bob は alice との食い違いとして捨てられ、anonymous になる。
-    apiRefresh.mockResolvedValueOnce(null)
+    // 起動時の更新は 401（本物の refresh() は null を返さず、401 を投げる）。
+    apiRefresh.mockRejectedValueOnce(unauthorized())
     render(
       <AuthProvider>
         <Probe />
