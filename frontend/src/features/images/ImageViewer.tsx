@@ -11,7 +11,10 @@ type ImageViewerProps = {
 }
 
 // 画面いっぱいの暗い背景。dialog の既定（中央寄せ・最大幅）を打ち消して全面に広げる。
-const DIALOG_CLASS = 'fixed inset-0 m-0 h-dvh max-h-none w-dvw max-w-none overflow-hidden bg-black/90 p-0 text-white backdrop:bg-transparent'
+// 幅は dvw ではなく w-full にする。100dvw は縦スクロールバーの幅を含むので、スクロールバーのある環境では
+// 見える範囲より広くなり、右端のボタンの一部がスクロールバーの下に隠れて押せなくなる。
+// 高さの dvh は、モバイルでアドレスバーの出入りに追従させるために使う。
+const DIALOG_CLASS = 'fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none overflow-hidden bg-black/90 p-0 text-white backdrop:bg-transparent'
 
 const BUTTON_CLASS =
   'absolute flex size-12 items-center justify-center rounded-full bg-white text-3xl leading-none text-black hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'

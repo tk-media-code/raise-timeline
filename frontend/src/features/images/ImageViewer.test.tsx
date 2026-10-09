@@ -22,6 +22,14 @@ describe('ImageViewer', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
+  it('幅に dvw を使わない（スクロールバーの下に右端のボタンが入らないようにする）', () => {
+    renderViewer(2)
+
+    const className = screen.getByRole('dialog').className
+    expect(className).not.toContain('w-dvw')
+    expect(className).toContain('w-full')
+  })
+
   it('startIndex の画像から始まり、フォーカスは「閉じる」にある', () => {
     renderViewer(3, 1)
 
