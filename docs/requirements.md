@@ -150,11 +150,12 @@
 
 前の Issue の時点では、後の Issue が作るテーブルがまだ無い。そのあいだの振る舞いを決めておく。機能別文書のテストの期待一覧は、その機能の Issue で確かめる。
 
+画像（Issue 5）が解消した仮の振る舞いは、表から外した。投稿の `images` を `[]`、`author.avatarUrl` を null にしていたことと、`images` の部品が 1 つでもあれば 503 にしていたこと、プロフィール編集のアイコン欄をプレビューだけにしていたことの 3 つ。今は、画像の保存先（S3）が設定されていれば画像を保存して表示し、設定が無いときだけ画像の操作が 503 になる。本文だけの投稿は、設定が無くても通る（[features/post.md](features/post.md)、[features/profile.md](features/profile.md)、[image-storage-design.md](image-storage-design.md)）。
+
 | Issue | 仮の振る舞い |
 | --- | --- |
 | 3〜6（投稿、プロフィール、画像、退会） | Post の `likeCount` は 0、`likedByMe` は false を返す。`likes` ができたら（Issue 7）数えた値に変える |
 | 3〜7 | Post の `commentCount` は 0 を返す。`comments` ができたら（Issue 8）数えた値に変える |
-| 3〜4 | 投稿の `images` は `[]`、`author.avatarUrl` は null を返す。`POST /api/posts` は最初から multipart で受け、`images` の部品が 1 つでもあれば、本文の検査より先に 503 `IMAGE_STORAGE_UNAVAILABLE`（「画像の保存が設定されていません」）を返す。画像（Issue 5）が `images` とアイコンを足す。画像付きの投稿を黙って捨てると、画像が付いたと思った利用者に嘘をつく。multipart にしておくのは、API の形を Issue 5 で変えないため |
 | 3〜6 | 画面のいいね数は押せない表示にする（`role="img"`、名前は「いいね 0 件」）。いいね（Issue 7）が値と操作を足す。Issue 7 では「いいね」を同じ名前のボタンに替える |
 | 3〜7 | 画面のコメント数は押せない表示にする（`role="img"`、名前は「コメント 0 件」）。コメント（Issue 8）が値と操作を足す |
 | 3〜8 | ホームは「すべて」のタブだけ。「フォロー中」のタブと `GET /api/timeline/following` は Issue 9 で足す。それまでホームの既定は「すべて」で、URL の `tab` はまだ読まない（Issue 9 で足す） |
@@ -166,7 +167,7 @@
 | 7〜8（いいねした人の一覧） | `isFollowing` は false を返す。SQL の `EXISTS (SELECT 1 FROM follows ...)` は Issue 9 で足す |
 | 4〜8 | プロフィールとユーザーカードのフォローボタンは出さない。Issue 9 で足す |
 | 4〜8 | プロフィールの「フォロー中 n」「フォロワー n」は押せない文字にする。一覧の画面は Issue 9 で作るので、今リンクにしても「見つかりません」に飛ぶだけになる。Issue 9 でリンクにする |
-| 4 | プロフィール編集のアイコン欄は、今のアイコン（頭文字）のプレビューだけにする。押しても何もできないボタンは置かない。「画像を変更」は Issue 5、「退会」の節は Issue 6 で足す |
+| 4〜5 | プロフィール編集に「退会」の節は無い。Issue 6 で足す |
 
 ## 7. 決めたこと（人の判断）
 
