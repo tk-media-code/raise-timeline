@@ -1,9 +1,14 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Me } from '../../api/auth'
+import type { Post } from '../../api/posts'
+import { TestProviders } from '../../test/providers'
 import { AppLayout } from './AppLayout'
+
+const api = vi.hoisted(() => ({ createPost: vi.fn(), updatePost: vi.fn(), deletePost: vi.fn() }))
+vi.mock('../../api/posts', () => api)
 
 const useAuth = vi.hoisted(() => vi.fn())
 vi.mock('../../auth/AuthProvider', () => ({ useAuth }))
@@ -24,16 +29,30 @@ const me: Me = {
 
 const signOut = vi.fn()
 
-function renderLayout() {
+// レイアウトルートの検査なので、自分で <Routes> を書く（renderWithProviders は使わない）。
+function renderLayout(route = '/') {
   return render(
-    <MemoryRouter initialEntries={['/']}>
+    <TestProviders route={route}>
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={<p>ホームの中身</p>} />
+          <Route path="/posts/:id" element={<p>投稿詳細の中身</p>} />
         </Route>
       </Routes>
-    </MemoryRouter>,
+    </TestProviders>,
   )
+}
+
+const newPost: Post = {
+  id: 'p-new',
+  author: { id: '1', username: 'alice', displayName: 'アリス', avatarUrl: null },
+  body: 'こんにちは',
+  images: [],
+  likeCount: 0,
+  commentCount: 0,
+  likedByMe: false,
+  edited: false,
+  createdAt: '2026-10-06T05:09:00Z',
 }
 
 // jsdom は CSS の media query を解釈しないので、PC の左ナビもスマホの上部バー・下部タブも全部描かれる。
@@ -41,6 +60,7 @@ function renderLayout() {
 describe('AppLayout', () => {
   beforeEach(() => {
     signOut.mockReset()
+    api.createPost.mockReset()
     signOut.mockResolvedValue(undefined)
     useAuth.mockReturnValue({ status: 'authenticated', user: me, signIn: vi.fn(), signOut })
   })
@@ -71,10 +91,57 @@ describe('AppLayout', () => {
     expect(within(tabs).getByRole('link', { name: 'プロフィール' })).toHaveAttribute('href', '/users/alice')
   })
 
-  it('「投稿する」ボタンは、この段階では無効', () => {
+  it('左ナビの「投稿する」で「新しい投稿」のダイアログが開き、投稿すると閉じる', async () => {
+    api.createPost.mockResolvedValue(newPost)
     renderLayout()
+    const nav = screen.getByRole('navigation', { name: 'メインメニュー' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    expect(screen.getByRole('button', { name: '投稿する' })).toBeDisabled()
+    await userEvent.click(within(nav).getByRole('button', { name: '投稿する' }))
+
+    const dialog = screen.getByRole('dialog', { name: '新しい投稿' })
+    expect(within(dialog).getByRole('textbox', { name: '本文' })).toHaveFocus()
+    await userEvent.paste('こんにちは')
+    await userEvent.click(within(dialog).getByRole('button', { name: '投稿する' }))
+
+    expect(api.createPost).toHaveBeenCalledWith('こんにちは')
+    expect(await screen.findByText('投稿しました')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('スマホの丸ボタン（2 つ目の「投稿する」）でも同じダイアログが開き、「閉じる」で閉じる', async () => {
+    renderLayout()
+    const buttons = screen.getAllByRole('button', { name: '投稿する' })
+    expect(buttons).toHaveLength(2)
+
+    await userEvent.click(buttons[1]!)
+
+    const dialog = screen.getByRole('dialog', { name: '新しい投稿' })
+    await userEvent.click(within(dialog).getByRole('button', { name: '閉じる' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(api.createPost).not.toHaveBeenCalled()
+  })
+
+  it('ブラウザが先にダイアログを閉じても（open のまま close()）、状態が合い、もう一度開ける', async () => {
+    renderLayout()
+    const nav = screen.getByRole('navigation', { name: 'メインメニュー' })
+    await userEvent.click(within(nav).getByRole('button', { name: '投稿する' }))
+    const dialog = screen.getByRole('dialog', { name: '新しい投稿' })
+
+    // Esc を重ねたときの強制的な close や、Android の戻る操作は、ページの状態を経ずにブラウザが閉じる。
+    act(() => {
+      ;(dialog as HTMLDialogElement).close()
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await userEvent.click(within(nav).getByRole('button', { name: '投稿する' }))
+    expect(screen.getByRole('dialog', { name: '新しい投稿' })).toBeInTheDocument()
+  })
+
+  it('/posts/x では上部バーの画面名が「投稿」', () => {
+    renderLayout('/posts/x')
+
+    expect(within(screen.getByRole('banner')).getByText('投稿')).toBeInTheDocument()
   })
 
   it('ログアウトを押すだけでは signOut を呼ばず、確認ダイアログを開く', async () => {

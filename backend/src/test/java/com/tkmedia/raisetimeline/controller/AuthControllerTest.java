@@ -247,6 +247,45 @@ class AuthControllerTest {
 		return cases.stream();
 	}
 
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("loneSurrogateInEachStringField")
+	@DisplayName("どの文字列項目でも、対になっていないサロゲートは 422 になる")
+	void loneSurrogateInStringFieldIsRejected(String name, String path, String field, String json) throws Exception {
+		// username と password は @Pattern にも当たるので、エラーが 1 件とは限らない。NoNul の文言が入っていることを見る。
+		postJson(path, json)
+				.andExpect(status().isUnprocessableContent())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+				.andExpect(jsonPath("$.errors[?(@.field == '" + field + "')].message").value(hasItem(NO_NUL_MESSAGE)));
+	}
+
+	static Stream<Arguments> loneSurrogateInEachStringField() {
+		String lone = "\\uD800";
+		List<Arguments> cases = new ArrayList<>();
+		String[][] registerFields = { { "username", "taro_1" }, { "displayName", "太郎です" },
+				{ "email", "a@example.com" }, { "password", "password1" } };
+		for (String[] f : registerFields) {
+			for (String[] position : new String[][] { { "途中", f[1].substring(0, 2) + lone + f[1].substring(2) },
+					{ "単独", lone } }) {
+				Map<String, String> values = new LinkedHashMap<>();
+				for (String[] other : registerFields) {
+					values.put(other[0], other[0].equals(f[0]) ? position[1] : other[1]);
+				}
+				cases.add(Arguments.of("登録の " + f[0] + " の" + position[0], "/api/auth/register", f[0],
+						registerJson(values.get("username"), values.get("displayName"), values.get("email"),
+								values.get("password"))));
+			}
+		}
+		cases.add(Arguments.of("ログインの email の途中", "/api/auth/login", "email",
+				loginJson("a" + lone + "@example.com", "password1")));
+		cases.add(Arguments.of("ログインの email の単独", "/api/auth/login", "email",
+				loginJson(lone, "password1")));
+		cases.add(Arguments.of("ログインの password の途中", "/api/auth/login", "password",
+				loginJson("a@example.com", "pass" + lone + "word1")));
+		cases.add(Arguments.of("ログインの password の単独", "/api/auth/login", "password",
+				loginJson("a@example.com", lone)));
+		return cases.stream();
+	}
+
 	@Test
 	@DisplayName("本文に生の NUL のバイトがあると、Jackson が拒んで 400 になる")
 	void rawNulByteReturns400() throws Exception {

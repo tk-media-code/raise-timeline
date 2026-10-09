@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { useAuth } from '../../auth/AuthProvider'
+import { ComposeDialog } from '../../features/posts/ComposeDialog'
 import { Avatar } from '../Avatar'
 import { ConfirmDialog } from '../ConfirmDialog'
 
@@ -22,6 +23,7 @@ function screenName(pathname: string): string {
   if (pathname === '/') return 'ホーム'
   if (pathname.startsWith('/search')) return '検索'
   if (pathname.startsWith('/users/')) return 'プロフィール'
+  if (pathname.startsWith('/posts/')) return '投稿'
   return 'raise-timeline'
 }
 
@@ -30,6 +32,7 @@ export function AppLayout() {
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
 
   // 認証済みの枠の中でしか使わない。ログアウト直後に user が空になる 1 回の描画だけは、何も出さずに RequireAuth の移動に任せる。
   if (!user) return null
@@ -97,11 +100,10 @@ export function AppLayout() {
         <button type="button" onClick={askLogout} className={NAV_CLASS + ' w-full text-left'}>
           ログアウト
         </button>
-        {/* 投稿フォームはこの Issue の範囲外。見た目で押せないと分かるように無効にしておく。 */}
         <button
           type="button"
-          disabled
-          className="mt-3 min-h-11 rounded-full bg-gray-200 px-4 font-bold text-gray-500 cursor-not-allowed"
+          onClick={() => setComposeOpen(true)}
+          className="mt-3 min-h-11 rounded-full bg-sky-600 px-4 font-bold text-white hover:bg-sky-700"
         >
           投稿する
         </button>
@@ -129,6 +131,18 @@ export function AppLayout() {
           プロフィール
         </NavLink>
       </nav>
+
+      {/* スマホでは左ナビが無いので、下部タブの上に丸いボタンを置く。見た目は ＋、名前は「投稿する」。 */}
+      <button
+        type="button"
+        aria-label="投稿する"
+        onClick={() => setComposeOpen(true)}
+        className="fixed right-4 bottom-18 z-10 flex min-h-14 min-w-14 items-center justify-center rounded-full bg-sky-600 text-3xl text-white shadow-lg hover:bg-sky-700 md:hidden"
+      >
+        <span aria-hidden="true">＋</span>
+      </button>
+
+      <ComposeDialog open={composeOpen} onClose={() => setComposeOpen(false)} />
 
       <ConfirmDialog
         open={confirmOpen}

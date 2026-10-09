@@ -76,6 +76,42 @@ describe('apiFetch', () => {
     expect(init.credentials).toBe('same-origin')
   })
 
+  it('FormData の本文はそのまま送り、Content-Type を付けない', async () => {
+    fetchMock.mockResolvedValueOnce(ok({}))
+    const { apiFetch } = await load()
+    const form = new FormData()
+    form.append('body', 'こんにちは')
+
+    await apiFetch('/api/x', { method: 'POST', body: form })
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    // 同じオブジェクトのまま渡す。Content-Type はブラウザが boundary 付きで決める。
+    expect(init.body).toBe(form)
+    expect(new Headers(init.headers).get('Content-Type')).toBeNull()
+  })
+
+  it('401 の後のやり直しでも、同じ FormData を送る', async () => {
+    fetchMock
+      .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))
+      .mockResolvedValueOnce(ok({ accessToken: 'new', user: me }))
+      .mockResolvedValueOnce(ok({}))
+    const { apiFetch, setAccessToken, setSessionUserId } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+    const form = new FormData()
+    form.append('body', 'こんにちは')
+
+    await apiFetch('/api/x', { method: 'POST', body: form })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    const first = fetchMock.mock.calls[0][1] as RequestInit
+    const retried = fetchMock.mock.calls[2][1] as RequestInit
+    expect(first.body).toBe(form)
+    expect(retried.body).toBe(form)
+    expect(new Headers(retried.headers).get('Content-Type')).toBeNull()
+    expect(authorizationOf(fetchMock.mock.calls[2])).toBe('Bearer new')
+  })
+
   it('204 は undefined を返す', async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
     const { apiFetch } = await load()
@@ -120,8 +156,9 @@ describe('apiFetch', () => {
       .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))
       .mockResolvedValueOnce(ok({ accessToken: 'new', user: me }))
       .mockResolvedValueOnce(ok(me))
-    const { apiFetch, setAccessToken } = await load()
+    const { apiFetch, setAccessToken, setSessionUserId } = await load()
     setAccessToken('old')
+    setSessionUserId('1')
 
     const result = await apiFetch('/api/users/me')
 
@@ -136,8 +173,9 @@ describe('apiFetch', () => {
     fetchMock
       .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))
       .mockResolvedValueOnce(problem(401, 'INVALID_REFRESH_TOKEN'))
-    const { apiFetch, ApiError, setAccessToken } = await load()
+    const { apiFetch, ApiError, setAccessToken, setSessionUserId } = await load()
     setAccessToken('old')
+    setSessionUserId('1')
 
     const error = await apiFetch('/api/users/me').catch((e: unknown) => e)
 
@@ -146,12 +184,133 @@ describe('apiFetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('更新で別の利用者が返ったら、元の要求をやり直さずに 401 を投げる', async () => {
+    fetchMock
+      .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))
+      .mockResolvedValueOnce(ok({ accessToken: 'other', user: { ...me, id: '2' } }))
+    const { apiFetch, ApiError, setAccessToken, setSessionUserId, getAccessToken } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+
+    const error = await apiFetch('/api/users/me').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 401, code: 'UNAUTHENTICATED' })
+    // 元の要求と更新だけ。3 回目（別の利用者のトークンでのやり直し）は無い。
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(getAccessToken()).toBeNull()
+  })
+
+  it('送ったあとに世代が進むと、401 を受けても更新もやり直しもせず 401 を投げる（経路 A）', async () => {
+    // 利用者 1 の要求が飛んでいる間に、他のタブの知らせでの取り直しが始まった、という状況。
+    let respond: (response: Response) => void = () => {}
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((r) => (respond = r)))
+    const { apiFetch, setAccessToken, setSessionUserId, advanceSessionGeneration } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+
+    const pending = apiFetch('/api/users/me').catch((e: unknown) => e)
+    advanceSessionGeneration()
+    setSessionUserId(null)
+    respond(problem(401, 'UNAUTHENTICATED'))
+
+    await expect(pending).resolves.toMatchObject({ status: 401, code: 'UNAUTHENTICATED' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('食い違いで null が返ったあと、その前に送っていた別の要求が 401 を受けても、更新もやり直しもしない（経路 B）', async () => {
+    // 利用者 1 の要求 M と M' が飛んでいる。M の更新で利用者 2 が返り、食い違いとして扱われる。
+    const responders: Array<(response: Response) => void> = []
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/auth/refresh') return ok({ accessToken: 'other', user: { ...me, id: '2' } })
+      return new Promise<Response>((r) => responders.push(r))
+    })
+    const { apiFetch, setAccessToken, setSessionUserId, getAccessToken } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+
+    const m = apiFetch('/api/a').catch((e: unknown) => e)
+    const mDash = apiFetch('/api/b').catch((e: unknown) => e)
+    responders[0](problem(401, 'UNAUTHENTICATED'))
+    await expect(m).resolves.toMatchObject({ status: 401 })
+    // ここまでで、更新の要求は 1 回（/api/auth/refresh）。
+    responders[1](problem(401, 'UNAUTHENTICATED'))
+
+    await expect(mDash).resolves.toMatchObject({ status: 401 })
+    // 元の 2 本と、M の更新だけ。M' は更新もやり直しもしない。
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(getAccessToken()).toBeNull()
+  })
+
+  it('ログインしていないタブ（利用者 id が null）の要求が 401 を受けても、更新しない', async () => {
+    fetchMock.mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))
+    const { apiFetch } = await load()
+
+    await expect(apiFetch('/api/users/me')).rejects.toMatchObject({ status: 401 })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('更新の応答を待つ間に世代が進んだら、やり直さない', async () => {
+    let respondRefresh: (response: Response) => void = () => {}
+    fetchMock.mockImplementation((path: string) =>
+      path === '/api/auth/refresh'
+        ? new Promise<Response>((r) => (respondRefresh = r))
+        : Promise.resolve(problem(401, 'UNAUTHENTICATED')),
+    )
+    const { apiFetch, setAccessToken, setSessionUserId, advanceSessionGeneration } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+
+    const pending = apiFetch('/api/users/me').catch((e: unknown) => e)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    // 更新の応答を待つ間に、ログインし直しがあった。
+    advanceSessionGeneration()
+    respondRefresh(ok({ accessToken: 'new', user: me }))
+
+    await expect(pending).resolves.toMatchObject({ status: 401 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('更新から戻ったときに返った利用者が送った利用者と違えば、やり直さずに 401 を投げる', async () => {
+    // 利用者 1 の要求 a と b が飛んでいる。a の更新は 401 で終わり、このタブは利用者 id を忘れる（世代は進まない）。
+    // その後、Cookie が利用者 2 のものに変わってから b が 401 を受けると、世代が同じなので新しく更新を始め、
+    // 利用者 id が null の doRefresh は利用者 2 をそのまま受け入れる。b がやり直されないのは、
+    // apiFetch が返った利用者と送った利用者を見比べるから。
+    const responders = new Map<string, (response: Response) => void>()
+    let refreshCalls = 0
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/auth/refresh') {
+        refreshCalls += 1
+        return refreshCalls === 1
+          ? problem(401, 'INVALID_REFRESH_TOKEN')
+          : ok({ accessToken: 'other', user: { ...me, id: '2' } })
+      }
+      return new Promise<Response>((r) => responders.set(path, r))
+    })
+    const { apiFetch, setAccessToken, setSessionUserId } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+
+    const a = apiFetch('/api/a').catch((e: unknown) => e)
+    const b = apiFetch('/api/b').catch((e: unknown) => e)
+    responders.get('/api/a')?.(problem(401, 'UNAUTHENTICATED'))
+    await expect(a).resolves.toMatchObject({ status: 401 })
+    responders.get('/api/b')?.(problem(401, 'UNAUTHENTICATED'))
+
+    await expect(b).resolves.toMatchObject({ status: 401 })
+    // a, b, 更新、更新の 4 回だけ。利用者 2 のトークン（Bearer other）での 5 回目は無い。
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock.mock.calls.map((call) => authorizationOf(call))).not.toContain('Bearer other')
+  })
+
   it('やり直しでも 401 なら ApiError を投げ、更新は繰り返さない', async () => {
     fetchMock
       .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))
       .mockResolvedValueOnce(ok({ accessToken: 'new', user: me }))
       .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))
-    const { apiFetch, ApiError } = await load()
+    const { apiFetch, ApiError, setSessionUserId } = await load()
+    setSessionUserId('1')
 
     const error = await apiFetch('/api/users/me').catch((e: unknown) => e)
 
@@ -177,8 +336,9 @@ describe('apiFetch', () => {
       const authorization = new Headers(init.headers).get('Authorization')
       return authorization === 'Bearer new' ? ok(me) : problem(401, 'UNAUTHENTICATED')
     })
-    const { apiFetch, setAccessToken } = await load()
+    const { apiFetch, setAccessToken, setSessionUserId } = await load()
     setAccessToken('old')
+    setSessionUserId('1')
 
     const results = await Promise.all([apiFetch('/api/a'), apiFetch('/api/b'), apiFetch('/api/c')])
 

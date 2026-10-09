@@ -156,6 +156,87 @@ describe('refreshSession', () => {
     expect(getAccessToken()).toBe('signed-in')
   })
 
+  it('世代が進んだ後の呼び出しは、古い世代の進行中の更新に相乗りしない', async () => {
+    const responders: Array<(response: Response) => void> = []
+    fetchMock.mockImplementation(() => new Promise<Response>((r) => responders.push(r)))
+    const { refreshSession, advanceSessionGeneration } = await load()
+
+    const first = refreshSession()
+    // 1 本目が終わる前にログインかログアウトがあった、という状況。
+    advanceSessionGeneration()
+    const second = refreshSession()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    responders[0](jsonResponse(200, { accessToken: 'stale', user: me }))
+    responders[1](jsonResponse(200, { accessToken: 'fresh', user: me }))
+
+    await expect(first).resolves.toBeNull()
+    await expect(second).resolves.toMatchObject({ accessToken: 'fresh' })
+  })
+
+  it('返った利用者がこのタブの利用者と違うと、トークンを置かずに null を返し、期限切れを知らせる', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(200, { accessToken: 'other', user: { ...me, id: '2' } }))
+    const {
+      refreshSession,
+      onSessionExpired,
+      getAccessToken,
+      setAccessToken,
+      getSessionUserId,
+      setSessionUserId,
+      getSessionGeneration,
+    } = await load()
+    setAccessToken('mine')
+    setSessionUserId('1')
+    const listener = vi.fn()
+    onSessionExpired(listener)
+    const generationBefore = getSessionGeneration()
+
+    const result = await refreshSession()
+
+    expect(result).toBeNull()
+    // 飛んでいる最中の、元の人の別の要求が、後から更新やり直しをしないように世代を進める。
+    expect(getSessionGeneration()).toBe(generationBefore + 1)
+    expect(getAccessToken()).toBeNull()
+    expect(getSessionUserId()).toBeNull()
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('利用者が同じなら、新しいトークンを置いて返す', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(200, { accessToken: 'new', user: me }))
+    const { refreshSession, onSessionExpired, getAccessToken, setSessionUserId, getSessionUserId } = await load()
+    setSessionUserId('1')
+    const listener = vi.fn()
+    onSessionExpired(listener)
+
+    const result = await refreshSession()
+
+    expect(result?.accessToken).toBe('new')
+    expect(getAccessToken()).toBe('new')
+    expect(getSessionUserId()).toBe('1')
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('まだ利用者を覚えていなければ（起動時）、返った利用者を覚える', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(200, { accessToken: 'new', user: { ...me, id: '2' } }))
+    const { refreshSession, getAccessToken, getSessionUserId } = await load()
+    expect(getSessionUserId()).toBeNull()
+
+    const result = await refreshSession()
+
+    expect(result?.accessToken).toBe('new')
+    expect(getAccessToken()).toBe('new')
+    expect(getSessionUserId()).toBe('2')
+  })
+
+  it('401 で覚えている利用者も忘れる', async () => {
+    fetchMock.mockImplementation(async () => unauthorized())
+    const { refreshSession, setSessionUserId, getSessionUserId } = await load()
+    setSessionUserId('1')
+
+    await refreshSession()
+
+    expect(getSessionUserId()).toBeNull()
+  })
+
   it('Web Locks があれば auth-refresh の鍵を持っている間に更新する', async () => {
     // 鍵を取れた瞬間と、鍵を持っている間かどうかをテストが握る。
     // 鍵の外で更新する実装だと、fetch が出た時点で held が false になる。

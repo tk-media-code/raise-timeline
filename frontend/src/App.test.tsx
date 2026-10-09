@@ -2,12 +2,14 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthResponse, Me } from './api/auth'
 import { ApiError } from './api/client'
+import type { Post } from './api/posts'
 import App from './App'
 import { AuthProvider } from './auth/AuthProvider'
 import { setAccessToken } from './auth/tokenStore'
+import { ToastProvider } from './components/Toast'
 import { queryClient } from './lib/queryClient'
 
 // 本物の AuthProvider・refresh.ts・各ページとルートを組み合わせ、ネットワークに出る API だけを差し替える。
@@ -48,15 +50,55 @@ function LocationProbe() {
   return <p data-testid="location">{pathname + search}</p>
 }
 
+const detailPost: Post = {
+  id: '11111111-1111-4111-8111-111111111111',
+  author: { id: '1', username: 'alice', displayName: 'Alice', avatarUrl: null },
+  body: '詳細の本文',
+  images: [],
+  likeCount: 0,
+  commentCount: 0,
+  likedByMe: false,
+  edited: false,
+  createdAt: '2026-10-06T05:12:00Z',
+}
+
+// ホームのタイムラインと投稿詳細が呼ぶ API の代役。タイムラインは空のページ、詳細は detailPost を返す。
+function stubTimelineFetch() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      const body = url.startsWith('/api/timeline/all')
+        ? { items: [], nextCursor: null }
+        : url === `/api/posts/${detailPost.id}`
+          ? detailPost
+          : null
+      return Promise.resolve(
+        body === null
+          ? new Response(null, { status: 404 })
+          : new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      )
+    }),
+  )
+}
+
+// ホームが描かれたことの確かめ。見出しと、投稿フォームの「本文」欄がある。
+async function findHome() {
+  expect(await screen.findByRole('heading', { level: 1, name: 'ホーム' })).toBeInTheDocument()
+  expect(screen.getByRole('textbox', { name: '本文' })).toBeInTheDocument()
+}
+
 function renderAt(entry: string) {
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[entry]}>
-        <AuthProvider>
-          <App />
-          <LocationProbe />
-        </AuthProvider>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <AuthProvider>
+            <App />
+            <LocationProbe />
+          </AuthProvider>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
@@ -71,6 +113,11 @@ describe('App のルート', () => {
     queryClient.clear()
     // 既定は未ログイン（起動時の更新が 401）。
     apiRefresh.mockRejectedValue(unauthorized())
+    stubTimelineFetch()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('未ログインで / を開くと /login?next=%2F に移る', async () => {
@@ -84,7 +131,7 @@ describe('App のルート', () => {
     apiRefresh.mockResolvedValue(session)
     renderAt('/')
 
-    expect(await screen.findByText('タイムラインは次の Issue で作ります')).toBeInTheDocument()
+    await findHome()
     expect(screen.getByRole('banner', { name: '上部バー' })).toBeInTheDocument()
     // AppLayout の <main> の中に描かれ、<main> が入れ子にならない。
     expect(screen.getAllByRole('main')).toHaveLength(1)
@@ -92,6 +139,17 @@ describe('App のルート', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     // jsdom は CSS を当てないので、md:hidden の上部バーも描かれる。h1 が本文（main）の中にあることで、各ページが持つことを確かめる。
     expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'ホーム' })).toBeInTheDocument()
+  })
+
+  it('ログイン済みで /posts/<id> を開くと、レイアウトの中に投稿詳細が描かれる', async () => {
+    apiRefresh.mockResolvedValue(session)
+    renderAt(`/posts/${detailPost.id}`)
+
+    expect(await screen.findByText('詳細の本文')).toBeInTheDocument()
+    expect(screen.getByRole('banner', { name: '上部バー' })).toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: '投稿' })).toBeInTheDocument()
+    expect(screen.getByText('2026/10/06 14:12')).toBeInTheDocument()
   })
 
   it('存在しないパスは「ページが見つかりません」とホームへのリンクを出す', async () => {
@@ -106,7 +164,7 @@ describe('App のルート', () => {
     apiRefresh.mockResolvedValue(session)
     renderAt('/login')
 
-    expect(await screen.findByText('タイムラインは次の Issue で作ります')).toBeInTheDocument()
+    await findHome()
     expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/)
   })
 
@@ -133,7 +191,7 @@ describe('App のルート', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '登録する' }))
 
-    expect(await screen.findByText('タイムラインは次の Issue で作ります')).toBeInTheDocument()
+    await findHome()
     expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/)
   })
 })

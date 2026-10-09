@@ -2,11 +2,12 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthResponse, Me } from '../api/auth'
-import { ApiError } from '../api/client'
+import { apiFetch, ApiError } from '../api/client'
 import { queryClient } from '../lib/queryClient'
 import { AuthProvider, useAuth } from './AuthProvider'
+import { AUTH_CHANNEL_NAME } from './authChannel'
 import { refreshSession } from './refresh'
-import { getAccessToken, setAccessToken } from './tokenStore'
+import { getAccessToken, getSessionUserId, setAccessToken, setSessionUserId } from './tokenStore'
 
 // 本物の refresh.ts と本物の AuthProvider を組み合わせ、ネットワークに出る API だけを差し替える。
 // ここでは「signIn・signOut が世代を進めること」を確かめる。refresh.ts を mock する AuthProvider.test.tsx では、
@@ -71,6 +72,7 @@ describe('古い更新の結果を捨てる（本物の refresh と AuthProvider
     apiLogout.mockReset()
     apiLogout.mockResolvedValue(undefined)
     setAccessToken(null)
+    setSessionUserId(null)
     queryClient.clear()
   })
 
@@ -119,5 +121,65 @@ describe('古い更新の結果を捨てる（本物の refresh と AuthProvider
     expect(getAccessToken()).toBeNull()
     expect(screen.getByTestId('status')).toHaveTextContent('anonymous')
     expect(screen.getByTestId('user')).toHaveTextContent('none')
+  })
+
+  it('期限切れで未ログインになると、TanStack Query のキャッシュを消す', async () => {
+    apiRefresh.mockResolvedValueOnce(alice)
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+    queryClient.setQueryData(['x'], 1)
+
+    // 画面の途中の API が 401 になり、更新も 401（リフレッシュトークンの期限切れ）になる。
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ status: 401, code: 'UNAUTHENTICATED', detail: 'x', errors: [], requestId: 'r' }),
+          { status: 401, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    apiRefresh.mockRejectedValueOnce(unauthorized())
+    try {
+      await act(async () => {
+        await expect(apiFetch('/api/posts')).rejects.toMatchObject({ status: 401 })
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+
+    expect(screen.getByTestId('status')).toHaveTextContent('anonymous')
+    expect(queryClient.getQueryData(['x'])).toBeUndefined()
+  })
+
+  it('他のタブの auth-changed のあと、本物の refresh を通して、返った別の利用者でログイン状態になる', async () => {
+    // alice で signIn したタブに、別のタブでの bob のログインが知らされる。
+    // 取り直しで利用者 id を忘れていないと、bob は alice との食い違いとして捨てられ、anonymous になる。
+    // 起動時の更新は 401（本物の refresh() は null を返さず、401 を投げる）。
+    apiRefresh.mockRejectedValueOnce(unauthorized())
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'))
+    await userEvent.click(screen.getByRole('button', { name: 'サインイン' }))
+    expect(getSessionUserId()).toBe('alice')
+    apiRefresh.mockResolvedValueOnce(bob)
+    const otherTab = new BroadcastChannel(AUTH_CHANNEL_NAME)
+
+    try {
+      otherTab.postMessage({ type: 'auth-changed' })
+      await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('bob'))
+    } finally {
+      otherTab.close()
+    }
+
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    expect(getAccessToken()).toBe('token-2')
+    expect(getSessionUserId()).toBe('bob')
   })
 })

@@ -1,5 +1,6 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthResponse, Me } from '../../api/auth'
@@ -9,6 +10,7 @@ import { refreshSession } from '../../auth/refresh'
 import { RequireAuth } from '../../auth/RequireAuth'
 import { setAccessToken } from '../../auth/tokenStore'
 import { queryClient } from '../../lib/queryClient'
+import { ToastProvider } from '../Toast'
 import { AppLayout } from './AppLayout'
 
 // 本物の AuthProvider・RequireAuth・AppLayout を組み合わせ、ネットワークに出る API だけを差し替える。
@@ -43,18 +45,22 @@ function Where() {
 
 function renderApp() {
   return render(
-    <MemoryRouter initialEntries={['/users/alice']}>
-      <AuthProvider>
-        <Routes>
-          <Route element={<RequireAuth />}>
-            <Route element={<AppLayout />}>
-              <Route path="/users/:username" element={<p>プロフィール画面</p>} />
-            </Route>
-          </Route>
-          <Route path="/login" element={<Where />} />
-        </Routes>
-      </AuthProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/users/alice']}>
+          <AuthProvider>
+            <Routes>
+              <Route element={<RequireAuth />}>
+                <Route element={<AppLayout />}>
+                  <Route path="/users/:username" element={<p>プロフィール画面</p>} />
+                </Route>
+              </Route>
+              <Route path="/login" element={<Where />} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </ToastProvider>
+    </QueryClientProvider>,
   )
 }
 

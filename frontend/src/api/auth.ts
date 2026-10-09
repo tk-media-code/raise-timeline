@@ -1,3 +1,4 @@
+import { withAuthLock } from '../auth/authLock'
 import { apiFetch } from './client'
 
 export type Me = {
@@ -30,12 +31,19 @@ export type LoginInput = { email: string; password: string }
 // ログアウトが Cookie を消せなくなる。
 const NO_BEARER = { auth: false, retryOn401: false } as const
 
+// register・login・logout は、更新と同じ鍵の中で送る。
+// 更新の応答が遅れて届くと、その後に済んだログインやログアウトの Cookie を古い値に戻してしまうため。
+// 鍵は入れ子にしない。Web Locks は再入できず、鍵の中で更新（refreshSession）を呼ぶと止まる。
+// 中の apiFetch は NO_BEARER なので、401 でも更新を呼ばない。
+// refresh() は鍵を取らない。鍵は呼び出し側の refreshSession が取る。
 export function register(input: RegisterInput): Promise<AuthResponse> {
-  return apiFetch<AuthResponse>('/api/auth/register', { method: 'POST', body: input, ...NO_BEARER })
+  return withAuthLock(() =>
+    apiFetch<AuthResponse>('/api/auth/register', { method: 'POST', body: input, ...NO_BEARER }),
+  )
 }
 
 export function login(input: LoginInput): Promise<AuthResponse> {
-  return apiFetch<AuthResponse>('/api/auth/login', { method: 'POST', body: input, ...NO_BEARER })
+  return withAuthLock(() => apiFetch<AuthResponse>('/api/auth/login', { method: 'POST', body: input, ...NO_BEARER }))
 }
 
 export function refresh(): Promise<AuthResponse> {
@@ -43,5 +51,5 @@ export function refresh(): Promise<AuthResponse> {
 }
 
 export function logout(): Promise<void> {
-  return apiFetch<void>('/api/auth/logout', { method: 'POST', ...NO_BEARER })
+  return withAuthLock(() => apiFetch<void>('/api/auth/logout', { method: 'POST', ...NO_BEARER }))
 }
