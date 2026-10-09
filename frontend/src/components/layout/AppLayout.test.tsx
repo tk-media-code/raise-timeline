@@ -37,6 +37,7 @@ function renderLayout(route = '/') {
         <Route element={<AppLayout />}>
           <Route path="/" element={<p>ホームの中身</p>} />
           <Route path="/posts/:id" element={<p>投稿詳細の中身</p>} />
+          <Route path="/settings/profile" element={<p>プロフィール編集の中身</p>} />
         </Route>
       </Routes>
     </TestProviders>,
@@ -122,6 +123,22 @@ describe('AppLayout', () => {
     expect(api.createPost).not.toHaveBeenCalled()
   })
 
+  it('設定の画面では、スマホの丸ボタンを出さず、左ナビの「投稿する」だけが残る', () => {
+    renderLayout('/settings/profile')
+
+    const buttons = screen.getAllByRole('button', { name: '投稿する' })
+
+    expect(buttons).toHaveLength(1)
+    const nav = screen.getByRole('navigation', { name: 'メインメニュー' })
+    expect(within(nav).getByRole('button', { name: '投稿する' })).toBe(buttons[0])
+  })
+
+  it('ホームでは、左ナビと丸ボタンの 2 つの「投稿する」がある', () => {
+    renderLayout('/')
+
+    expect(screen.getAllByRole('button', { name: '投稿する' })).toHaveLength(2)
+  })
+
   it('ブラウザが先にダイアログを閉じても（open のまま close()）、状態が合い、もう一度開ける', async () => {
     renderLayout()
     const nav = screen.getByRole('navigation', { name: 'メインメニュー' })
@@ -142,6 +159,12 @@ describe('AppLayout', () => {
     renderLayout('/posts/x')
 
     expect(within(screen.getByRole('banner')).getByText('投稿')).toBeInTheDocument()
+  })
+
+  it('/settings/profile では上部バーの画面名が「プロフィール編集」', () => {
+    renderLayout('/settings/profile')
+
+    expect(within(screen.getByRole('banner')).getByText('プロフィール編集')).toBeInTheDocument()
   })
 
   it('ログアウトを押すだけでは signOut を呼ばず、確認ダイアログを開く', async () => {

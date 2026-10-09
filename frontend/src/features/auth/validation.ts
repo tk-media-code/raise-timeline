@@ -11,7 +11,8 @@ const EMAIL_MESSAGE = 'メールアドレスの形式で入力してください
 const PASSWORD_MESSAGE = '8〜72 文字の半角英数字と記号で入力してください'
 const REQUIRED_MESSAGE = '入力してください'
 
-const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/
+// プロフィールの URL でも同じ規則で「ありえないユーザー名」を弾くので、export する。
+export const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/
 // 厳密な RFC の検証はしない。空白を含まない 2 つの部分を @ でつないだものだけを通す。
 // サーバーの RegisterRequest.email も同じ正規表現（(?U) で \s を Unicode の空白にして JS とそろえる）と、
 // コードポイントで数える 254 文字以内で検証する。同じ例を validation.test.ts と AuthControllerTest の両方に置いてあるので、片方だけ変えない。
@@ -20,15 +21,21 @@ const EMAIL_MAX_LENGTH = 254
 // 空白を含まない ASCII の可視文字（! から ~）だけ。
 const PASSWORD_PATTERN = /^[\x21-\x7E]{8,72}$/
 
+// 表示名の規則。登録とプロフィール編集で同じ判定を使う（片方だけ変わると、登録できた名前に直せなくなる）。
+// 前後の空白は取り除いてから数える。空白だけの表示名を 1 文字として通さないため。
+// 文字数はコードポイントで数える。`length` だと絵文字が 2 文字になり、サーバーとずれる。
+export function validateDisplayName(value: string): string | undefined {
+  const length = countCodePoints(value.trim())
+  return length < 1 || length > 50 ? DISPLAY_NAME_MESSAGE : undefined
+}
+
 export function validateRegister(values: RegisterValues): RegisterErrors {
   const errors: RegisterErrors = {}
 
   if (!USERNAME_PATTERN.test(values.username)) errors.username = USERNAME_MESSAGE
 
-  // 前後の空白は取り除いてから数える。空白だけの表示名を 1 文字として通さないため。
-  // 文字数はコードポイントで数える。`length` だと絵文字が 2 文字になり、サーバーとずれる。
-  const displayNameLength = countCodePoints(values.displayName.trim())
-  if (displayNameLength < 1 || displayNameLength > 50) errors.displayName = DISPLAY_NAME_MESSAGE
+  const displayNameError = validateDisplayName(values.displayName)
+  if (displayNameError) errors.displayName = displayNameError
 
   if (!EMAIL_PATTERN.test(values.email) || countCodePoints(values.email) > EMAIL_MAX_LENGTH) {
     errors.email = EMAIL_MESSAGE

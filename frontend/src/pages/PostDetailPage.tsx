@@ -1,16 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router'
-import { ApiError } from '../api/client'
+import { isNotFound } from '../api/client'
 import { getPost } from '../api/posts'
 import { NotFoundMessage } from '../components/NotFoundMessage'
+import { RetryMessage } from '../components/RetryMessage'
 import { Spinner } from '../components/Spinner'
 import { PostItem } from '../features/posts/PostItem'
 import { postKey } from '../features/posts/queryKeys'
-
-// id が UUID でない（400）も、投稿が無い（404）も、打ち間違えた人にとっては「無い」。
-function isNotFound(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 400 || error.status === 404)
-}
 
 // AppLayout の <main> の中に描かれるので、ここでは <main> を持たない。
 export default function PostDetailPage() {
@@ -21,18 +17,7 @@ export default function PostDetailPage() {
   if (query.isPending) return <Spinner />
   if (query.isError) {
     if (isNotFound(query.error)) return <NotFoundMessage />
-    return (
-      <div className="flex flex-col items-center gap-3 p-8 text-center">
-        <p>読み込みに失敗しました</p>
-        <button
-          type="button"
-          onClick={() => void query.refetch()}
-          className="min-h-11 min-w-11 rounded-md border border-gray-400 bg-white px-4 text-black focus:outline-2 focus:outline-offset-2 focus:outline-sky-600"
-        >
-          再試行
-        </button>
-      </div>
-    )
+    return <RetryMessage onRetry={() => void query.refetch()} />
   }
 
   return (

@@ -42,4 +42,17 @@
 		LIMIT #{limit}
 	</select>
 
+	<!--
+		findAll と同じ列・並びで、user_id で絞る。(user_id, id) の索引 posts_user_id_id_idx が
+		絞り込みと id の降順の並びの両方にそのまま使える。cursor の扱いは findAll と同じ。
+	-->
+	<select id="findByUser" resultType="com.tkmedia.raisetimeline.domain.PostWithAuthor">
+		SELECT <include refid="columns"/>
+		FROM posts p JOIN users u ON u.id = p.user_id
+		WHERE p.user_id = #{userId}
+		<if test="cursor != null">AND p.id &lt; #{cursor}</if>
+		ORDER BY p.id DESC
+		LIMIT #{limit}
+	</select>
+
 </mapper>

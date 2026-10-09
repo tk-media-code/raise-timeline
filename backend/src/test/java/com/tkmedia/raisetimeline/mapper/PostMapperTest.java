@@ -226,4 +226,72 @@ class PostMapperTest {
 		assertThat(postMapper.findAll(null, 10)).isEmpty();
 	}
 
+	@Test
+	@DisplayName("利用者を指定すると、その人の投稿だけが新しい順に返る")
+	void findByUserReturnsOnlyThatUsersPostsNewestFirst() {
+		UUID alice = createUser();
+		UUID bob = createUser();
+		UUID a1 = createPost(alice, "a1");
+		createPost(bob, "b1");
+		UUID a2 = createPost(alice, "a2");
+		createPost(bob, "b2");
+
+		List<PostWithAuthor> posts = postMapper.findByUser(alice, null, 10);
+
+		assertThat(posts).extracting(PostWithAuthor::id).containsExactly(a2, a1);
+		assertThat(posts).extracting(PostWithAuthor::userId).containsOnly(alice);
+	}
+
+	@Test
+	@DisplayName("利用者の投稿にカーソルを渡すと、それより古いその人の投稿だけが返る")
+	void findByUserWithCursorReturnsOnlyOlder() {
+		UUID alice = createUser();
+		UUID bob = createUser();
+		UUID a1 = createPost(alice, "a1");
+		createPost(bob, "b1");
+		UUID a2 = createPost(alice, "a2");
+		createPost(alice, "a3");
+
+		List<PostWithAuthor> posts = postMapper.findByUser(alice, a2, 10);
+
+		assertThat(posts).extracting(PostWithAuthor::id).containsExactly(a1);
+	}
+
+	@Test
+	@DisplayName("利用者の投稿でも、カーソルの行が消えていてより古い行が欠けずに返る")
+	void findByUserWithDeletedCursor() {
+		UUID alice = createUser();
+		UUID a1 = createPost(alice, "a1");
+		UUID a2 = createPost(alice, "a2");
+		createPost(alice, "a3");
+		postMapper.delete(a2);
+
+		List<PostWithAuthor> posts = postMapper.findByUser(alice, a2, 10);
+
+		assertThat(posts).extracting(PostWithAuthor::id).containsExactly(a1);
+	}
+
+	@Test
+	@DisplayName("利用者の投稿は、指定の件数で打ち切られる")
+	void findByUserHonorsLimit() {
+		UUID alice = createUser();
+		createPost(alice, "a1");
+		UUID a2 = createPost(alice, "a2");
+		UUID a3 = createPost(alice, "a3");
+
+		List<PostWithAuthor> posts = postMapper.findByUser(alice, null, 2);
+
+		assertThat(posts).extracting(PostWithAuthor::id).containsExactly(a3, a2);
+	}
+
+	@Test
+	@DisplayName("投稿の無い利用者では空のリストが返る")
+	void findByUserOfUserWithoutPosts() {
+		UUID alice = createUser();
+		UUID bob = createUser();
+		createPost(bob, "b1");
+
+		assertThat(postMapper.findByUser(alice, null, 10)).isEmpty();
+	}
+
 }

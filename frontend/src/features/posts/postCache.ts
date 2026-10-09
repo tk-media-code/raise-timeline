@@ -1,6 +1,6 @@
 import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import type { Page, Post } from '../../api/posts'
-import { postKey, timelineKeys } from './queryKeys'
+import { postKey, timelineKeys, userPostsKeys } from './queryKeys'
 
 type TimelineData = InfiniteData<Page<Post>, string | null>
 
@@ -38,36 +38,45 @@ function mapItems(data: TimelineData | undefined, fn: (items: Post[]) => Post[])
   return { ...data, pages: data.pages.map((page) => ({ ...page, items: fn(page.items) })) }
 }
 
-// 「すべて」の 1 ページ目の先頭に足す。まだ読み込んでいなければ、何もしない（開いたときに最新が取れる）。
+// 投稿が載る一覧の根のキー。タイムラインとその人の投稿一覧は、同じ規則（中断・直接書き換え・読み直し）で扱う。
+// 規則を一覧の種類ごとに書き写すと、片方だけ直し忘れる。
+const LIST_ROOTS = [timelineKeys.root, userPostsKeys.root] as const
+
+// 「すべて」と、作者の投稿一覧の、1 ページ目の先頭に足す。まだ読み込んでいなければ、何もしない（開いたときに最新が取れる）。
 // 最初の読み込みの最中なら、取り直す（reloadFirstLoads）。
 // 同じ id の投稿が既にあれば先に除く（重複して並ばないように）。
 export async function prependPost(client: QueryClient, post: Post): Promise<void> {
-  await client.cancelQueries({ queryKey: timelineKeys.all, predicate: hasData })
-  client.setQueryData<TimelineData>(timelineKeys.all, (data) => {
-    if (!data || data.pages.length === 0) return data
-    return {
-      ...data,
-      pages: data.pages.map((page, index) => {
-        const rest = page.items.filter((item) => item.id !== post.id)
-        return { ...page, items: index === 0 ? [post, ...rest] : rest }
-      }),
-    }
-  })
-  await reloadFirstLoads(client, { queryKey: timelineKeys.all })
+  const keys = [timelineKeys.all, userPostsKeys.of(post.author.username)]
+  await Promise.all(keys.map((queryKey) => client.cancelQueries({ queryKey, exact: true, predicate: hasData })))
+  for (const queryKey of keys) {
+    client.setQueryData<TimelineData>(queryKey, (data) => {
+      if (!data || data.pages.length === 0) return data
+      return {
+        ...data,
+        pages: data.pages.map((page, index) => {
+          const rest = page.items.filter((item) => item.id !== post.id)
+          return { ...page, items: index === 0 ? [post, ...rest] : rest }
+        }),
+      }
+    })
+  }
+  await Promise.all(keys.map((queryKey) => reloadFirstLoads(client, { queryKey, exact: true })))
 }
 
-// 一覧（種類を問わず全ページ）と詳細のキャッシュの、同じ投稿を新しい内容に置き換える。
+// 一覧（種類を問わず全ページ。その人の投稿一覧も含む）と詳細のキャッシュの、同じ投稿を新しい内容に置き換える。
 export async function replacePost(client: QueryClient, post: Post): Promise<void> {
   await Promise.all([
-    client.cancelQueries({ queryKey: timelineKeys.root, predicate: hasData }),
+    ...LIST_ROOTS.map((queryKey) => client.cancelQueries({ queryKey, predicate: hasData })),
     client.cancelQueries({ queryKey: postKey(post.id), exact: true, predicate: hasData }),
   ])
-  client.setQueriesData<TimelineData>({ queryKey: timelineKeys.root }, (data) =>
-    mapItems(data, (items) => items.map((item) => (item.id === post.id ? post : item))),
-  )
+  for (const queryKey of LIST_ROOTS) {
+    client.setQueriesData<TimelineData>({ queryKey }, (data) =>
+      mapItems(data, (items) => items.map((item) => (item.id === post.id ? post : item))),
+    )
+  }
   client.setQueryData<Post>(postKey(post.id), (current) => (current ? post : current))
   await Promise.all([
-    reloadFirstLoads(client, { queryKey: timelineKeys.root }),
+    ...LIST_ROOTS.map((queryKey) => reloadFirstLoads(client, { queryKey })),
     reloadFirstLoads(client, { queryKey: postKey(post.id), exact: true }),
   ])
 }
@@ -75,11 +84,13 @@ export async function replacePost(client: QueryClient, post: Post): Promise<void
 // すべての一覧から投稿を除き、詳細のキャッシュを捨てる。
 export async function removePost(client: QueryClient, postId: string): Promise<void> {
   await Promise.all([
-    client.cancelQueries({ queryKey: timelineKeys.root, predicate: hasData }),
+    ...LIST_ROOTS.map((queryKey) => client.cancelQueries({ queryKey, predicate: hasData })),
     client.cancelQueries({ queryKey: postKey(postId), exact: true, predicate: hasData }),
   ])
-  client.setQueriesData<TimelineData>({ queryKey: timelineKeys.root }, (data) =>
-    mapItems(data, (items) => items.filter((item) => item.id !== postId)),
-  )
+  for (const queryKey of LIST_ROOTS) {
+    client.setQueriesData<TimelineData>({ queryKey }, (data) =>
+      mapItems(data, (items) => items.filter((item) => item.id !== postId)),
+    )
+  }
   client.removeQueries({ queryKey: postKey(postId), exact: true })
 }

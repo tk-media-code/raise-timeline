@@ -34,6 +34,12 @@ export class ApiError extends Error {
   }
 }
 
+// ID が UUID でない・ユーザー名が規則に合わない（400）も、対象が無い（404）も、打ち間違えた人にとっては「無い」。
+// 詳細系の画面はどちらも「見つかりません」にそろえる。
+export function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 400 || error.status === 404)
+}
+
 export type ApiFetchInit = Omit<RequestInit, 'body'> & {
   body?: unknown
   // false なら Bearer を付けない。
@@ -49,6 +55,22 @@ export function formatErrorMessage(error: ApiError): string {
     return `${error.detail}（ID: ${error.requestId}）`
   }
   return error.detail
+}
+
+// 422 の errors を、入力欄に結べる分と、フォームの上部に出す文言に振り分ける。
+// errors が空か、欄に結べない field を含むときは、欄の下だけでは利用者に伝わらないので formMessage を返す。
+export function splitFieldErrors<F extends string>(
+  error: ApiError,
+  isField: (field: string) => field is F,
+): { fieldErrors: Partial<Record<F, string>>; formMessage: string | null } {
+  const fieldErrors: Partial<Record<F, string>> = {}
+  let unmatched = false
+  for (const { field, message } of error.errors) {
+    if (isField(field)) fieldErrors[field] = message
+    else unmatched = true
+  }
+  const formMessage = error.errors.length === 0 || unmatched ? formatErrorMessage(error) : null
+  return { fieldErrors, formMessage }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

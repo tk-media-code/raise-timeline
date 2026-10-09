@@ -1,9 +1,11 @@
 package com.tkmedia.raisetimeline.mapper;
 
+import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import com.tkmedia.raisetimeline.domain.User;
 
@@ -24,5 +26,9 @@ public interface UserMapper {
 	boolean existsByUsername(String username);
 
 	boolean existsByEmail(String email);
+
+	/** 表示名・自己紹介・更新日時を変え、変えた行数を返す。無い id では 0。ほかの列は触らない。 */
+	int updateProfile(@Param("id") UUID id, @Param("displayName") String displayName, @Param("bio") String bio,
+			@Param("updatedAt") OffsetDateTime updatedAt);
 
 }

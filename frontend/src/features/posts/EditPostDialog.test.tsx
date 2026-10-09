@@ -115,7 +115,7 @@ describe('EditPostDialog', () => {
     expect(data?.pages[0]?.items[0]?.edited).toBe(true)
     expect(queryClient.getQueryData<Post>(postKey('p1'))?.body).toBe('直した本文')
     // 編集の成功は通知しない。
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getByRole('status', { name: '通知' })).toBeEmptyDOMElement()
   })
 
   it('保存を 2 回押しても updatePost は 1 回', async () => {

@@ -1,6 +1,7 @@
 import type { InfiniteData, UseInfiniteQueryResult } from '@tanstack/react-query'
 import { useEffect, useRef, type ReactNode } from 'react'
 import type { Page } from '../api/posts'
+import { RetryMessage } from './RetryMessage'
 import { Spinner } from './Spinner'
 
 type InfiniteListProps<T> = {
@@ -9,21 +10,6 @@ type InfiniteListProps<T> = {
   renderItem: (item: T) => ReactNode
   emptyMessage: string
   label: string
-}
-
-function RetryMessage({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-3 p-8 text-center">
-      <p>読み込みに失敗しました</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="min-h-11 min-w-11 rounded-md border border-gray-400 bg-white px-4 text-black focus:outline-2 focus:outline-offset-2 focus:outline-sky-600"
-      >
-        再試行
-      </button>
-    </div>
-  )
 }
 
 // 一覧の下の見えない目印（sentinel）が画面に入ったら、次のページを読む。

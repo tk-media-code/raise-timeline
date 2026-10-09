@@ -125,4 +125,47 @@ class UserMapperTest {
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
+	@Test
+	@DisplayName("表示名・自己紹介・更新日時だけを変えて 1 を返し、無い id では 0 を返す")
+	void updateProfileChangesNameBioAndUpdatedAt() {
+		String s = suffix();
+		UUID id = userMapper.insert(newUser("user_" + s, "user_" + s + "@example.com"));
+		User before = userMapper.findById(id).orElseThrow();
+		OffsetDateTime later = OffsetDateTime.of(2026, 10, 10, 9, 0, 0, 0, ZoneOffset.UTC);
+
+		int updated = userMapper.updateProfile(id, "新しい名前", "よろしく\n😀", later);
+
+		assertThat(updated).isEqualTo(1);
+		User after = userMapper.findById(id).orElseThrow();
+		assertThat(after.displayName()).isEqualTo("新しい名前");
+		assertThat(after.bio()).isEqualTo("よろしく\n😀");
+		assertThat(after.updatedAt().toInstant()).isEqualTo(later.toInstant());
+		assertThat(after.username()).isEqualTo(before.username());
+		assertThat(after.email()).isEqualTo(before.email());
+		assertThat(after.passwordHash()).isEqualTo(before.passwordHash());
+		assertThat(after.createdAt().toInstant()).isEqualTo(before.createdAt().toInstant());
+	}
+
+	@Test
+	@DisplayName("無い id のプロフィールを更新すると 0 が返る")
+	void updateProfileOfMissingUserReturnsZero() {
+		int updated = userMapper.updateProfile(UUID.randomUUID(), "名前", "", OffsetDateTime.now(ZoneOffset.UTC));
+
+		assertThat(updated).isZero();
+	}
+
+	@Test
+	@DisplayName("自己紹介は 160 コードポイントまで入り、161 は DB が拒む")
+	void bioOf160CodePointsFits() {
+		String s = suffix();
+		UUID id = userMapper.insert(newUser("user_" + s, "user_" + s + "@example.com"));
+		OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+
+		userMapper.updateProfile(id, "名前", "😀".repeat(160), now);
+
+		assertThat(userMapper.findById(id).orElseThrow().bio().codePointCount(0, 320)).isEqualTo(160);
+		assertThatThrownBy(() -> userMapper.updateProfile(id, "名前", "😀".repeat(161), now))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
 }

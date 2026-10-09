@@ -38,9 +38,10 @@ function ToastView({ toast, onClose }: { toast: ToastItem; onClose: (id: number)
     )
   }
   return (
-    <output className="pointer-events-auto block w-full max-w-md rounded-md bg-gray-900 p-3 text-sm text-white shadow-lg">
+    // role は付けない。読み上げは外側の（最初から置いてある）status 領域が受け持つ。
+    <div className="pointer-events-auto w-full max-w-md rounded-md bg-gray-900 p-3 text-sm text-white shadow-lg">
       {toast.message}
-    </output>
+    </div>
   )
 }
 
@@ -59,13 +60,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(() => ({ show }), [show])
+  const successes = toasts.filter((toast) => toast.kind === 'success')
+  const errors = toasts.filter((toast) => toast.kind === 'error')
 
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* 画面の下。スマホでは下部タブ（高さ 3.5rem）と丸い投稿ボタン（下から 72〜128px）の上に出す。新しいものを下に積む。 */}
+      {/* 画面の下。スマホでは下部タブ（高さ 3.5rem）と丸い投稿ボタン（下から 72〜128px）の上に出す。成功の領域を上、失敗をその下に置く。それぞれの中で新しいものを下に積む。 */}
       <div className="pointer-events-none fixed inset-x-0 bottom-36 z-50 flex flex-col items-center gap-2 px-4 md:bottom-4">
-        {toasts.map((toast) => (
+        {/* 成功の通知の領域。通知が無いときも描いておく: 読み上げソフトは、中身ごと後から差し込まれた
+            role="status" を読まないことがあり、既にある領域に中身が足されたときだけ確実に読む。 */}
+        <output aria-label="通知" className="flex w-full flex-col items-center gap-2">
+          {successes.map((toast) => (
+            <ToastView key={toast.id} toast={toast} onClose={close} />
+          ))}
+        </output>
+        {/* 失敗の通知は領域に入れない。role="alert" は差し込まれても読まれるので、今のまま。 */}
+        {errors.map((toast) => (
           <ToastView key={toast.id} toast={toast} onClose={close} />
         ))}
       </div>
