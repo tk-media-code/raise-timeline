@@ -21,6 +21,9 @@ public final class LogEvents {
 	// 投稿。docs/logging-design.md 3 章。
 	public static final String POST_DELETED = "post.deleted";
 
+	// 画像。docs/logging-design.md 3 章。
+	public static final String IMAGE_DELETE_FAILED = "image.delete_failed";
+
 	private LogEvents() {
 	}
 

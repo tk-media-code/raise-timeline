@@ -39,6 +39,13 @@ dependencies {
 	// 画像の Exif を、画素に触れずに書き換えて GPS を除く。これができる Java のライブラリは事実上これだけで、
 	// 正式版が無い（alpha が最新）ため、版を固定して勝手に変わらないようにする。
 	implementation 'org.apache.commons:commons-imaging:1.0.0-alpha6'
+	// 画像を S3 に置く。AWS SDK の版は BOM でそろえる（Spring Boot の依存管理に含まれない）。
+	implementation platform('software.amazon.awssdk:bom:2.55.13')
+	// 使うのは同期のクライアント（S3Client）だけ。非同期用の netty-nio-client は使わないので外し、
+	// 依存と JAR を軽くする（既定の HTTP クライアントは apache-client のまま入る）。
+	implementation('software.amazon.awssdk:s3') {
+		exclude group: 'software.amazon.awssdk', module: 'netty-nio-client'
+	}
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	// @WebMvcTest で認証済みの要求を作る（jwt()）ため。
 	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
