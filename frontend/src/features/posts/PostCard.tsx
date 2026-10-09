@@ -47,13 +47,16 @@ export function PostCard({ post, isMine, timeStyle, linkToDetail, onEdit, onDele
       <div className="flex items-start justify-between gap-2">
         <Link
           to={`/users/${author.username}`}
-          className="flex min-h-11 min-w-11 flex-wrap items-center gap-x-2 text-black hover:underline"
+          className="flex min-h-11 min-w-11 items-center gap-2 text-black hover:underline"
         >
           <Avatar userId={author.id} displayName={author.displayName} avatarUrl={author.avatarUrl} />
-          <span className="font-bold [overflow-wrap:anywhere]">{author.displayName}</span>
-          {/* 読み上げの名前が「アリス@alice」とくっつかないよう、空白を 1 つ置く（flex の中なので見た目には出ない）。 */}
-          {' '}
-          <span className="text-sm text-gray-600 [overflow-wrap:anywhere]">@{author.username}</span>
+          {/* 折り返すのは名前の部分だけ。リンク全体を折り返すと、長い表示名でアイコンだけが 1 行目に残る。 */}
+          <span className="flex min-w-0 flex-wrap gap-x-2">
+            <span className="font-bold [overflow-wrap:anywhere]">{author.displayName}</span>
+            {/* 読み上げの名前が「アリス@alice」とくっつかないよう、空白を 1 つ置く（flex の中なので見た目には出ない）。 */}
+            {' '}
+            <span className="text-sm text-gray-600 [overflow-wrap:anywhere]">@{author.username}</span>
+          </span>
         </Link>
         {isMine && <PostMenu onEdit={onEdit} onDelete={onDelete} />}
       </div>

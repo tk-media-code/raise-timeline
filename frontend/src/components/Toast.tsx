@@ -63,8 +63,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* 画面の下。スマホでは下部タブ（高さ 3.5rem）の上に出す。新しいものを下に積む。 */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-20 z-50 flex flex-col items-center gap-2 px-4 md:bottom-4">
+      {/* 画面の下。スマホでは下部タブ（高さ 3.5rem）と丸い投稿ボタン（下から 72〜128px）の上に出す。新しいものを下に積む。 */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-36 z-50 flex flex-col items-center gap-2 px-4 md:bottom-4">
         {toasts.map((toast) => (
           <ToastView key={toast.id} toast={toast} onClose={close} />
         ))}

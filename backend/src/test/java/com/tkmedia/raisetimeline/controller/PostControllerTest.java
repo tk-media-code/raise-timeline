@@ -45,6 +45,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @WebMvcTest(controllers = PostController.class)
@@ -73,10 +74,20 @@ class PostControllerTest {
 				false, false, OffsetDateTime.parse("2026-10-09T00:00:00Z"));
 	}
 
-	@Test
-	@DisplayName("Bearer が無い投稿は 401 になり、サービスは呼ばれない")
-	void createRequiresBearer() throws Exception {
-		mockMvc.perform(multipart("/api/posts").param("body", "こんにちは"))
+	@ParameterizedTest(name = "{0}")
+	@ValueSource(strings = { "POST", "GET", "PATCH", "DELETE" })
+	@DisplayName("Bearer が無い投稿の API は、どのメソッドでも 401 UNAUTHENTICATED になり、サービスは呼ばれない")
+	void requestsWithoutBearerReturn401(String method) throws Exception {
+		RequestBuilder request = switch (method) {
+			case "POST" -> multipart("/api/posts").param("body", "こんにちは");
+			case "GET" -> get("/api/posts/{id}", POST_ID);
+			case "PATCH" -> patch("/api/posts/{id}", POST_ID).contentType(MediaType.APPLICATION_JSON)
+					.content("{\"body\":\"直した\"}".getBytes(StandardCharsets.UTF_8));
+			case "DELETE" -> delete("/api/posts/{id}", POST_ID);
+			default -> throw new IllegalArgumentException(method);
+		};
+
+		mockMvc.perform(request)
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 

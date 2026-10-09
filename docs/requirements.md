@@ -152,9 +152,11 @@
 
 | Issue | 仮の振る舞い |
 | --- | --- |
-| 3〜6（投稿、プロフィール、画像、退会） | Post の `likeCount` と `commentCount` は 0、`likedByMe` は false を返す。`likes` と `comments` ができたら数えた値に変える |
+| 3〜6（投稿、プロフィール、画像、退会） | Post の `likeCount` は 0、`likedByMe` は false を返す。`likes` ができたら（Issue 7）数えた値に変える |
+| 3〜7 | Post の `commentCount` は 0 を返す。`comments` ができたら（Issue 8）数えた値に変える |
 | 3〜4 | 投稿の `images` は `[]`、`author.avatarUrl` は null を返す。`POST /api/posts` は最初から multipart で受け、`images` の部品が 1 つでもあれば、本文の検査より先に 503 `IMAGE_STORAGE_UNAVAILABLE`（「画像の保存が設定されていません」）を返す。画像（Issue 5）が `images` とアイコンを足す。画像付きの投稿を黙って捨てると、画像が付いたと思った利用者に嘘をつく。multipart にしておくのは、API の形を Issue 5 で変えないため |
-| 3〜8 | 画面のいいね数とコメント数は押せない表示にする（`role="img"`、名前は「いいね 0 件」「コメント 0 件」）。いいね（Issue 7）とコメント（Issue 8）が値と操作を足す。Issue 7 では「いいね」を同じ名前のボタンに替える |
+| 3〜6 | 画面のいいね数は押せない表示にする（`role="img"`、名前は「いいね 0 件」）。いいね（Issue 7）が値と操作を足す。Issue 7 では「いいね」を同じ名前のボタンに替える |
+| 3〜7 | 画面のコメント数は押せない表示にする（`role="img"`、名前は「コメント 0 件」）。コメント（Issue 8）が値と操作を足す |
 | 3〜8 | ホームは「すべて」のタブだけ。「フォロー中」のタブと `GET /api/timeline/following` は Issue 9 で足す。それまでホームの既定は「すべて」で、URL の `tab` はまだ読まない（Issue 9 で足す） |
 | 4〜8（プロフィール） | `followersCount` と `followingCount` は 0、`isFollowing` は false を返す。`follows` ができたら数えた値に変える |
 | 3 | 「投稿を削除するといいねとコメントも消える」は、Issue 7 と 8 でそれぞれ確かめる |
