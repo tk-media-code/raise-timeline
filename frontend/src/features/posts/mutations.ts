@@ -5,10 +5,16 @@ import { prependPost, removePost, replacePost } from './postCache'
 import { timelineKeys } from './queryKeys'
 
 // 成功したら、結果をキャッシュへ直接書く（理由は postCache.ts）。通知や画面の閉じ方は呼び出し側が決める。
+// onSuccess が返す Promise は mutateAsync の完了前に待たれるので、書き終えてから呼び出し側の続きが動く。
+
+// 送信中かどうかを、離れたダイアログ（Esc や「閉じる」の側）から見るためのキー。
+export const CREATE_POST_KEY = ['posts', 'create'] as const
+export const UPDATE_POST_KEY = ['posts', 'update'] as const
 
 export function useCreatePost() {
   const client = useQueryClient()
   return useMutation({
+    mutationKey: CREATE_POST_KEY,
     mutationFn: (body: string) => createPost(body),
     onSuccess: (post) => prependPost(client, post),
   })
@@ -17,6 +23,7 @@ export function useCreatePost() {
 export function useUpdatePost() {
   const client = useQueryClient()
   return useMutation({
+    mutationKey: UPDATE_POST_KEY,
     mutationFn: ({ id, body }: { id: string; body: string }) => updatePost(id, body),
     onSuccess: (post) => replacePost(client, post),
   })
@@ -54,7 +61,7 @@ export function toValidationFailure(error: unknown): ValidationFailure | null {
 
 // 404: 投稿はもう無い。この端末の一覧に残っていると、押すたびに同じ失敗をするので除く。
 // 一覧は取り直しも出しておく（ほかの投稿の増減が見えていない可能性があるため）。
-export function forgetMissingPost(client: QueryClient, postId: string): void {
-  removePost(client, postId)
+export async function forgetMissingPost(client: QueryClient, postId: string): Promise<void> {
+  await removePost(client, postId)
   void client.invalidateQueries({ queryKey: timelineKeys.root })
 }

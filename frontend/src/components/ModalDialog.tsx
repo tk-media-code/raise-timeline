@@ -24,7 +24,8 @@ export function ModalDialog({ open, labelledBy, onCancel, children }: ModalDialo
       dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus()
     } else if (!open && dialog.open) {
       dialog.close()
-      // 閉じたら、開く前にいた場所へ戻す。ブラウザも戻すが、押した項目が消えていると body に落ちる。
+      // 閉じたら、開く前にいた場所へ明示的に戻す。open が false になった描画で中身（フォーカスのあった入力欄）が
+      // close() より先に消えてフォーカスが body に落ちるので、ブラウザの復元に頼らない。
       const target = returnFocusRef.current
       returnFocusRef.current = null
       if (target?.isConnected) target.focus()

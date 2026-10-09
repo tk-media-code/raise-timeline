@@ -38,7 +38,7 @@ export function PostItem({ post, timeStyle, linkToDetail, onRemoved }: PostItemP
     } catch (error) {
       toast.show(failureMessage(error), 'error')
       if (isApiError(error, 404)) {
-        forgetMissingPost(client, post.id)
+        await forgetMissingPost(client, post.id)
         onRemoved?.()
       }
     } finally {

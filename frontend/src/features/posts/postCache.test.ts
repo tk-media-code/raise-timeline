@@ -36,11 +36,11 @@ function ids(data: Data | undefined, page: number): string[] {
 }
 
 describe('prependPost', () => {
-  it('2 ページあるうち、1 ページ目の先頭にだけ足す', () => {
+  it('2 ページあるうち、1 ページ目の先頭にだけ足す', async () => {
     const client = new QueryClient()
     client.setQueryData(timelineKeys.all, twoPages())
 
-    prependPost(client, makePost('new'))
+    await prependPost(client, makePost('new'))
 
     const data = client.getQueryData<Data>(timelineKeys.all)
     expect(ids(data, 0)).toEqual(['new', 'a', 'b'])
@@ -49,22 +49,34 @@ describe('prependPost', () => {
     expect(data?.pageParams).toEqual([null, 'c2'])
   })
 
-  it('キャッシュが無ければ何もしない（getQueryData は undefined のまま）', () => {
+  it('同じ id の投稿が既にあれば、重複せず先頭に移る', async () => {
+    const client = new QueryClient()
+    client.setQueryData(timelineKeys.all, twoPages())
+
+    await prependPost(client, makePost('c', '新しい c'))
+
+    const data = client.getQueryData<Data>(timelineKeys.all)
+    expect(ids(data, 0)).toEqual(['c', 'a', 'b'])
+    expect(ids(data, 1)).toEqual(['d'])
+    expect(data?.pages[0]?.items[0]?.body).toBe('新しい c')
+  })
+
+  it('キャッシュが無ければ何もしない（getQueryData は undefined のまま）', async () => {
     const client = new QueryClient()
 
-    prependPost(client, makePost('new'))
+    await prependPost(client, makePost('new'))
 
     expect(client.getQueryData(timelineKeys.all)).toBeUndefined()
   })
 })
 
 describe('replacePost', () => {
-  it('2 ページ目にある投稿と postKey を置き換える', () => {
+  it('2 ページ目にある投稿と postKey を置き換える', async () => {
     const client = new QueryClient()
     client.setQueryData(timelineKeys.all, twoPages())
     client.setQueryData(postKey('c'), makePost('c'))
 
-    replacePost(client, makePost('c', '直した本文'))
+    await replacePost(client, makePost('c', '直した本文'))
 
     const data = client.getQueryData<Data>(timelineKeys.all)
     expect(data?.pages[1]?.items[0]?.body).toBe('直した本文')
@@ -72,32 +84,32 @@ describe('replacePost', () => {
     expect(client.getQueryData<Post>(postKey('c'))?.body).toBe('直した本文')
   })
 
-  it('timelineKeys.root の下にある、ほかの種類の一覧も置き換える', () => {
+  it('timelineKeys.root の下にある、ほかの種類の一覧も置き換える', async () => {
     const client = new QueryClient()
     client.setQueryData(['timeline', 'following'], twoPages())
 
-    replacePost(client, makePost('a', '直した本文'))
+    await replacePost(client, makePost('a', '直した本文'))
 
     expect(client.getQueryData<Data>(['timeline', 'following'])?.pages[0]?.items[0]?.body).toBe('直した本文')
   })
 
-  it('postKey のキャッシュが無ければ、作らない', () => {
+  it('postKey のキャッシュが無ければ、作らない', async () => {
     const client = new QueryClient()
 
-    replacePost(client, makePost('c'))
+    await replacePost(client, makePost('c'))
 
     expect(client.getQueryData(postKey('c'))).toBeUndefined()
   })
 })
 
 describe('removePost', () => {
-  it('すべてのページから除き、postKey を消す', () => {
+  it('すべてのページから除き、postKey を消す', async () => {
     const client = new QueryClient()
     client.setQueryData(timelineKeys.all, twoPages())
     client.setQueryData(postKey('c'), makePost('c'))
 
-    removePost(client, 'c')
-    removePost(client, 'a')
+    await removePost(client, 'c')
+    await removePost(client, 'a')
 
     const data = client.getQueryData<Data>(timelineKeys.all)
     expect(ids(data, 0)).toEqual(['b'])

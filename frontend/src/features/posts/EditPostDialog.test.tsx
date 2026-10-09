@@ -142,6 +142,18 @@ describe('EditPostDialog', () => {
     expect(api.updatePost).not.toHaveBeenCalled()
   })
 
+  it('保存中は「取り消し」も Esc も効かない', async () => {
+    api.updatePost.mockReturnValue(new Promise(() => {}))
+    const { onClose } = renderDialog()
+    const user = await replaceBody('直した本文')
+
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: '取り消し' })).toBeDisabled())
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }))
+
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('422 の誤りは欄の下に出て、ダイアログは閉じない', async () => {
     api.updatePost.mockRejectedValue(
       apiError({ status: 422, detail: '入力内容に誤りがあります', errors: [{ field: 'body', message: '使えない文字が含まれています' }] }),

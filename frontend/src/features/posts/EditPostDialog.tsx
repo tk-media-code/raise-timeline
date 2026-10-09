@@ -1,10 +1,17 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useQueryClient } from '@tanstack/react-query'
 import { useId, useRef, useState, type FormEvent } from 'react'
 import type { Post } from '../../api/posts'
 import { ModalDialog } from '../../components/ModalDialog'
 import { useToast } from '../../components/Toast'
 import { BodyField } from './BodyField'
-import { failureMessage, forgetMissingPost, isApiError, toValidationFailure, useUpdatePost } from './mutations'
+import {
+  failureMessage,
+  forgetMissingPost,
+  isApiError,
+  toValidationFailure,
+  UPDATE_POST_KEY,
+  useUpdatePost,
+} from './mutations'
 import { canSubmitBody } from './validation'
 
 type EditPostDialogProps = {
@@ -17,18 +24,29 @@ type EditPostDialogProps = {
 
 export function EditPostDialog({ post, open, onClose, onRemoved }: EditPostDialogProps) {
   const titleId = useId()
+  // 保存中に閉じると、失敗しても誤りを見せられない。保存が終わるまで、Esc と「取り消し」は効かせない。
+  // 保存できたとき・403・404 の閉じ方は保存が終わった後なので、そのまま onClose を呼ぶ。
+  const saving = useIsMutating({ mutationKey: UPDATE_POST_KEY }) > 0
+  function cancel() {
+    if (!saving) onClose()
+  }
   return (
-    <ModalDialog open={open} labelledBy={titleId} onCancel={onClose}>
+    <ModalDialog open={open} labelledBy={titleId} onCancel={cancel}>
       <h2 id={titleId} className="mb-3 text-lg font-bold">
         投稿を編集
       </h2>
-      <EditForm post={post} onClose={onClose} onRemoved={onRemoved} />
+      <EditForm post={post} onClose={onClose} onCancel={cancel} saving={saving} onRemoved={onRemoved} />
     </ModalDialog>
   )
 }
 
 // ダイアログが開いている間だけ描かれるので、開くたびに元の本文から始まる。
-function EditForm({ post, onClose, onRemoved }: Pick<EditPostDialogProps, 'post' | 'onClose' | 'onRemoved'>) {
+type EditFormProps = Pick<EditPostDialogProps, 'post' | 'onClose' | 'onRemoved'> & {
+  onCancel: () => void
+  saving: boolean
+}
+
+function EditForm({ post, onClose, onCancel, saving, onRemoved }: EditFormProps) {
   const [body, setBody] = useState(post.body)
   const [bodyError, setBodyError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
@@ -65,7 +83,7 @@ function EditForm({ post, onClose, onRemoved }: Pick<EditPostDialogProps, 'post'
         onClose()
       } else if (isApiError(error, 404)) {
         toast.show(failureMessage(error), 'error')
-        forgetMissingPost(client, post.id)
+        await forgetMissingPost(client, post.id)
         onRemoved?.()
         onClose()
       } else {
@@ -88,8 +106,9 @@ function EditForm({ post, onClose, onRemoved }: Pick<EditPostDialogProps, 'post'
       <div className="flex justify-end gap-3">
         <button
           type="button"
-          onClick={onClose}
-          className="min-h-11 min-w-11 rounded-md border border-gray-400 bg-white px-4 text-black focus:outline-2 focus:outline-offset-2 focus:outline-sky-600"
+          onClick={onCancel}
+          disabled={saving}
+          className="min-h-11 min-w-11 rounded-md border border-gray-400 bg-white px-4 text-black focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 disabled:cursor-not-allowed disabled:text-gray-500"
         >
           取り消し
         </button>

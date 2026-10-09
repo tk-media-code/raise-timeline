@@ -27,7 +27,8 @@ export function ConfirmDialog({ open, title, description, confirmLabel, onConfir
       cancelRef.current?.focus()
     } else if (!open && dialog.open) {
       dialog.close()
-      // 閉じたら、開く前にいた場所へフォーカスを戻す。ブラウザも戻すが、元の要素が消えていると body に落ちる。
+      // 閉じたら、開く前にいた場所へ明示的にフォーカスを戻す。ブラウザの close() も戻すが、jsdom など戻さない実装でも
+      // 同じ動きにして、テストで確かめられるようにする。
       const target = returnFocusRef.current
       returnFocusRef.current = null
       if (target?.isConnected) target.focus()
