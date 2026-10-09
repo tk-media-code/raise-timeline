@@ -151,6 +151,52 @@ describe('apiFetch', () => {
     expect(formatErrorMessage(noId)).toBe('通信に失敗しました')
   })
 
+  describe('splitFieldErrors', () => {
+    const isName = (field: string): field is 'name' | 'bio' => field === 'name' || field === 'bio'
+    const init = { status: 422, code: 'VALIDATION_FAILED', detail: '入力内容に誤りがあります', requestId: null }
+
+    it('欄に結べる誤りだけなら、欄ごとに分け、フォームの文言は無い', async () => {
+      const { ApiError, splitFieldErrors } = await load()
+      const error = new ApiError({
+        ...init,
+        errors: [
+          { field: 'name', message: 'A' },
+          { field: 'bio', message: 'B' },
+        ],
+      })
+
+      expect(splitFieldErrors(error, isName)).toEqual({ fieldErrors: { name: 'A', bio: 'B' }, formMessage: null })
+    })
+
+    it('欄に結べない field を含むと、結べる分は欄に残し、detail をフォームの文言にする', async () => {
+      const { ApiError, splitFieldErrors } = await load()
+      const error = new ApiError({
+        ...init,
+        errors: [
+          { field: 'name', message: 'A' },
+          { field: 'other', message: 'C' },
+        ],
+      })
+
+      expect(splitFieldErrors(error, isName)).toEqual({
+        fieldErrors: { name: 'A' },
+        formMessage: '入力内容に誤りがあります',
+      })
+    })
+
+    it('errors が空なら、detail をフォームの文言にする。500 は requestId も添える', async () => {
+      const { ApiError, splitFieldErrors } = await load()
+
+      expect(splitFieldErrors(new ApiError({ ...init, errors: [] }), isName)).toEqual({
+        fieldErrors: {},
+        formMessage: '入力内容に誤りがあります',
+      })
+      expect(splitFieldErrors(new ApiError({ ...init, status: 500, requestId: 'req-9', errors: [] }), isName).formMessage).toBe(
+        '入力内容に誤りがあります（ID: req-9）',
+      )
+    })
+  })
+
   it('401 UNAUTHENTICATED なら更新して 1 回だけやり直す', async () => {
     fetchMock
       .mockResolvedValueOnce(problem(401, 'UNAUTHENTICATED'))

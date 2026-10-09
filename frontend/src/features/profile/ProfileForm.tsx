@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import type { Me } from '../../api/auth'
-import { ApiError, formatErrorMessage } from '../../api/client'
+import { ApiError, formatErrorMessage, splitFieldErrors } from '../../api/client'
 import type { ProfileInput } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { TextField } from '../../components/TextField'
@@ -71,20 +71,14 @@ export function ProfileForm({ me }: { me: Me }) {
       toast.show(failureMessage(error), 'error')
       return
     }
-    const fieldErrors: FieldErrors = {}
-    let unmatched = false
-    for (const { field, message } of error.errors) {
-      if (isField(field)) fieldErrors[field] = message
-      else unmatched = true
-    }
     if (!mounted.current) {
       // 送信中に離れた。誤りを見せる欄が無いので、通知で伝える。
       toast.show(error.errors[0]?.message ?? formatErrorMessage(error), 'error')
       return
     }
+    const { fieldErrors, formMessage } = splitFieldErrors(error, isField)
     setErrors(fieldErrors)
-    // errors が空か、項目に結べない field を含むときは、項目の下だけでは利用者に伝わらない。
-    if (error.errors.length === 0 || unmatched) setFormError(formatErrorMessage(error))
+    setFormError(formMessage)
   }
 
   return (
@@ -94,10 +88,10 @@ export function ProfileForm({ me }: { me: Me }) {
           {formError}
         </p>
       )}
-      {/* アイコンの変更は後の Issue。今は今のアイコンを見せるだけにして、押しても何もできないボタンは置かない。 */}
+      {/* アイコンの変更は後の Issue。今は今のアイコン（保存済みの表示名の頭文字）を見せるだけにして、入力中の表示名では変えない。押しても何もできないボタンは置かない。 */}
       <div className="flex flex-col gap-1">
         <p className="text-sm font-medium text-black">アイコン</p>
-        <Avatar userId={me.id} displayName={displayName || me.displayName} avatarUrl={me.avatarUrl} size={72} />
+        <Avatar userId={me.id} displayName={me.displayName} avatarUrl={me.avatarUrl} size={72} />
       </div>
       <dl className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">

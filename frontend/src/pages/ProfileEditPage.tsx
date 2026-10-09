@@ -9,8 +9,10 @@ import { meKey } from '../features/profile/queryKeys'
 export default function ProfileEditPage() {
   // 開くたびに取り直し、取れるまで読み込み中にする。gcTime: 0 で、前に開いたときの値も残さない。
   // 別のタブで先に変えていたとき、古い値を初期値にして上書きしてしまうのを防ぐため。
+  // staleTime: Infinity は、開いている間に取り直させないため。再接続などで me が変わると、フォームの最初の値と
+  // 比べる元だけが変わり、触っていない項目で「保存」が押せてしまう。開き直したときは gcTime: 0 で捨てているので取り直す。
   // ログイン中の利用者（useAuth().user）を初期値にしない理由も同じ: 他のタブの変更は、そちらには届いていない。
-  const query = useQuery({ queryKey: meKey, queryFn: getMe, gcTime: 0 })
+  const query = useQuery({ queryKey: meKey, queryFn: getMe, gcTime: 0, staleTime: Infinity })
 
   if (query.isPending) return <Spinner />
   if (query.isError) return <RetryMessage onRetry={() => void query.refetch()} />

@@ -57,6 +57,22 @@ export function formatErrorMessage(error: ApiError): string {
   return error.detail
 }
 
+// 422 の errors を、入力欄に結べる分と、フォームの上部に出す文言に振り分ける。
+// errors が空か、欄に結べない field を含むときは、欄の下だけでは利用者に伝わらないので formMessage を返す。
+export function splitFieldErrors<F extends string>(
+  error: ApiError,
+  isField: (field: string) => field is F,
+): { fieldErrors: Partial<Record<F, string>>; formMessage: string | null } {
+  const fieldErrors: Partial<Record<F, string>> = {}
+  let unmatched = false
+  for (const { field, message } of error.errors) {
+    if (isField(field)) fieldErrors[field] = message
+    else unmatched = true
+  }
+  const formMessage = error.errors.length === 0 || unmatched ? formatErrorMessage(error) : null
+  return { fieldErrors, formMessage }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }

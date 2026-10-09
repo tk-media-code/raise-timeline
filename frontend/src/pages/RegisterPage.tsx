@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { register, type RegisterInput } from '../api/auth'
-import { ApiError, formatErrorMessage } from '../api/client'
+import { ApiError, splitFieldErrors } from '../api/client'
 import { useAuth } from '../auth/AuthProvider'
 import { TextField } from '../components/TextField'
 import { validateRegister, type RegisterErrors } from '../features/auth/validation'
@@ -49,15 +49,9 @@ export default function RegisterPage() {
         setFormError(UNKNOWN_FAILURE)
         return
       }
-      const fieldErrors: RegisterErrors = {}
-      let unmatched = false
-      for (const { field, message } of error.errors) {
-        if (isField(field)) fieldErrors[field] = message
-        else unmatched = true
-      }
+      const { fieldErrors, formMessage } = splitFieldErrors(error, isField)
       setErrors(fieldErrors)
-      // errors が空か、項目に結べない field を含むときは、項目の下だけでは利用者に伝わらない。
-      if (error.errors.length === 0 || unmatched) setFormError(formatErrorMessage(error))
+      setFormError(formMessage)
     } finally {
       setSubmitting(false)
     }

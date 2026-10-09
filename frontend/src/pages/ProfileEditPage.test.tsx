@@ -1,3 +1,4 @@
+import { onlineManager } from '@tanstack/react-query'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link } from 'react-router'
@@ -117,6 +118,27 @@ describe('ProfileEditPage', () => {
       expect(screen.getByText('ア')).toBeInTheDocument()
       expect(screen.queryByText('画像を変更')).not.toBeInTheDocument()
       expect(screen.queryByText('退会')).not.toBeInTheDocument()
+    })
+
+    it('表示名を入力しても、アイコンのプレビューの頭文字は変わらない', async () => {
+      const { user } = await openForm()
+
+      await replaceText(user, nameInput(), ' ボブ')
+
+      expect(screen.getByText('ア')).toBeInTheDocument()
+      expect(screen.queryByText('ボ')).not.toBeInTheDocument()
+    })
+
+    it('開いている間に再接続などが起きても、取り直さない（触っていない項目で保存が押せるようにならない）', async () => {
+      await openForm()
+
+      // オフラインからオンラインへの切り替えが、再接続時の取り直し（refetchOnReconnect）の合図。
+      onlineManager.setOnline(false)
+      onlineManager.setOnline(true)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      expect(api.getMe).toHaveBeenCalledTimes(1)
+      expect(saveButton()).toBeDisabled()
     })
 
     it('一度離れて開き直すと、もう一度 getMe を呼び、取れるまで前の値を見せない', async () => {
