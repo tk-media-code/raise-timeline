@@ -1,6 +1,8 @@
 package com.tkmedia.raisetimeline.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,6 +26,7 @@ import com.tkmedia.raisetimeline.dto.UserSummary;
 import com.tkmedia.raisetimeline.error.ApiExceptionHandler;
 import com.tkmedia.raisetimeline.error.FieldError;
 import com.tkmedia.raisetimeline.error.ForbiddenException;
+import com.tkmedia.raisetimeline.error.ImageStorageUnavailableException;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.error.UnauthenticatedException;
@@ -37,6 +40,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -47,6 +51,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.web.multipart.MultipartFile;
 
 @WebMvcTest(controllers = PostController.class)
 @Import({ SecurityConfig.class, ApiExceptionHandler.class, LoggingConfig.class, ClockConfig.class,
@@ -97,7 +102,7 @@ class PostControllerTest {
 	@Test
 	@DisplayName("本文だけの multipart は 201 で、暫定の値が入った投稿を返す")
 	void createReturns201() throws Exception {
-		when(postService.create(USER_ID, "こんにちは")).thenReturn(response("こんにちは"));
+		when(postService.create(USER_ID, "こんにちは", List.of())).thenReturn(response("こんにちは"));
 
 		mockMvc.perform(multipart("/api/posts").param("body", "こんにちは").with(me()))
 				.andExpect(status().isCreated())
@@ -110,20 +115,36 @@ class PostControllerTest {
 				.andExpect(jsonPath("$.likedByMe").value(false))
 				.andExpect(jsonPath("$.edited").value(false));
 
-		verify(postService).create(USER_ID, "こんにちは");
+		verify(postService).create(USER_ID, "こんにちは", List.of());
 	}
 
 	@Test
-	@DisplayName("images の部品があると 503 IMAGE_STORAGE_UNAVAILABLE になり、サービスは呼ばれない")
-	void createWithImagesReturns503() throws Exception {
+	@DisplayName("images の部品は送った順のまま、そのままサービスに渡される（503 の判定はサービスの仕事）")
+	void createPassesImagePartsThroughToService() throws Exception {
+		MockMultipartFile first = new MockMultipartFile("images", "a.png", "image/png", new byte[] { 1, 2, 3 });
+		MockMultipartFile second = new MockMultipartFile("images", "b.jpg", "image/jpeg", new byte[] { 4, 5 });
+		when(postService.create(any(), any(), any())).thenReturn(response("こんにちは"));
+
+		mockMvc.perform(multipart("/api/posts").file(first).file(second).param("body", "こんにちは").with(me()))
+				.andExpect(status().isCreated());
+
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<List<MultipartFile>> images = ArgumentCaptor.forClass(List.class);
+		verify(postService).create(eq(USER_ID), eq("こんにちは"), images.capture());
+		assertThat(images.getValue()).extracting(MultipartFile::getOriginalFilename).containsExactly("a.png", "b.jpg");
+		assertThat(images.getValue()).extracting(f -> f.getBytes().length).containsExactly(3, 2);
+	}
+
+	@Test
+	@DisplayName("サービスが ImageStorageUnavailableException を投げると 503 IMAGE_STORAGE_UNAVAILABLE になる")
+	void storageUnavailableReturns503() throws Exception {
+		doThrow(new ImageStorageUnavailableException()).when(postService).create(any(), any(), any());
 		MockMultipartFile image = new MockMultipartFile("images", "a.png", "image/png", new byte[] { 1, 2, 3 });
 
 		mockMvc.perform(multipart("/api/posts").file(image).param("body", "こんにちは").with(me()))
 				.andExpect(status().isServiceUnavailable())
 				.andExpect(jsonPath("$.code").value("IMAGE_STORAGE_UNAVAILABLE"))
 				.andExpect(jsonPath("$.detail").value("画像の保存が設定されていません"));
-
-		verifyNoInteractions(postService);
 	}
 
 	@Test
@@ -133,7 +154,7 @@ class PostControllerTest {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("BAD_REQUEST"));
 
-		verify(postService, never()).create(any(), any());
+		verify(postService, never()).create(any(), any(), any());
 	}
 
 	@Test
@@ -158,7 +179,7 @@ class PostControllerTest {
 	@Test
 	@DisplayName("サービスが ValidationException を投げると 422 で、errors に body が入る")
 	void validationErrorReturns422() throws Exception {
-		when(postService.create(USER_ID, " ")).thenThrow(
+		when(postService.create(USER_ID, " ", List.of())).thenThrow(
 				new ValidationException(List.of(new FieldError("body", "本文か画像を入れてください"))));
 
 		mockMvc.perform(multipart("/api/posts").param("body", " ").with(me()))
@@ -253,7 +274,7 @@ class PostControllerTest {
 	@Test
 	@DisplayName("サービスが UnauthenticatedException を投げると 401 UNAUTHENTICATED")
 	void unauthenticatedFromServiceReturns401() throws Exception {
-		doThrow(new UnauthenticatedException()).when(postService).create(USER_ID, "こんにちは");
+		doThrow(new UnauthenticatedException()).when(postService).create(USER_ID, "こんにちは", List.of());
 
 		mockMvc.perform(multipart("/api/posts").param("body", "こんにちは").with(me()))
 				.andExpect(status().isUnauthorized())

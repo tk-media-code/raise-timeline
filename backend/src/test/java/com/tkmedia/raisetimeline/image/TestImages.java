@@ -21,7 +21,7 @@ import org.apache.commons.imaging.formats.tiff.write.TiffOutputSet;
  * <p>PNG・GIF・WebP は先頭のバイト（マジックナンバー）だけの偽のデータでよい。サーバーは形式の判定にしか
  * 中身を読まないため。JPEG は位置情報の除去が中身を解析するので、{@link ImageIO} で作った本物を使う。
  */
-final class TestImages {
+public final class TestImages {
 
 	static final int WIDTH = 16;
 	static final int HEIGHT = 16;
@@ -33,7 +33,7 @@ final class TestImages {
 	}
 
 	/** {@link ImageIO} で作る 16×16 の本物の JPEG。Exif も XMP も持たない。 */
-	static byte[] jpeg() {
+	public static byte[] jpeg() {
 		BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		try {
@@ -47,7 +47,7 @@ final class TestImages {
 	}
 
 	/** {@link #jpeg()} に GPS（東経 139.7、北緯 35.6）と {@code Orientation=6} を書き足したもの。 */
-	static byte[] jpegWithGpsAndOrientation() {
+	public static byte[] jpegWithGpsAndOrientation() {
 		try {
 			TiffOutputSet outputSet = new TiffOutputSet();
 			outputSet.getOrCreateRootDirectory().add(TiffTagConstants.TIFF_TAG_ORIENTATION, (short) 6);
@@ -61,7 +61,7 @@ final class TestImages {
 	}
 
 	/** Exif は持つが GPS のディレクトリは持たない JPEG。{@code Orientation=6} だけを入れてある。 */
-	static byte[] jpegWithOrientationOnly() {
+	public static byte[] jpegWithOrientationOnly() {
 		try {
 			TiffOutputSet outputSet = new TiffOutputSet();
 			outputSet.getOrCreateRootDirectory().add(TiffTagConstants.TIFF_TAG_ORIENTATION, (short) 6);
@@ -74,7 +74,7 @@ final class TestImages {
 	}
 
 	/** XMP に {@code exif:GPSLatitude} を入れた JPEG。Exif は持たない。 */
-	static byte[] jpegWithXmpGps() {
+	public static byte[] jpegWithXmpGps() {
 		String xmp = "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">"
 				+ "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
 				+ "<rdf:Description xmlns:exif=\"http://ns.adobe.com/exif/1.0/\" "
@@ -93,7 +93,7 @@ final class TestImages {
 	 * Extended XMP の APP1 に {@code exif:GPSLatitude} を入れた JPEG。XMP が 64KB を超えるときに使われる別の入れ物で、
 	 * 標準の XMP とは識別子が違う。JPEG の先頭（SOI）の直後に差し込む。
 	 */
-	static byte[] jpegWithExtendedXmpGps() {
+	public static byte[] jpegWithExtendedXmpGps() {
 		byte[] identifier = "http://ns.adobe.com/xmp/extension/\0".getBytes(StandardCharsets.US_ASCII);
 		byte[] guid = "0123456789ABCDEF0123456789ABCDEF".getBytes(StandardCharsets.US_ASCII);
 		byte[] payload = ("<rdf:Description xmlns:exif=\"http://ns.adobe.com/exif/1.0/\" "
@@ -112,7 +112,7 @@ final class TestImages {
 	}
 
 	/** 先頭だけ JPEG で、中身がでたらめなデータ。「読み取れない JPEG」（422）の期待に使う。 */
-	static byte[] fakeJpeg() {
+	public static byte[] fakeJpeg() {
 		byte[] content = new byte[64];
 		Arrays.fill(content, (byte) 0x5A);
 		content[0] = (byte) 0xFF;
@@ -122,15 +122,15 @@ final class TestImages {
 		return content;
 	}
 
-	static byte[] png() {
+	public static byte[] png() {
 		return withTail(PNG_HEAD, 8);
 	}
 
-	static byte[] gif() {
+	public static byte[] gif() {
 		return withTail("GIF89a".getBytes(StandardCharsets.US_ASCII), 8);
 	}
 
-	static byte[] webp() {
+	public static byte[] webp() {
 		byte[] head = new byte[12];
 		System.arraycopy("RIFF".getBytes(StandardCharsets.US_ASCII), 0, head, 0, 4);
 		System.arraycopy("WEBP".getBytes(StandardCharsets.US_ASCII), 0, head, 8, 4);
@@ -138,23 +138,23 @@ final class TestImages {
 	}
 
 	/** PNG の先頭の後ろを 0 で埋めて、ちょうど {@code size} バイトにしたもの。大きさの境界の検査に使う。 */
-	static byte[] pngOfSize(long size) {
+	public static byte[] pngOfSize(long size) {
 		byte[] content = new byte[Math.toIntExact(size)];
 		System.arraycopy(PNG_HEAD, 0, content, 0, PNG_HEAD.length);
 		return content;
 	}
 
-	static byte[] svg() {
+	public static byte[] svg() {
 		return "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>"
 				.getBytes(StandardCharsets.UTF_8);
 	}
 
-	static byte[] text() {
+	public static byte[] text() {
 		return "ただのテキストです".getBytes(StandardCharsets.UTF_8);
 	}
 
 	/** JPEG のメタデータを読み直す。Exif も XMP も無い JPEG では null になる。 */
-	static JpegImageMetadata metadataOf(byte[] jpeg) {
+	public static JpegImageMetadata metadataOf(byte[] jpeg) {
 		try {
 			return (JpegImageMetadata) Imaging.getMetadata(jpeg);
 		} catch (IOException e) {

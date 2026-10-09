@@ -3,25 +3,45 @@ package com.tkmedia.raisetimeline.service;
 import com.tkmedia.raisetimeline.domain.Post;
 import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PostResponse;
+import com.tkmedia.raisetimeline.error.FieldError;
 import com.tkmedia.raisetimeline.error.ForbiddenException;
+import com.tkmedia.raisetimeline.error.ImageStorageUnavailableException;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.UnauthenticatedException;
+import com.tkmedia.raisetimeline.error.ValidationException;
+import com.tkmedia.raisetimeline.image.ImageCleaner;
+import com.tkmedia.raisetimeline.image.ImageKeys;
+import com.tkmedia.raisetimeline.image.ImageStorage;
+import com.tkmedia.raisetimeline.image.ImageUploadRules;
+import com.tkmedia.raisetimeline.image.PreparedImage;
 import com.tkmedia.raisetimeline.logging.LogEvents;
 import com.tkmedia.raisetimeline.logging.LogFields;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 投稿の作成・取得・編集・削除。
  *
- * <p>どのメソッドにも {@code @Transactional} を付けない。どれも 1 回の書き込みと読みだけで、まとめる必要がない。
- * 本文はログに書かない。
+ * <p>{@code @Transactional} は付けない。トランザクションが要るのは作成の「投稿の行と画像の行をまとめて入れる」ところだけで、
+ * そこは {@link TransactionOperations} で範囲を絞る。メソッド全体に付けると、S3 への送信の間じゅう DB の
+ * 接続を握ってしまう。本文と画像の中身はログに書かない。
+ *
+ * <p>画像の保存先（S3）と DB は 1 つのトランザクションにできない。そのため、作成は「検査 → 保存 → DB」の順にし、
+ * DB が失敗したら保存済みのキーを消す。削除は「DB → 保存先」の順にし、保存先の削除が失敗しても成功として返す
+ * （残った画像はどの行からも参照されない孤児になるだけ）。
  */
 @Service
 public class PostService {
@@ -33,26 +53,92 @@ public class PostService {
 
 	private final PostMapper postMapper;
 	private final PostAssembler assembler;
+	private final ImageStorage imageStorage;
+	private final ImageCleaner imageCleaner;
+	private final TransactionOperations transactions;
 	private final Clock clock;
 
-	public PostService(PostMapper postMapper, PostAssembler assembler, Clock clock) {
+	public PostService(PostMapper postMapper, PostAssembler assembler, ImageStorage imageStorage,
+			ImageCleaner imageCleaner, TransactionOperations transactions, Clock clock) {
 		this.postMapper = postMapper;
 		this.assembler = assembler;
+		this.imageStorage = imageStorage;
+		this.imageCleaner = imageCleaner;
+		this.transactions = transactions;
 		this.clock = clock;
 	}
 
-	public PostResponse create(UUID me, String rawBody) {
-		// 画像は Issue 5 まで受け取らないので、画像は無いものとして検査する（コントローラが先に 503 にしている）。
-		String body = PostBodyRules.validate(rawBody, false);
+	/**
+	 * 判定の順序は、保存先が使えるか（503）、本文（422）、枚数（422）、画像 1 枚ずつ（422・413・415）。
+	 * 保存先が使えない環境で画像を送った人には、本文の誤りより先に「今は画像を付けられない」と伝える
+	 * （本文を直しても通らないため）。画像は 1 枚も保存しないうちに全部を検査する。
+	 */
+	public PostResponse create(UUID me, String rawBody, List<MultipartFile> images) {
+		boolean hasImages = !images.isEmpty();
+		if (hasImages && !imageStorage.isAvailable()) {
+			throw new ImageStorageUnavailableException();
+		}
+		String body = PostBodyRules.validate(rawBody, hasImages);
+		if (images.size() > ImageUploadRules.POST_MAX_COUNT) {
+			throw new ValidationException(List.of(new FieldError("images", ImageUploadRules.TOO_MANY)));
+		}
+		List<PreparedImage> prepared = prepare(images);
+		List<String> keys = upload(prepared);
 		OffsetDateTime now = OffsetDateTime.now(clock);
 		UUID id;
 		try {
-			id = postMapper.insert(new Post(null, me, body, now, now));
+			id = Objects.requireNonNull(transactions.execute(status -> {
+				UUID newId = postMapper.insert(new Post(null, me, body, now, now));
+				if (!keys.isEmpty()) {
+					postMapper.insertImages(newId, keys);
+				}
+				return newId;
+			}));
 		}
 		catch (DataIntegrityViolationException e) {
+			imageCleaner.deleteQuietly(keys);
 			throw translate(e);
 		}
+		catch (RuntimeException e) {
+			imageCleaner.deleteQuietly(keys);
+			throw e;
+		}
 		return assembler.toResponse(postMapper.findById(id).orElseThrow(NotFoundException::new));
+	}
+
+	/** 送られた順に検査し、保存できる状態にする。1 枚でも通らなければ例外にし、何も保存しない。 */
+	private static List<PreparedImage> prepare(List<MultipartFile> images) {
+		List<PreparedImage> prepared = new ArrayList<>();
+		for (MultipartFile file : images) {
+			try {
+				prepared.add(ImageUploadRules.prepare("images", file.getBytes(), ImageUploadRules.POST_MAX_BYTES));
+			}
+			catch (IOException e) {
+				// 部品を読めないのはこちらの失敗（一時ファイルの読み出しなど）なので 500 にする。
+				throw new UncheckedIOException(e);
+			}
+		}
+		return prepared;
+	}
+
+	/**
+	 * 1 枚ずつ順に保存し、保存したキーを返す。途中で失敗したら、そこまでに保存した分を消して例外を投げ直す
+	 * （投稿の行が無いまま画像だけが残るのを避ける）。
+	 */
+	private List<String> upload(List<PreparedImage> prepared) {
+		List<String> keys = new ArrayList<>();
+		try {
+			for (PreparedImage image : prepared) {
+				String key = ImageKeys.post(image.type());
+				imageStorage.put(key, image.content(), image.type().contentType());
+				keys.add(key);
+			}
+		}
+		catch (RuntimeException e) {
+			imageCleaner.deleteQuietly(keys);
+			throw e;
+		}
+		return keys;
 	}
 
 	public PostResponse get(UUID id) {
@@ -62,8 +148,8 @@ public class PostService {
 	/** 判定の順序は 404、403、422。他人の投稿には、本文が不正でも 403 を返す。 */
 	public PostResponse updateBody(UUID me, UUID id, String rawBody) {
 		PostWithAuthor post = ownedBy(me, id);
-		// Issue 5 で、その投稿の画像の有無を渡す。画像があれば、本文は空にできる。
-		String body = PostBodyRules.validate(rawBody, false);
+		// 画像のある投稿は、本文を空にできる。画像の有無はこの時点の DB で見る。
+		String body = PostBodyRules.validate(rawBody, !postMapper.findImageKeys(id).isEmpty());
 		if (postMapper.updateBody(post.id(), body, OffsetDateTime.now(clock)) == 0) {
 			throw new NotFoundException();
 		}
@@ -72,6 +158,8 @@ public class PostService {
 
 	public void delete(UUID me, UUID id) {
 		ownedBy(me, id);
+		// 行を消すと画像の行も一緒に消えてキーが分からなくなるので、先に読んでおく。
+		List<String> keys = postMapper.findImageKeys(id);
 		if (postMapper.delete(id) == 0) {
 			throw new NotFoundException();
 		}
@@ -79,6 +167,8 @@ public class PostService {
 				.addKeyValue(LogFields.EVENT_ACTION, LogEvents.POST_DELETED)
 				.addKeyValue(LogFields.APP_POST_ID, id.toString())
 				.log("投稿を削除した");
+		// 保存先の削除は DB が済んでから。失敗しても投稿の削除は成功として返す（ImageCleaner が WARN を残す）。
+		imageCleaner.deleteQuietly(keys);
 	}
 
 	/** 投稿を読み、本人のものでなければ例外にする。無ければ 404、他人のなら 403。 */

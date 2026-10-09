@@ -2,7 +2,6 @@ package com.tkmedia.raisetimeline.controller;
 
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.dto.UpdatePostRequest;
-import com.tkmedia.raisetimeline.error.ImageStorageUnavailableException;
 import com.tkmedia.raisetimeline.service.PostService;
 import java.util.List;
 import java.util.UUID;
@@ -31,18 +30,17 @@ public class PostController {
 	}
 
 	/**
-	 * 画像が無くても multipart で送る（API の形を、画像を足す Issue 5 で変えないため）。
-	 * 画像の保存先はまだ無いので、{@code images} に部品が 1 つでもあれば、本文の検査より先に 503 にする。
-	 * 黙って捨てると、画像が付いたと思った利用者に嘘をつく。サービスには本文だけを渡す。
+	 * 画像が無くても multipart で送る（画像の有無で API の形を変えないため）。
+	 * 画像の部品は送られた順のままサービスに渡す。保存先が使えないときの 503 や、枚数・大きさ・形式の検査は
+	 * サービスの仕事で、ここでは判定しない（本文の検査との順序を 1 か所で決めるため）。
+	 * 部品が 1 つも無いときは {@code images} が null で届くので、空のリストにしてから渡す。
 	 */
 	@PostMapping(path = "/api/posts", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public ResponseEntity<PostResponse> create(@AuthenticationPrincipal Jwt jwt,
 			@RequestParam("body") String body,
 			@RequestParam(name = "images", required = false) List<MultipartFile> images) {
-		if (images != null && !images.isEmpty()) {
-			throw new ImageStorageUnavailableException();
-		}
-		return ResponseEntity.status(HttpStatus.CREATED).body(postService.create(CurrentUser.idOf(jwt), body));
+		List<MultipartFile> parts = images == null ? List.of() : images;
+		return ResponseEntity.status(HttpStatus.CREATED).body(postService.create(CurrentUser.idOf(jwt), body, parts));
 	}
 
 	@GetMapping("/api/posts/{id}")

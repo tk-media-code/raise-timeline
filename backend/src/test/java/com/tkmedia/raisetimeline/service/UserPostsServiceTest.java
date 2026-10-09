@@ -12,6 +12,7 @@ import com.tkmedia.raisetimeline.domain.User;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.error.NotFoundException;
+import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -29,7 +30,8 @@ class UserPostsServiceTest {
 
 	private final UserService userService = mock(UserService.class);
 	private final PostMapper postMapper = mock(PostMapper.class);
-	private final UserPostsService service = new UserPostsService(userService, postMapper, new PostAssembler());
+	private final UserPostsService service = new UserPostsService(userService, postMapper,
+			new PostAssembler(postMapper, new InMemoryImageStorage()));
 
 	private static List<PostWithAuthor> rows(int n) {
 		List<PostWithAuthor> rows = new ArrayList<>();

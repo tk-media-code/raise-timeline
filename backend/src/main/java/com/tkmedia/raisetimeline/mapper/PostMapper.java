@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.tkmedia.raisetimeline.domain.Post;
+import com.tkmedia.raisetimeline.domain.PostImage;
 import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 
 @Mapper
@@ -37,5 +38,20 @@ public interface PostMapper {
 	 */
 	List<PostWithAuthor> findByUser(@Param("userId") UUID userId, @Param("cursor") UUID cursor,
 			@Param("limit") int limit);
+
+	/**
+	 * 投稿に画像の行を入れる。{@code position} は {@code keys} の並びの番号（0 から）で、送られた順をそのまま保つ。
+	 * {@code keys} は 1 件以上、4 件まで（空だと SQL が成り立たない。呼ぶ側が空では呼ばない）。
+	 */
+	void insertImages(@Param("postId") UUID postId, @Param("keys") List<String> keys);
+
+	/**
+	 * 指定の投稿の画像を、{@code post_id, position} の順で返す。一覧の画像を 1 回の問い合わせで引くために、
+	 * 投稿の id をまとめて渡す。{@code postIds} は空にしない（空だと SQL が成り立たない）。
+	 */
+	List<PostImage> findImages(@Param("postIds") List<UUID> postIds);
+
+	/** 1 つの投稿の画像のキーを {@code position} の順で返す。投稿の削除と編集が、画像の有無やキーを知るために使う。 */
+	List<String> findImageKeys(@Param("postId") UUID postId);
 
 }

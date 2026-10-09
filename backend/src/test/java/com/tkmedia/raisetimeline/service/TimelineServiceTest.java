@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
+import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -23,7 +24,7 @@ class TimelineServiceTest {
 	private static final UUID CURSOR = UUID.fromString("0199b000-0000-7000-8000-0000000000ff");
 
 	private final PostMapper postMapper = mock(PostMapper.class);
-	private final TimelineService service = new TimelineService(postMapper, new PostAssembler());
+	private final TimelineService service = new TimelineService(postMapper, new PostAssembler(postMapper, new InMemoryImageStorage()));
 
 	/** id の降順に並んだ n 行。 */
 	private static List<PostWithAuthor> rows(int n) {

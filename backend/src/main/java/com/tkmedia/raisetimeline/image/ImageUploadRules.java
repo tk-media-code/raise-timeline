@@ -23,6 +23,9 @@ public final class ImageUploadRules {
 	public static final long AVATAR_MAX_BYTES = 2_097_152L;
 	public static final int POST_MAX_COUNT = 4;
 
+	/** 投稿の画像が {@link #POST_MAX_COUNT} を超えたときの文言。画面に出る文なので、ここ 1 か所に置く。 */
+	public static final String TOO_MANY = "画像は 4 枚までです";
+
 	/** 空のファイルと、解析できない JPEG の両方で使う文言。 */
 	public static final String UNREADABLE = "画像を読み取れませんでした";
 
