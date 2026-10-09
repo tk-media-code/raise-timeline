@@ -114,6 +114,9 @@ function PostMenu({ onEdit, onDelete }: { onEdit?: () => void; onDelete?: () => 
 
   function choose(action?: () => void) {
     setOpen(false)
+    // 押した項目はメニューごと消え、フォーカスが body に落ちる。先に開閉ボタンへ戻しておく。
+    // 編集や削除のダイアログは、閉じるときにここへフォーカスを戻す。
+    triggerRef.current?.focus()
     action?.()
   }
 

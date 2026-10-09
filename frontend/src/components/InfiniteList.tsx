@@ -28,7 +28,17 @@ function RetryMessage({ onRetry }: { onRetry: () => void }) {
 
 // 一覧の下の見えない目印（sentinel）が画面に入ったら、次のページを読む。
 export function InfiniteList<T>({ query, getKey, renderItem, emptyMessage, label }: InfiniteListProps<T>) {
-  const { data, hasNextPage, isFetching, isFetchingNextPage, isError, isPending, fetchNextPage, refetch } = query
+  const {
+    data,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    isError,
+    isFetchNextPageError,
+    isPending,
+    fetchNextPage,
+    refetch,
+  } = query
   const sentinelRef = useRef<HTMLDivElement>(null)
 
   // 続きがあり、読み込み中でも失敗でもない間だけ監視する。
@@ -76,8 +86,11 @@ export function InfiniteList<T>({ query, getKey, renderItem, emptyMessage, label
             className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-700"
           />
         </output>
-      ) : isError ? (
+      ) : isFetchNextPageError ? (
         <RetryMessage onRetry={() => void fetchNextPage()} />
+      ) : isError ? (
+        // 表示中の取り直し（refetch）の失敗。次のページを読み直しても、失敗した先頭からの取り直しにはならない。
+        <RetryMessage onRetry={() => void refetch()} />
       ) : !hasNextPage ? (
         <p className="p-6 text-center text-sm text-gray-600">これ以上ありません</p>
       ) : null}

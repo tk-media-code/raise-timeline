@@ -14,17 +14,23 @@ type ConfirmDialogProps = {
 export function ConfirmDialog({ open, title, description, confirmLabel, onConfirm, onCancel }: ConfirmDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(null)
   const titleId = useId()
 
   useEffect(() => {
     const dialog = dialogRef.current
     if (!dialog) return
     if (open && !dialog.open) {
+      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       dialog.showModal()
       // showModal() も最初に見つかった操作できる要素へフォーカスを置くが、順序に頼らず取り消しに固定する。
       cancelRef.current?.focus()
     } else if (!open && dialog.open) {
       dialog.close()
+      // 閉じたら、開く前にいた場所へフォーカスを戻す。ブラウザも戻すが、元の要素が消えていると body に落ちる。
+      const target = returnFocusRef.current
+      returnFocusRef.current = null
+      if (target?.isConnected) target.focus()
     }
   }, [open])
 

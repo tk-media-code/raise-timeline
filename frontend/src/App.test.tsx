@@ -8,6 +8,7 @@ import { ApiError } from './api/client'
 import App from './App'
 import { AuthProvider } from './auth/AuthProvider'
 import { setAccessToken } from './auth/tokenStore'
+import { ToastProvider } from './components/Toast'
 import { queryClient } from './lib/queryClient'
 
 // 本物の AuthProvider・refresh.ts・各ページとルートを組み合わせ、ネットワークに出る API だけを差し替える。
@@ -51,12 +52,14 @@ function LocationProbe() {
 function renderAt(entry: string) {
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[entry]}>
-        <AuthProvider>
-          <App />
-          <LocationProbe />
-        </AuthProvider>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <AuthProvider>
+            <App />
+            <LocationProbe />
+          </AuthProvider>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }

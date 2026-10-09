@@ -148,6 +148,34 @@ describe('InfiniteList', () => {
     expect(queryFn).toHaveBeenLastCalledWith('c2')
   })
 
+  it('表示中の取り直しの失敗で「再試行」を押すと、次のページではなく先頭から取り直す', async () => {
+    const user = userEvent.setup()
+    // 1 回目は成功、2 回目（取り直し）は失敗、3 回目は成功。次のページ（'c2'）は呼ばれてはいけない。
+    let firstPageCalls = 0
+    const queryFn = vi.fn<QueryFn>((cursor) => {
+      if (cursor !== null) return Promise.resolve(page(['X'], null))
+      firstPageCalls += 1
+      if (firstPageCalls === 2) return Promise.reject(new Error('boom'))
+      return Promise.resolve(page([firstPageCalls === 1 ? 'A' : 'A2'], 'c2'))
+    })
+    const { queryClient } = renderWithProviders(<List queryFn={queryFn} />)
+    await screen.findByRole('list', { name: 'テスト一覧' })
+
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['test-list'] })
+    })
+
+    expect(await screen.findByText('読み込みに失敗しました')).toBeInTheDocument()
+    // 見えている分は残す。
+    expect(screen.getByRole('list', { name: 'テスト一覧' })).toHaveTextContent('A')
+
+    await user.click(screen.getByRole('button', { name: '再試行' }))
+
+    await waitFor(() => expect(screen.getByRole('list', { name: 'テスト一覧' })).toHaveTextContent('A2'))
+    expect(screen.queryByText('読み込みに失敗しました')).not.toBeInTheDocument()
+    expect(queryFn.mock.calls.map(([cursor]) => cursor)).toEqual([null, null, null])
+  })
+
   it('失敗のあとは、末尾が見えても自動で読み直さない', async () => {
     const queryFn = vi.fn<QueryFn>((cursor) =>
       cursor === null ? Promise.resolve(page(['A'], 'c2')) : Promise.reject(new Error('boom')),
