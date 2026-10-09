@@ -91,7 +91,7 @@ PC（768px 以上）                            スマホ（768px 未満）
 | アバター | 画像。未設定なら表示名の頭文字を色付きの丸に出す。色はユーザー id から決めて固定する |
 | 無限スクロール一覧 | 末尾の監視要素が見えたら次を読む（`IntersectionObserver`）。読み込み中の表示、「これ以上ありません」、失敗時の「再試行」。TanStack Query の `useInfiniteQuery` で作る。読み込んだページを描画し続けるので、`maxPages` で保持する上限を付けられる（最初は付けない） |
 | フォーム | 項目ごとのラベルと誤りの表示、残り文字数、送信中はボタンを無効化し二重送信を防ぐ |
-| 通知（トースト） | 画面下に数秒出る短い通知。成功と失敗の両方に使う |
+| 通知（トースト） | 画面下に出る短い通知。成功と失敗の両方に使う。成功は 4 秒で消える（`role="status"`）。失敗は自動では消さず、「閉じる」で消す（`role="alert"`）。500 の通知に出る requestId を、利用者が写し取れるようにするため。スマホでは下部タブの上に出す |
 | 確認ダイアログ | 削除・ログアウト・退会。`<dialog>` で作る。取り消しを既定のボタンにする。退会はパスワードの入力欄付き |
 | 読み込み中 | 画面全体はスピナー、一覧の末尾は小さなスピナー |
 | 空の状態 | 「まだ投稿がありません」「該当するユーザーがいません」などの文言 |
@@ -122,6 +122,11 @@ PC（768px 以上）                            スマホ（768px 未満）
 
 - 改行はそのまま表示する（`white-space: pre-wrap`）
 - `http://` と `https://` で始まる URL だけをリンクにする。React の要素として作り、HTML を組み立てない。`rel="noopener noreferrer"` と `target="_blank"`
+- URL の終わりは次の規則で決める。文の途中の URL を壊さず、文末の句読点や括弧を巻き込まないため
+  - 末尾の `.` `,` `;` `:` `!` `?` `'` `"` `]` は URL に含めない
+  - 末尾の `)` は、URL の中で `(` より `)` が多いときだけ外す。`https://ja.wikipedia.org/wiki/X_(Y)` の `)` は残り、`(https://example.com)` の `)` は外れる。必ず外す案は Wikipedia の URL が壊れ、必ず残す案は括弧で囲んだ URL の `)` を巻き込むため採らない
+  - この 2 つを、末尾が変わらなくなるまで繰り返す（`).` のように、外すと別の規則に当たる並びがあるため）
+  - URL の文字は ASCII だけにする。全角の文字（`。`、日本語）は含めず、そこで URL が終わる
 - `@ユーザー名` のメンションのリンク化は範囲外
 
 ### レスポンシブ
@@ -141,7 +146,7 @@ PC（768px 以上）                            スマホ（768px 未満）
 | 項目 | 内容 |
 | --- | --- |
 | ルーティング | React Router。`App.tsx` に全ルートを定義し、保護された画面は `RequireAuth` で包む |
-| データ取得 | TanStack Query。一覧は `useInfiniteQuery`、更新は `useMutation`。キーは `['timeline', tab]`、`['post', id]`、`['user', username]` のように資源ごと |
+| データ取得 | TanStack Query。一覧は `useInfiniteQuery`、更新は `useMutation`。キーは `['timeline', tab]`、`['post', id]`、`['user', username]` のように資源ごと。既定は `retry: false`、`refetchOnWindowFocus: false`（失敗したらすぐ「再試行」か「見つかりません」を出す。前面に戻るたびに、読み込んだ全ページを取り直さない）。投稿・編集・削除の成功はキャッシュを直接書き換える（[features/timeline.md](features/timeline.md) の 4 章） |
 | 認証状態 | `AuthProvider`（[auth-design.md](auth-design.md)） |
 | API クライアント | `src/api/client.ts` の 1 関数。資源ごとの関数（`src/api/posts.ts` など）がそれを使う |
 | 部品の置き場 | `src/components/`（共通部品）、`src/pages/`（画面）、`src/features/<機能>/`（機能ごとの部品と hook） |
