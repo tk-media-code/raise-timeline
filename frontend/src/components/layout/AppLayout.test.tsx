@@ -37,6 +37,7 @@ function renderLayout(route = '/') {
         <Route element={<AppLayout />}>
           <Route path="/" element={<p>ホームの中身</p>} />
           <Route path="/posts/:id" element={<p>投稿詳細の中身</p>} />
+          <Route path="/settings/profile" element={<p>プロフィール編集の中身</p>} />
         </Route>
       </Routes>
     </TestProviders>,
@@ -142,6 +143,12 @@ describe('AppLayout', () => {
     renderLayout('/posts/x')
 
     expect(within(screen.getByRole('banner')).getByText('投稿')).toBeInTheDocument()
+  })
+
+  it('/settings/profile では上部バーの画面名が「プロフィール編集」', () => {
+    renderLayout('/settings/profile')
+
+    expect(within(screen.getByRole('banner')).getByText('プロフィール編集')).toBeInTheDocument()
   })
 
   it('ログアウトを押すだけでは signOut を呼ばず、確認ダイアログを開く', async () => {

@@ -24,6 +24,9 @@ export type AuthContextValue = {
   signedOut: boolean
   signIn: (response: AuthResponse) => void
   signOut: () => Promise<void>
+  // プロフィールを保存したあとに、ログイン中の利用者の表示を新しい内容に差し替える。
+  // トークンやセッションは触らない。今の利用者と id が違うときや、ログイン状態でないときは何もしない。
+  updateUser: (user: Me) => void
 }
 
 // status と user は食い違うと困る（authenticated なのに user が無い等）ので、1 つの状態にまとめて同時に更新する。
@@ -128,9 +131,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     announceAuthChanged()
   }, [])
 
+  // 保存の応答は、送ってから返るまでに時間がかかる。その間にログアウトや別の人のログインがあり得るので、
+  // 呼ばれた時点の状態ではなく、最新の状態と突き合わせる（関数形の setState）。
+  // 他のタブへは知らせない。知らせると、受け取ったタブがトークンの更新から取り直してしまうため。
+  // 他のタブは、読み直すまで古い表示のまま。
+  const updateUser = useCallback((user: Me) => {
+    setState((prev) =>
+      prev.status === 'authenticated' && prev.user?.id === user.id ? { ...prev, user } : prev,
+    )
+  }, [])
+
   const value = useMemo<AuthContextValue>(
-    () => ({ status: state.status, user: state.user, signedOut: state.signedOut, signIn, signOut }),
-    [state, signIn, signOut],
+    () => ({ status: state.status, user: state.user, signedOut: state.signedOut, signIn, signOut, updateUser }),
+    [state, signIn, signOut, updateUser],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>

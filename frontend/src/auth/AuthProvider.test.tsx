@@ -42,7 +42,7 @@ function deferred<T>() {
 }
 
 function Probe() {
-  const { status, user, signedOut, signIn, signOut } = useAuth()
+  const { status, user, signedOut, signIn, signOut, updateUser } = useAuth()
   return (
     <div>
       <p data-testid="status">{status}</p>
@@ -50,6 +50,9 @@ function Probe() {
       <p data-testid="user">{user?.username ?? 'none'}</p>
       <button onClick={() => signIn(session)}>サインイン</button>
       <button onClick={() => void signOut()}>サインアウト</button>
+      <button onClick={() => updateUser({ ...me, displayName: '新しい名前' })}>同じ人を更新</button>
+      <button onClick={() => updateUser({ ...me, id: '2', displayName: '別の人' })}>別の人で更新</button>
+      <p data-testid="display-name">{user?.displayName ?? 'none'}</p>
     </div>
   )
 }
@@ -422,6 +425,60 @@ describe('AuthProvider', () => {
     unmount()
 
     expect(expiredListeners).toHaveLength(0)
+  })
+
+  describe('updateUser', () => {
+    it('同じ id の利用者なら差し替える。トークンも他のタブへの知らせも触らない', async () => {
+      refreshSession.mockResolvedValue(session)
+      renderProvider()
+      await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+      setAccessToken('token-1')
+
+      await userEvent.click(screen.getByRole('button', { name: '同じ人を更新' }))
+
+      expect(screen.getByTestId('display-name')).toHaveTextContent('新しい名前')
+      expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+      expect(getAccessToken()).toBe('token-1')
+      // 知らせると、受け取ったタブが取り直しを始めてしまう。
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(receivedByOtherTab).toEqual([])
+    })
+
+    it('id が違う利用者なら何もしない', async () => {
+      refreshSession.mockResolvedValue(session)
+      renderProvider()
+      await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+
+      await userEvent.click(screen.getByRole('button', { name: '別の人で更新' }))
+
+      expect(screen.getByTestId('display-name')).toHaveTextContent('Alice')
+      expect(screen.getByTestId('user')).toHaveTextContent('alice')
+    })
+
+    it('未ログインなら何もしない（ログイン状態を作らない）', async () => {
+      refreshSession.mockResolvedValue(null)
+      renderProvider()
+      await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'))
+
+      await userEvent.click(screen.getByRole('button', { name: '同じ人を更新' }))
+
+      expect(screen.getByTestId('status')).toHaveTextContent('anonymous')
+      expect(screen.getByTestId('user')).toHaveTextContent('none')
+    })
+
+    it('ログアウトしたあとに遅れて呼ばれても、ログイン状態に戻さない', async () => {
+      refreshSession.mockResolvedValue(session)
+      logout.mockResolvedValue(undefined)
+      renderProvider()
+      await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+      await userEvent.click(screen.getByRole('button', { name: 'サインアウト' }))
+      await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'))
+
+      await userEvent.click(screen.getByRole('button', { name: '同じ人を更新' }))
+
+      expect(screen.getByTestId('status')).toHaveTextContent('anonymous')
+      expect(screen.getByTestId('signed-out')).toHaveTextContent('true')
+    })
   })
 
   it('Provider の外で useAuth を呼ぶと投げる', () => {

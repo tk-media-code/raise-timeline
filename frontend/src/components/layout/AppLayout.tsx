@@ -23,6 +23,7 @@ function screenName(pathname: string): string {
   if (pathname === '/') return 'ホーム'
   if (pathname.startsWith('/search')) return '検索'
   if (pathname.startsWith('/users/')) return 'プロフィール'
+  if (pathname === '/settings/profile') return 'プロフィール編集'
   if (pathname.startsWith('/posts/')) return '投稿'
   return 'raise-timeline'
 }

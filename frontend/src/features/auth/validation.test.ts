@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateLogin, validateRegister, type RegisterValues } from './validation'
+import { validateDisplayName, validateLogin, validateRegister, type RegisterValues } from './validation'
 
 const valid: RegisterValues = {
   username: 'alice_01',
@@ -90,6 +90,20 @@ describe('validateRegister', () => {
       email: EMAIL_MESSAGE,
       password: PASSWORD_MESSAGE,
     })
+  })
+})
+
+describe('validateDisplayName', () => {
+  // 登録とプロフィール編集で同じ規則を使う。
+  it.each([
+    ['正しい表示名', 'アリス', undefined],
+    ['空', '', DISPLAY_NAME_MESSAGE],
+    ['空白だけ', ' ', DISPLAY_NAME_MESSAGE],
+    ['絵文字 50 個（コード単位では 100）', '😀'.repeat(50), undefined],
+    ['絵文字 51 個', '😀'.repeat(51), DISPLAY_NAME_MESSAGE],
+    ['前後の空白を除いて 50 文字', ' ' + 'あ'.repeat(50) + ' ', undefined],
+  ])('%s', (_name, value, expected) => {
+    expect(validateDisplayName(value)).toBe(expected)
   })
 })
 

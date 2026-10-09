@@ -20,15 +20,21 @@ const EMAIL_MAX_LENGTH = 254
 // 空白を含まない ASCII の可視文字（! から ~）だけ。
 const PASSWORD_PATTERN = /^[\x21-\x7E]{8,72}$/
 
+// 表示名の規則。登録とプロフィール編集で同じ判定を使う（片方だけ変わると、登録できた名前に直せなくなる）。
+// 前後の空白は取り除いてから数える。空白だけの表示名を 1 文字として通さないため。
+// 文字数はコードポイントで数える。`length` だと絵文字が 2 文字になり、サーバーとずれる。
+export function validateDisplayName(value: string): string | undefined {
+  const length = countCodePoints(value.trim())
+  return length < 1 || length > 50 ? DISPLAY_NAME_MESSAGE : undefined
+}
+
 export function validateRegister(values: RegisterValues): RegisterErrors {
   const errors: RegisterErrors = {}
 
   if (!USERNAME_PATTERN.test(values.username)) errors.username = USERNAME_MESSAGE
 
-  // 前後の空白は取り除いてから数える。空白だけの表示名を 1 文字として通さないため。
-  // 文字数はコードポイントで数える。`length` だと絵文字が 2 文字になり、サーバーとずれる。
-  const displayNameLength = countCodePoints(values.displayName.trim())
-  if (displayNameLength < 1 || displayNameLength > 50) errors.displayName = DISPLAY_NAME_MESSAGE
+  const displayNameError = validateDisplayName(values.displayName)
+  if (displayNameError) errors.displayName = displayNameError
 
   if (!EMAIL_PATTERN.test(values.email) || countCodePoints(values.email) > EMAIL_MAX_LENGTH) {
     errors.email = EMAIL_MESSAGE

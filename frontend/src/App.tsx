@@ -6,6 +6,7 @@ import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import NotFoundPage from './pages/NotFoundPage'
 import PostDetailPage from './pages/PostDetailPage'
+import ProfileEditPage from './pages/ProfileEditPage'
 import ProfilePage from './pages/ProfilePage'
 import RegisterPage from './pages/RegisterPage'
 
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/posts/:id" element={<PostDetailPage />} />
           <Route path="/users/:username" element={<ProfilePage />} />
+          <Route path="/settings/profile" element={<ProfileEditPage />} />
         </Route>
       </Route>
       {/* レイアウトの外。ナビを出さず、未ログインでも開ける。 */}

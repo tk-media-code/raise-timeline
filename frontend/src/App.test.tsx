@@ -72,7 +72,9 @@ function stubTimelineFetch() {
         ? { items: [], nextCursor: null }
         : url === `/api/posts/${detailPost.id}`
           ? detailPost
-          : null
+          : url === '/api/users/me'
+            ? me
+            : null
       return Promise.resolve(
         body === null
           ? new Response(null, { status: 404 })
@@ -150,6 +152,15 @@ describe('App のルート', () => {
     expect(screen.getAllByRole('main')).toHaveLength(1)
     expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: '投稿' })).toBeInTheDocument()
     expect(screen.getByText('2026/10/06 14:12')).toBeInTheDocument()
+  })
+
+  it('ログイン済みで /settings/profile を開くと、レイアウトの中にプロフィール編集が描かれる', async () => {
+    apiRefresh.mockResolvedValue(session)
+    renderAt('/settings/profile')
+
+    expect(await screen.findByRole('textbox', { name: '表示名' })).toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'プロフィール編集' })).toBeInTheDocument()
   })
 
   it('存在しないパスは「ページが見つかりません」とホームへのリンクを出す', async () => {
