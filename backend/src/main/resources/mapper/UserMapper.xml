@@ -39,4 +39,8 @@
 		SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower(#{email}))
 	</select>
 
+	<update id="updateProfile">
+		UPDATE users SET display_name = #{displayName}, bio = #{bio}, updated_at = #{updatedAt} WHERE id = #{id}
+	</update>
+
 </mapper>

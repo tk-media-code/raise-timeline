@@ -31,4 +31,11 @@ public interface PostMapper {
 	 */
 	List<PostWithAuthor> findAll(@Param("cursor") UUID cursor, @Param("limit") int limit);
 
+	/**
+	 * {@code userId} の投稿だけを、{@link #findAll} と同じ並びと打ち切り方で返す。
+	 * {@code limit} は取る行数そのもので、次のページがあるかを知るための +1 は呼ぶ側が足す。
+	 */
+	List<PostWithAuthor> findByUser(@Param("userId") UUID userId, @Param("cursor") UUID cursor,
+			@Param("limit") int limit);
+
 }
