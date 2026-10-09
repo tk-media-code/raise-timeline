@@ -2,10 +2,14 @@ package com.tkmedia.raisetimeline.service;
 
 import com.tkmedia.raisetimeline.domain.User;
 import com.tkmedia.raisetimeline.dto.Me;
+import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
 import com.tkmedia.raisetimeline.dto.UserDetail;
 import com.tkmedia.raisetimeline.error.NotFoundException;
+import com.tkmedia.raisetimeline.error.UnauthenticatedException;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.validation.Usernames;
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -13,14 +17,28 @@ import org.springframework.stereotype.Service;
 public class UserService {
 
 	private final UserMapper userMapper;
+	private final Clock clock;
 
-	public UserService(UserMapper userMapper) {
+	public UserService(UserMapper userMapper, Clock clock) {
 		this.userMapper = userMapper;
+		this.clock = clock;
 	}
 
 	/** ログイン中の本人の情報。利用者がいなければ {@link NotFoundException}。 */
 	public Me getMe(UUID userId) {
 		return userMapper.findById(userId).map(this::toMe).orElseThrow(NotFoundException::new);
+	}
+
+	/**
+	 * 本人の表示名と自己紹介を更新し、更新後の {@link Me} を返す。{@code updated_at} は {@link Clock} の時刻を渡す。
+	 *
+	 * <p>更新が 0 行なのは、トークンの有効期間中に本人の行が消えたとき。投稿の作成（外部キー違反）と同じく 401 にする。
+	 */
+	public Me updateProfile(UUID me, UpdateProfileRequest request) {
+		if (userMapper.updateProfile(me, request.displayName(), request.bio(), OffsetDateTime.now(clock)) == 0) {
+			throw new UnauthenticatedException();
+		}
+		return getMe(me);
 	}
 
 	/**

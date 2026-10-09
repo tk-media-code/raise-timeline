@@ -4,6 +4,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,6 +14,7 @@ import com.tkmedia.raisetimeline.config.SecurityConfig;
 import com.tkmedia.raisetimeline.dto.Me;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
+import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
 import com.tkmedia.raisetimeline.dto.UserDetail;
 import com.tkmedia.raisetimeline.dto.UserSummary;
 import com.tkmedia.raisetimeline.error.ApiExceptionHandler;
@@ -20,6 +22,7 @@ import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.service.UserPostsService;
 import com.tkmedia.raisetimeline.service.UserService;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -27,12 +30,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.MediaType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @WebMvcTest(controllers = UserController.class)
@@ -91,10 +96,16 @@ class UserControllerTest {
 	}
 
 	@ParameterizedTest(name = "{0}")
-	@ValueSource(strings = { "/api/users/alice", "/api/users/alice/posts" })
+	@ValueSource(strings = { "GET /api/users/alice", "GET /api/users/alice/posts", "PATCH /api/users/me" })
 	@DisplayName("Bearer が無いプロフィールの API は 401 UNAUTHENTICATED になり、サービスは呼ばれない")
-	void requestsWithoutBearerReturn401(String path) throws Exception {
-		mockMvc.perform(get(path))
+	void requestsWithoutBearerReturn401(String route) throws Exception {
+		String[] parts = route.split(" ");
+		MockHttpServletRequestBuilder request = parts[0].equals("PATCH")
+				? patch(parts[1]).contentType(MediaType.APPLICATION_JSON)
+						.content("{\"displayName\":\"アリス\",\"bio\":\"\"}".getBytes(StandardCharsets.UTF_8))
+				: get(parts[1]);
+
+		mockMvc.perform(request)
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 
@@ -151,6 +162,61 @@ class UserControllerTest {
 				.andExpect(status().isBadRequest());
 
 		verifyNoInteractions(userPostsService);
+	}
+
+	@Test
+	@DisplayName("PATCH /api/users/me は正規化した入力で更新し、email 付きの Me を 200 で返す")
+	void patchReturnsMe() throws Exception {
+		when(userService.updateProfile(USER_ID, new UpdateProfileRequest("アリス", "a\nb"))).thenReturn(new Me(USER_ID,
+				"alice", "アリス", null, "a\nb", false, 0, 0, OffsetDateTime.parse("2026-10-01T00:00:00Z"), true,
+				"alice@example.com"));
+
+		mockMvc.perform(patch("/api/users/me").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"displayName\":\" アリス \",\"bio\":\"a\\r\\nb\"}".getBytes(StandardCharsets.UTF_8)).with(me()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.email").value("alice@example.com"))
+				.andExpect(jsonPath("$.isMe").value(true))
+				.andExpect(jsonPath("$.bio").value("a\nb"));
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@ValueSource(strings = {
+			"{\"displayName\":\"   \",\"bio\":\"\"}|displayName",
+			"{\"bio\":\"\"}|displayName",
+			"{\"displayName\":null,\"bio\":\"\"}|displayName",
+			"{\"displayName\":\"アリス\"}|bio",
+			"{\"displayName\":\"アリス\",\"bio\":null}|bio",
+			"{}|displayName" })
+	@DisplayName("PATCH の入力が誤りなら 422 VALIDATION_ERROR で、サービスは呼ばれない")
+	void patchValidationErrors(String caseValue) throws Exception {
+		String[] parts = caseValue.split("\\|");
+
+		mockMvc.perform(patch("/api/users/me").contentType(MediaType.APPLICATION_JSON)
+				.content(parts[0].getBytes(StandardCharsets.UTF_8)).with(me()))
+				.andExpect(status().isUnprocessableContent())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+				.andExpect(jsonPath("$.errors[*].field").value(org.hamcrest.Matchers.hasItem(parts[1])));
+
+		verifyNoInteractions(userService);
+	}
+
+	@Test
+	@DisplayName("PATCH の JSON が壊れていれば 400")
+	void patchBrokenJsonReturns400() throws Exception {
+		mockMvc.perform(patch("/api/users/me").contentType(MediaType.APPLICATION_JSON).content("{").with(me()))
+				.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(userService);
+	}
+
+	@Test
+	@DisplayName("他人のプロフィールへの PATCH は 405 で、サービスは呼ばれない")
+	void patchOtherUserIsNotAllowed() throws Exception {
+		mockMvc.perform(patch("/api/users/alice").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"displayName\":\"アリス\",\"bio\":\"\"}".getBytes(StandardCharsets.UTF_8)).with(me()))
+				.andExpect(status().isMethodNotAllowed());
+
+		verifyNoInteractions(userService);
 	}
 
 }

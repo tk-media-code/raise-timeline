@@ -3,11 +3,13 @@ package com.tkmedia.raisetimeline;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.jayway.jsonpath.JsonPath;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -77,6 +79,12 @@ class ProfileIntegrationTest {
 
 	private MvcResult getAs(Account viewer, String path) throws Exception {
 		return mockMvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, "Bearer " + viewer.token())).andReturn();
+	}
+
+	private MvcResult patchMe(Account account, String json) throws Exception {
+		return mockMvc.perform(patch("/api/users/me").contentType(MediaType.APPLICATION_JSON)
+				.content(json.getBytes(StandardCharsets.UTF_8))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + account.token())).andReturn();
 	}
 
 	private static String text(MvcResult result) throws Exception {
@@ -185,6 +193,54 @@ class ProfileIntegrationTest {
 		MvcResult result = getAs(alice, "/api/users/nobody_" + UUID.randomUUID().toString().substring(0, 8) + "/posts");
 
 		assertThat(result.getResponse().getStatus()).isEqualTo(404);
+	}
+
+	@Test
+	@DisplayName("PATCH で表示名と自己紹介を更新すると、応答にも公開のプロフィールにも反映され、updated_at が進み、CRLF は LF で保存される")
+	void updateProfileFlow() throws Exception {
+		Account alice = newAccount("alice");
+		Account bob = newAccount("bob");
+		OffsetDateTime before = jdbc.queryForObject("SELECT updated_at FROM users WHERE id = ?::uuid",
+				OffsetDateTime.class, alice.userId());
+
+		MvcResult result = patchMe(alice, "{\"displayName\":\"  新しい名前  \",\"bio\":\"一行目\\r\\n二行目\"}");
+
+		assertThat(result.getResponse().getStatus()).isEqualTo(200);
+		String json = text(result);
+		assertThat((String) JsonPath.read(json, "$.displayName")).isEqualTo("新しい名前");
+		assertThat((String) JsonPath.read(json, "$.bio")).isEqualTo("一行目\n二行目");
+		assertThat((String) JsonPath.read(json, "$.email")).isEqualTo(alice.email());
+		assertThat((Boolean) JsonPath.read(json, "$.isMe")).isTrue();
+
+		MvcResult profile = getAs(bob, "/api/users/" + alice.username());
+		String profileJson = text(profile);
+		assertThat((String) JsonPath.read(profileJson, "$.displayName")).isEqualTo("新しい名前");
+		assertThat((String) JsonPath.read(profileJson, "$.bio")).isEqualTo("一行目\n二行目");
+		assertThat(profileJson).doesNotContain("\"email\"");
+
+		assertThat(jdbc.queryForObject("SELECT bio FROM users WHERE id = ?::uuid", String.class, alice.userId()))
+				.isEqualTo("一行目\n二行目");
+		OffsetDateTime after = jdbc.queryForObject("SELECT updated_at FROM users WHERE id = ?::uuid",
+				OffsetDateTime.class, alice.userId());
+		assertThat(after).isAfter(before);
+	}
+
+	@Test
+	@DisplayName("NUL と対になっていないサロゲートは 422 で、行は変わらない")
+	void unusableCharsAreRejected() throws Exception {
+		Account alice = newAccount("alice");
+
+		MvcResult nul = patchMe(alice, "{\"displayName\":\"a\\u0000b\",\"bio\":\"\"}");
+		MvcResult surrogate = patchMe(alice, "{\"displayName\":\"アリス\",\"bio\":\"\\uD800\"}");
+
+		assertThat(nul.getResponse().getStatus()).isEqualTo(422);
+		assertThat(text(nul)).contains("\"displayName\"").contains("使えない文字が含まれています");
+		assertThat(surrogate.getResponse().getStatus()).isEqualTo(422);
+		assertThat(text(surrogate)).contains("\"bio\"").contains("使えない文字が含まれています");
+		assertThat(jdbc.queryForObject("SELECT display_name FROM users WHERE id = ?::uuid", String.class,
+				alice.userId())).isEqualTo("テスト");
+		assertThat(jdbc.queryForObject("SELECT bio FROM users WHERE id = ?::uuid", String.class, alice.userId()))
+				.isEmpty();
 	}
 
 }

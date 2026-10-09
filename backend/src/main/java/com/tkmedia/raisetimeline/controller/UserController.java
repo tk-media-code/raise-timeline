@@ -3,14 +3,18 @@ package com.tkmedia.raisetimeline.controller;
 import com.tkmedia.raisetimeline.dto.Me;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
+import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
 import com.tkmedia.raisetimeline.dto.UserDetail;
 import com.tkmedia.raisetimeline.service.UserPostsService;
 import com.tkmedia.raisetimeline.service.UserService;
+import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,6 +33,15 @@ public class UserController {
 	@GetMapping("/api/users/me")
 	public Me me(@AuthenticationPrincipal Jwt jwt) {
 		return userService.getMe(CurrentUser.idOf(jwt));
+	}
+
+	/**
+	 * 本人の表示名と自己紹介を更新する。対象は JWT の sub の本人だけで、パスに id やユーザー名は取らない
+	 * （他人のプロフィールは更新できない）。
+	 */
+	@PatchMapping("/api/users/me")
+	public Me updateMe(@Valid @RequestBody UpdateProfileRequest request, @AuthenticationPrincipal Jwt jwt) {
+		return userService.updateProfile(CurrentUser.idOf(jwt), request);
 	}
 
 	/**

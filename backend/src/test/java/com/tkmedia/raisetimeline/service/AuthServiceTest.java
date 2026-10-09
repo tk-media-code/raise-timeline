@@ -72,7 +72,7 @@ class AuthServiceTest {
 	private final List<Boolean> encoderCallsInTransaction = new ArrayList<>();
 	private final PasswordEncoder passwordEncoder = spy(new RecordingEncoder(transactions, encoderCallsInTransaction));
 	private final TokenService tokenService = tokenService();
-	private final UserService userService = new UserService(userMapper);
+	private final UserService userService = new UserService(userMapper, clock);
 	private final AuthService service = new AuthService(userMapper, refreshTokenMapper, tokenService, passwordEncoder,
 			userService, properties(), clock, transactions);
 

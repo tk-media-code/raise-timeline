@@ -3,15 +3,21 @@ package com.tkmedia.raisetimeline.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.tkmedia.raisetimeline.domain.User;
 import com.tkmedia.raisetimeline.dto.Me;
+import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
 import com.tkmedia.raisetimeline.dto.UserDetail;
 import com.tkmedia.raisetimeline.error.NotFoundException;
+import com.tkmedia.raisetimeline.error.UnauthenticatedException;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -25,7 +31,9 @@ class UserServiceTest {
 	private static final OffsetDateTime CREATED_AT = OffsetDateTime.parse("2026-10-07T00:00:00Z");
 
 	private final UserMapper userMapper = mock(UserMapper.class);
-	private final UserService service = new UserService(userMapper);
+	private static final Instant NOW = Instant.parse("2026-10-09T10:00:00Z");
+
+	private final UserService service = new UserService(userMapper, Clock.fixed(NOW, ZoneOffset.UTC));
 
 	@Test
 	@DisplayName("利用者がいなければ NotFoundException を投げる")
@@ -113,6 +121,33 @@ class UserServiceTest {
 		assertThatThrownBy(() -> service.requireByUsername(null)).isInstanceOf(NotFoundException.class);
 
 		verifyNoInteractions(userMapper);
+	}
+
+	@Test
+	@DisplayName("updateProfile は Clock の時刻で更新し、読み直した行を email 付きの Me で返す")
+	void updateProfileUsesClock() {
+		OffsetDateTime now = OffsetDateTime.ofInstant(NOW, ZoneOffset.UTC);
+		when(userMapper.updateProfile(USER_ID, "新しい名前", "新しい自己紹介", now)).thenReturn(1);
+		User updated = new User(USER_ID, "alice", "新しい名前", "alice@example.com", "$2a$10$hash", "新しい自己紹介", null,
+				CREATED_AT, now);
+		when(userMapper.findById(USER_ID)).thenReturn(Optional.of(updated));
+
+		Me me = service.updateProfile(USER_ID, new UpdateProfileRequest("新しい名前", "新しい自己紹介"));
+
+		verify(userMapper).updateProfile(USER_ID, "新しい名前", "新しい自己紹介", now);
+		assertThat(me.displayName()).isEqualTo("新しい名前");
+		assertThat(me.bio()).isEqualTo("新しい自己紹介");
+		assertThat(me.email()).isEqualTo("alice@example.com");
+		assertThat(me.isMe()).isTrue();
+	}
+
+	@Test
+	@DisplayName("更新が 0 行（本人がもう居ない）なら UnauthenticatedException")
+	void updateProfileOfGoneUser() {
+		when(userMapper.updateProfile(USER_ID, "アリス", "", OffsetDateTime.ofInstant(NOW, ZoneOffset.UTC))).thenReturn(0);
+
+		assertThatThrownBy(() -> service.updateProfile(USER_ID, new UpdateProfileRequest("アリス", "")))
+				.isInstanceOf(UnauthenticatedException.class);
 	}
 
 	private static User user() {
