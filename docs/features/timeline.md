@@ -40,7 +40,7 @@
 ## 4. 処理の流れ
 
 1. 投稿者を結合した本体の SQL で `limit + 1` 件を取る（[database-design.md](../database-design.md) の 5 章）
-2. 投稿 id の集合に対して、画像・いいね数・コメント数・自分がいいね済みかを、それぞれ 1 本の問い合わせでまとめて取る（投稿ごとに取りに行かない。1 ページあたり 5 本で固定）。Issue 3〜6 では `likeCount` と `commentCount` を 0、`likedByMe` を false で返す
+2. 投稿 id の集合に対して、画像・いいね数・コメント数・自分がいいね済みかを、それぞれ 1 本の問い合わせでまとめて取る（投稿ごとに取りに行かない。1 ページあたり 5 本で固定）。Issue 3〜6 では `likeCount` を 0、`likedByMe` を false、Issue 3〜7 では `commentCount` を 0 で返す
 3. 画像のキーを URL に変換する
 4. 余分な 1 件があれば `nextCursor` に `limit` 件目の id を入れる
 
