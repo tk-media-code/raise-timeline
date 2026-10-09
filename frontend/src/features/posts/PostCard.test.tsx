@@ -100,6 +100,22 @@ describe('PostCard のリンク', () => {
     expect(screen.getByRole('link', { name: /アリス/ })).toHaveAttribute('href', '/users/alice')
   })
 
+  it('@ユーザー名を押すと、linkToDetail が true でもプロフィールへ移る', async () => {
+    const user = userEvent.setup()
+    renderCard({ linkToDetail: true })
+
+    await user.click(screen.getByText('@alice'))
+
+    expect(screen.getByText('プロフィールの画面')).toBeInTheDocument()
+    expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
+  })
+
+  it('アイコンと表示名と @ユーザー名は 1 つのリンクにまとまっている', () => {
+    renderCard()
+
+    expect(screen.getByRole('link', { name: 'アリス @alice' })).toHaveAttribute('href', '/users/alice')
+  })
+
   it('時刻のリンクは投稿詳細へ', () => {
     renderCard()
 
@@ -159,20 +175,36 @@ describe('PostCard のメニュー', () => {
     renderCard({ isMine: true })
 
     await user.click(screen.getByRole('button', { name: 'この投稿の操作' }))
+    await user.tab()
+    expect(screen.getByRole('button', { name: '編集' })).toHaveFocus()
     await user.keyboard('{Escape}')
 
     expect(screen.queryByRole('button', { name: '編集' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'この投稿の操作' })).toHaveFocus()
   })
 
-  it('メニューの外を押すと閉じる', async () => {
+  it('メニューの外（リンクでない本文）を押すと閉じる。カードは残る', async () => {
     const user = userEvent.setup()
-    renderCard({ isMine: true })
+    renderCard({ isMine: true, linkToDetail: false })
 
     await user.click(screen.getByRole('button', { name: 'この投稿の操作' }))
-    await user.click(screen.getByText('アリス'))
+    expect(screen.getByRole('button', { name: '編集' })).toBeInTheDocument()
+    await user.click(screen.getByText(/こんにちは/))
 
+    // 画面が切り替わってカードごと消えたのではなく、メニューだけが閉じたことを確かめる。
+    expect(screen.getByRole('button', { name: 'この投稿の操作' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '編集' })).not.toBeInTheDocument()
+  })
+
+  it('閉じている間は、aria-controls が存在しない id を指さない', async () => {
+    const user = userEvent.setup()
+    renderCard({ isMine: true })
+    const trigger = screen.getByRole('button', { name: 'この投稿の操作' })
+    expect(trigger).not.toHaveAttribute('aria-controls')
+
+    await user.click(trigger)
+
+    expect(trigger).toHaveAttribute('aria-controls')
   })
 
   it('メニューのボタンをもう一度押すと閉じる', async () => {
@@ -204,6 +236,17 @@ describe('PostCard の投稿詳細への移動', () => {
     anchor.addEventListener('click', (event) => event.preventDefault())
 
     await user.click(anchor)
+
+    expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
+  })
+
+  it('メニューの枠（項目の外の余白）を押しても、詳細へは移らない', async () => {
+    const user = userEvent.setup()
+    renderCard({ linkToDetail: true, isMine: true, onEdit: vi.fn(), onDelete: vi.fn() })
+
+    await user.click(screen.getByRole('button', { name: 'この投稿の操作' }))
+    const frame = screen.getByRole('button', { name: '編集' }).parentElement as HTMLElement
+    await user.click(frame)
 
     expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
   })
