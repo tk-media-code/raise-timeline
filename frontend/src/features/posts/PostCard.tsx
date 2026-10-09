@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type MouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import type { Post } from '../../api/posts'
 import { Avatar } from '../../components/Avatar'
+import { ImageGrid } from '../images/ImageGrid'
 import { formatAbsoluteTime, formatRelativeTime } from './formatTime'
 import { PostBody } from './PostBody'
 
@@ -73,6 +74,8 @@ export function PostCard({ post, isMine, timeStyle, linkToDetail, onEdit, onDele
       <div className="mt-1">
         <PostBody body={post.body} />
       </div>
+
+      <ImageGrid images={post.images} interactive />
 
       {/* いいねとコメントはまだ押せない。押せるボタンに見えないよう role="img" の表示にする（操作は後の Issue が足す）。 */}
       <div className="mt-2 flex gap-6 text-sm text-gray-600">

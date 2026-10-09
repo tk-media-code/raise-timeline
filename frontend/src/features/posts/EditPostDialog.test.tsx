@@ -100,6 +100,41 @@ describe('EditPostDialog', () => {
     expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
   })
 
+  it('画像は押せない表示で出る', () => {
+    const images = [
+      { id: 'i1', url: '/media/i1.jpg' },
+      { id: 'i2', url: '/media/i2.jpg' },
+    ]
+    renderDialog({ post: makePost({ images }) })
+
+    expect(screen.getByRole('img', { name: '添付画像 1' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '添付画像 2' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /を拡大/ })).not.toBeInTheDocument()
+  })
+
+  it('画像の無い投稿は、画像の表示を出さない', () => {
+    renderDialog()
+
+    expect(screen.queryByRole('img', { name: /添付画像/ })).not.toBeInTheDocument()
+  })
+
+  it('画像のある投稿は、本文を消すと「保存」を押せる', async () => {
+    renderDialog({ post: makePost({ images: [{ id: 'i1', url: '/media/i1.jpg' }] }) })
+
+    await replaceBody('')
+
+    expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
+  })
+
+  it('画像のある投稿でも、元と同じ本文や 281 文字では押せない', async () => {
+    renderDialog({ post: makePost({ images: [{ id: 'i1', url: '/media/i1.jpg' }] }) })
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+
+    await replaceBody('あ'.repeat(281))
+
+    expect(screen.getByRole('button', { name: '保存' })).toBeDisabled()
+  })
+
   it('保存で updatePost(id, 本文) を呼び、閉じ、キャッシュが新しい本文になる', async () => {
     const queryClient = seed(makePost())
     api.updatePost.mockResolvedValue(makePost({ body: '直した本文', edited: true }))

@@ -23,7 +23,7 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
   const submitting = useRef(false)
   const mounted = useIsMounted()
 
-  const canSubmit = canSubmitBody(body) && !create.isPending
+  const canSubmit = canSubmitBody(body, false) && !create.isPending
 
   function change(value: string) {
     setBody(value)

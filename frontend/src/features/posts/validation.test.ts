@@ -10,25 +10,39 @@ describe('投稿の本文の検査', () => {
     const body = 'あ'.repeat(280)
 
     expect(remainingChars(body)).toBe(0)
-    expect(canSubmitBody(body)).toBe(true)
+    expect(canSubmitBody(body, false)).toBe(true)
   })
 
   it('「あ」281 文字は、残り -1 で送れない', () => {
     const body = 'あ'.repeat(281)
 
     expect(remainingChars(body)).toBe(-1)
-    expect(canSubmitBody(body)).toBe(false)
+    expect(canSubmitBody(body, false)).toBe(false)
   })
 
   it('空と、空白・改行・全角空白だけは送れない', () => {
-    expect(canSubmitBody('')).toBe(false)
-    expect(canSubmitBody(' \n　 ')).toBe(false)
+    expect(canSubmitBody('', false)).toBe(false)
+    expect(canSubmitBody(' \n　 ', false)).toBe(false)
   })
 
   it('絵文字 280 個は、1 個を 1 文字と数えて送れる', () => {
     const body = '😀'.repeat(280)
 
     expect(remainingChars(body)).toBe(0)
-    expect(canSubmitBody(body)).toBe(true)
+    expect(canSubmitBody(body, false)).toBe(true)
+  })
+
+  it('画像があれば、本文が空でも空白だけでも送れる', () => {
+    expect(canSubmitBody('', true)).toBe(true)
+    expect(canSubmitBody('  ', true)).toBe(true)
+  })
+
+  it('画像が無ければ、空白だけは送れない', () => {
+    expect(canSubmitBody('  ', false)).toBe(false)
+  })
+
+  it('281 文字は、画像があっても送れない', () => {
+    expect(canSubmitBody('あ'.repeat(281), true)).toBe(false)
+    expect(canSubmitBody('あ'.repeat(280), true)).toBe(true)
   })
 })

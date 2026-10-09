@@ -3,6 +3,7 @@ import { useId, useRef, useState, type FormEvent } from 'react'
 import type { Post } from '../../api/posts'
 import { ModalDialog } from '../../components/ModalDialog'
 import { useToast } from '../../components/Toast'
+import { ImageGrid } from '../images/ImageGrid'
 import { BodyField } from './BodyField'
 import { failureMessage, forgetMissingPost, isApiError, toValidationFailure, useUpdatePost } from './mutations'
 import { useIsMounted } from './useIsMounted'
@@ -40,7 +41,8 @@ function EditForm({ post, onClose, onRemoved }: Pick<EditPostDialogProps, 'post'
   const mounted = useIsMounted()
 
   // 元と同じ本文では保存させない。押せると、中身が同じでも「編集済み」が付いてしまう。
-  const canSave = canSubmitBody(body) && body !== post.body && !update.isPending
+  // 画像のある投稿は、本文を空にして画像だけの投稿にできる（画像の付け外しはこのダイアログではしない）。
+  const canSave = canSubmitBody(body, post.images.length > 0) && body !== post.body && !update.isPending
 
   function change(value: string) {
     setBody(value)
@@ -91,6 +93,8 @@ function EditForm({ post, onClose, onRemoved }: Pick<EditPostDialogProps, 'post'
         </p>
       )}
       <BodyField id={`edit-post-${post.id}-body`} value={body} onChange={change} error={bodyError} focusOnMount />
+      {/* 画像はここでは直せない。見えるだけにして、押せるボタンに見えないようにする。 */}
+      <ImageGrid images={post.images} interactive={false} />
       <div className="flex justify-end gap-3">
         <button
           type="button"
