@@ -19,12 +19,27 @@ function hasData(query: { state: { data: unknown } }): boolean {
   return query.state.data !== undefined
 }
 
+// データが無く、最初の読み込み中のクエリ。書き込む先が無く、到着するページは変更の前の状態のものなので、
+// そのまま待つと変更が入っていないことになる（「投稿しました」と出るのに新しい投稿が無い）。読み直して、いまの状態を取る。
+// invalidateQueries だけでは足りない。データの無い取得中のクエリは、取得を捨てずに進行中の取得をそのまま待つ。
+// 先に中断（待機中に戻る）してから invalidateQueries を呼ぶと、一覧の監視がある間は取り直される。
+async function reloadFirstLoads(client: QueryClient, filters: { queryKey: readonly unknown[]; exact?: boolean }): Promise<void> {
+  const firstLoads = client
+    .getQueryCache()
+    .findAll({ ...filters, predicate: (query) => !hasData(query) && query.state.fetchStatus === 'fetching' })
+  for (const query of firstLoads) {
+    await query.cancel({ revert: true })
+    void client.invalidateQueries({ queryKey: query.queryKey, exact: true })
+  }
+}
+
 function mapItems(data: TimelineData | undefined, fn: (items: Post[]) => Post[]): TimelineData | undefined {
   if (!data) return data
   return { ...data, pages: data.pages.map((page) => ({ ...page, items: fn(page.items) })) }
 }
 
 // 「すべて」の 1 ページ目の先頭に足す。まだ読み込んでいなければ、何もしない（開いたときに最新が取れる）。
+// 最初の読み込みの最中なら、取り直す（reloadFirstLoads）。
 // 同じ id の投稿が既にあれば先に除く（重複して並ばないように）。
 export async function prependPost(client: QueryClient, post: Post): Promise<void> {
   await client.cancelQueries({ queryKey: timelineKeys.all, predicate: hasData })
@@ -38,6 +53,7 @@ export async function prependPost(client: QueryClient, post: Post): Promise<void
       }),
     }
   })
+  await reloadFirstLoads(client, { queryKey: timelineKeys.all })
 }
 
 // 一覧（種類を問わず全ページ）と詳細のキャッシュの、同じ投稿を新しい内容に置き換える。
@@ -50,6 +66,10 @@ export async function replacePost(client: QueryClient, post: Post): Promise<void
     mapItems(data, (items) => items.map((item) => (item.id === post.id ? post : item))),
   )
   client.setQueryData<Post>(postKey(post.id), (current) => (current ? post : current))
+  await Promise.all([
+    reloadFirstLoads(client, { queryKey: timelineKeys.root }),
+    reloadFirstLoads(client, { queryKey: postKey(post.id), exact: true }),
+  ])
 }
 
 // すべての一覧から投稿を除き、詳細のキャッシュを捨てる。

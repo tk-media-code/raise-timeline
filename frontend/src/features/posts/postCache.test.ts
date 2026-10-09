@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query'
-import { QueryClient } from '@tanstack/react-query'
+import { InfiniteQueryObserver, QueryClient, QueryObserver } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import type { Page, Post } from '../../api/posts'
 import { prependPost, removePost, replacePost } from './postCache'
@@ -115,5 +115,58 @@ describe('removePost', () => {
     expect(ids(data, 0)).toEqual(['b'])
     expect(ids(data, 1)).toEqual(['d'])
     expect(client.getQueryData(postKey('c'))).toBeUndefined()
+  })
+})
+
+// 最初の読み込みの最中は、書き込む先のデータが無い。到着するページは変更の前の状態なので、読み直す。
+describe('最初の読み込み中の変更', () => {
+  function holdFirstLoad() {
+    let release: (post: Post) => void = () => {}
+    const held = new Promise<Post>((resolve) => {
+      release = resolve
+    })
+    let calls = 0
+    const queryFn = () => {
+      calls += 1
+      return calls === 1 ? held : Promise.resolve(makePost('a', '直した本文'))
+    }
+    return { queryFn, release, calls: () => calls }
+  }
+
+  it('一覧の最初の読み込み中に投稿を足すと、読み直して最新を取る', async () => {
+    const client = new QueryClient()
+    let calls = 0
+    const observer = new InfiniteQueryObserver(client, {
+      queryKey: timelineKeys.all,
+      queryFn: (): Promise<Page<Post>> => {
+        calls += 1
+        return calls === 1 ? new Promise(() => {}) : Promise.resolve({ items: [makePost('new'), makePost('a')], nextCursor: null })
+      },
+      initialPageParam: null as string | null,
+      getNextPageParam: (last: Page<Post>) => last.nextCursor,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await prependPost(client, makePost('new'))
+
+    await expect.poll(() => ids(client.getQueryData<Data>(timelineKeys.all), 0)).toEqual(['new', 'a'])
+    expect(calls).toBe(2)
+    unsubscribe()
+  })
+
+  it('詳細の最初の読み込み中に投稿を編集すると、読み直して最新を取る', async () => {
+    const client = new QueryClient()
+    const { queryFn, release, calls } = holdFirstLoad()
+    const observer = new QueryObserver(client, { queryKey: postKey('a'), queryFn })
+    const unsubscribe = observer.subscribe(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await replacePost(client, makePost('a', '直した本文'))
+    release(makePost('a', '元の本文'))
+
+    await expect.poll(() => client.getQueryData<Post>(postKey('a'))?.body).toBe('直した本文')
+    expect(calls()).toBe(2)
+    unsubscribe()
   })
 })
