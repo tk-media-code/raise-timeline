@@ -27,6 +27,9 @@ export type AuthContextValue = {
   // プロフィールを保存したあとに、ログイン中の利用者の表示を新しい内容に差し替える。
   // トークンやセッションは触らない。今の利用者と id が違うときや、ログイン状態でないときは何もしない。
   updateUser: (user: Me) => void
+  // アイコンを差し替えたあとに、ログイン中の利用者の avatarUrl だけを新しくする。
+  // updateUser と同じく、id が違うときや、ログイン状態でないときは何もしない。
+  updateAvatarUrl: (userId: string, avatarUrl: string) => void
 }
 
 // status と user は食い違うと困る（authenticated なのに user が無い等）ので、1 つの状態にまとめて同時に更新する。
@@ -141,9 +144,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  // アイコンの応答は avatarUrl しか返さない。me 全体を作り直すと、開いたあとに変わった他の項目を古い値で上書きしうる。
+  const updateAvatarUrl = useCallback((userId: string, avatarUrl: string) => {
+    setState((prev) =>
+      prev.status === 'authenticated' && prev.user?.id === userId ? { ...prev, user: { ...prev.user, avatarUrl } } : prev,
+    )
+  }, [])
+
   const value = useMemo<AuthContextValue>(
-    () => ({ status: state.status, user: state.user, signedOut: state.signedOut, signIn, signOut, updateUser }),
-    [state, signIn, signOut, updateUser],
+    () => ({
+      status: state.status,
+      user: state.user,
+      signedOut: state.signedOut,
+      signIn,
+      signOut,
+      updateUser,
+      updateAvatarUrl,
+    }),
+    [state, signIn, signOut, updateUser, updateAvatarUrl],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>

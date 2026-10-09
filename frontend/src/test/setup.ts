@@ -41,3 +41,11 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
     }
   }
 }
+
+// jsdom には URL.createObjectURL / revokeObjectURL が無い。画像のプレビューが使うので、連番の URL を返す代役を置く。
+// 取り消しの検査をしたいテストは vi.spyOn(URL, 'revokeObjectURL') で呼ばれ方を見る。
+if (typeof URL.createObjectURL !== 'function') {
+  let objectUrlSeq = 0
+  URL.createObjectURL = () => `blob:test/${++objectUrlSeq}`
+  URL.revokeObjectURL = () => {}
+}

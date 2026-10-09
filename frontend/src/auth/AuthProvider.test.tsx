@@ -42,7 +42,7 @@ function deferred<T>() {
 }
 
 function Probe() {
-  const { status, user, signedOut, signIn, signOut, updateUser } = useAuth()
+  const { status, user, signedOut, signIn, signOut, updateUser, updateAvatarUrl } = useAuth()
   return (
     <div>
       <p data-testid="status">{status}</p>
@@ -52,6 +52,9 @@ function Probe() {
       <button onClick={() => void signOut()}>サインアウト</button>
       <button onClick={() => updateUser({ ...me, displayName: '新しい名前' })}>同じ人を更新</button>
       <button onClick={() => updateUser({ ...me, id: '2', displayName: '別の人' })}>別の人で更新</button>
+      <button onClick={() => updateAvatarUrl(me.id, 'https://example.com/new.png')}>同じ人のアイコン</button>
+      <button onClick={() => updateAvatarUrl('2', 'https://example.com/other.png')}>別の人のアイコン</button>
+      <p data-testid="avatar-url">{user?.avatarUrl ?? 'none'}</p>
       <p data-testid="display-name">{user?.displayName ?? 'none'}</p>
     </div>
   )
@@ -425,6 +428,44 @@ describe('AuthProvider', () => {
     unmount()
 
     expect(expiredListeners).toHaveLength(0)
+  })
+
+  describe('updateAvatarUrl', () => {
+    it('同じ id の利用者なら avatarUrl だけを差し替える。トークンも他のタブへの知らせも触らない', async () => {
+      refreshSession.mockResolvedValue(session)
+      renderProvider()
+      await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+      setAccessToken('token-1')
+
+      await userEvent.click(screen.getByRole('button', { name: '同じ人のアイコン' }))
+
+      expect(screen.getByTestId('avatar-url')).toHaveTextContent('https://example.com/new.png')
+      expect(screen.getByTestId('display-name')).toHaveTextContent('Alice')
+      expect(getAccessToken()).toBe('token-1')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(receivedByOtherTab).toEqual([])
+    })
+
+    it('id が違う利用者なら何もしない', async () => {
+      refreshSession.mockResolvedValue(session)
+      renderProvider()
+      await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+
+      await userEvent.click(screen.getByRole('button', { name: '別の人のアイコン' }))
+
+      expect(screen.getByTestId('avatar-url')).toHaveTextContent('none')
+    })
+
+    it('未ログインなら何もしない（ログイン状態を作らない）', async () => {
+      refreshSession.mockResolvedValue(null)
+      renderProvider()
+      await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'))
+
+      await userEvent.click(screen.getByRole('button', { name: '同じ人のアイコン' }))
+
+      expect(screen.getByTestId('status')).toHaveTextContent('anonymous')
+      expect(screen.getByTestId('user')).toHaveTextContent('none')
+    })
   })
 
   describe('updateUser', () => {

@@ -110,13 +110,13 @@ describe('ProfileEditPage', () => {
       expect(screen.getAllByRole('textbox')).toHaveLength(2)
     })
 
-    it('アイコンのプレビューはあるが、「画像を変更」と「退会」は無い（今の段階では押しても何もできない）', async () => {
+    it('アイコンのプレビューと「画像を変更」はあるが、「退会」は無い（退会は後の Issue）', async () => {
       await openForm()
 
       expect(screen.getByText('アイコン')).toBeInTheDocument()
       // 表示名の頭文字が丸に出る（Avatar は装飾なので、文字で探す）。
       expect(screen.getByText('ア')).toBeInTheDocument()
-      expect(screen.queryByText('画像を変更')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '画像を変更' })).toBeEnabled()
       expect(screen.queryByText('退会')).not.toBeInTheDocument()
     })
 

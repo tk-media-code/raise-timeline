@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getMe, getUser, getUserPosts, updateMe } from './users'
+import { getMe, getUser, getUserPosts, updateAvatar, updateMe } from './users'
 
 const user = {
   id: 'u1',
@@ -90,5 +90,22 @@ describe('プロフィールの API', () => {
     expect(init.method).toBe('PATCH')
     expect(init.body).toBe('{"displayName":"新しい名前","bio":"直した"}')
     expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
+  })
+
+  it('updateAvatar は PUT /api/users/me/avatar に、file の部品の FormData を送り、avatarUrl を返す', async () => {
+    fetchMock.mockResolvedValueOnce(ok({ avatarUrl: 'https://example.com/a.png' }))
+    const file = new File(['x'], 'icon.png', { type: 'image/png' })
+
+    const result = await updateAvatar(file)
+
+    expect(result).toEqual({ avatarUrl: 'https://example.com/a.png' })
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(path).toBe('/api/users/me/avatar')
+    expect(init.method).toBe('PUT')
+    const form = init.body as FormData
+    expect(form).toBeInstanceOf(FormData)
+    expect(Array.from(form.keys())).toEqual(['file'])
+    expect((form.get('file') as File).name).toBe('icon.png')
+    expect(new Headers(init.headers).get('Content-Type')).toBeNull()
   })
 })

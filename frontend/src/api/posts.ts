@@ -15,10 +15,11 @@ export type Post = {
 }
 export type Page<T> = { items: T[]; nextCursor: string | null }
 
-// 画像の部品（images）は、画像の Issue が足すまで送らない。
-export function createPost(body: string): Promise<Post> {
+// 部品名は body と images。画像は選んだ順に同じ名前で足す（サーバーはその順を表示の順にする）。
+export function createPost(body: string, images: File[]): Promise<Post> {
   const form = new FormData()
   form.append('body', body)
+  for (const image of images) form.append('images', image)
   return apiFetch<Post>('/api/posts', { method: 'POST', body: form })
 }
 
