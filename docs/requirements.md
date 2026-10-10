@@ -152,16 +152,16 @@
 
 画像（Issue 5）が解消した仮の振る舞いは、表から外した。投稿の `images` を `[]`、`author.avatarUrl` を null にしていたことと、`images` の部品が 1 つでもあれば 503 にしていたこと、プロフィール編集のアイコン欄をプレビューだけにしていたことの 3 つ。今は、画像の保存先（S3）が設定されていれば画像を保存して表示し、設定が無いときだけ画像の操作が 503 になる。本文だけの投稿は、設定が無くても通る（[features/post.md](features/post.md)、[features/profile.md](features/profile.md)、[image-storage-design.md](image-storage-design.md)）。
 
+いいね（Issue 7）が解消した仮の振る舞いは、表から外した。Post の `likeCount` を 0、`likedByMe` を false で返していたことと、画面のいいね数を押せない表示（`role="img"`）にしていたことの 2 つ。今は、`likes` を数えた値を返し、いいねを付け外しでき、投稿詳細のいいね数から「いいねした人」の一覧へ移れる（[features/like.md](features/like.md)）。いいねの名前は、押せない表示のときと同じ「いいね n 件」のままにした。
+
 | Issue | 仮の振る舞い |
 | --- | --- |
-| 3〜6（投稿、プロフィール、画像、退会） | Post の `likeCount` は 0、`likedByMe` は false を返す。`likes` ができたら（Issue 7）数えた値に変える |
 | 3〜7 | Post の `commentCount` は 0 を返す。`comments` ができたら（Issue 8）数えた値に変える |
-| 3〜6 | 画面のいいね数は押せない表示にする（`role="img"`、名前は「いいね 0 件」）。いいね（Issue 7）が値と操作を足す。Issue 7 では「いいね」を同じ名前のボタンに替える |
 | 3〜7 | 画面のコメント数は押せない表示にする（`role="img"`、名前は「コメント 0 件」）。コメント（Issue 8）が値と操作を足す |
 | 3〜8 | ホームは「すべて」のタブだけ。「フォロー中」のタブと `GET /api/timeline/following` は Issue 9 で足す。それまでホームの既定は「すべて」で、URL の `tab` はまだ読まない（Issue 9 で足す） |
 | 4〜8（プロフィール） | `followersCount` と `followingCount` は 0、`isFollowing` は false を返す。`follows` ができたら数えた値に変える |
-| 3 | 「投稿を削除するといいねとコメントも消える」は、Issue 7 と 8 でそれぞれ確かめる |
-| 6（退会） | いいね・コメント・フォローの表はまだ無いので、退会で消えるのは利用者・投稿・画像・リフレッシュトークンだけ。後の Issue で表を作るときに `ON DELETE CASCADE` を付けるので、自動的に対象になる。「いいね・コメント・フォローも消える」は Issue 7〜9 でそれぞれ確かめる |
+| 3 | 「投稿を削除するといいねとコメントも消える」のうち、コメントは Issue 8 で確かめる（いいねは Issue 7 で確かめた） |
+| 6（退会） | コメント・フォローの表はまだ無いので、退会で消えるのは利用者・投稿・画像・いいね・リフレッシュトークンだけ。後の Issue で表を作るときに `ON DELETE CASCADE` を付けるので、自動的に対象になる。「コメント・フォローも消える」は Issue 8〜9 でそれぞれ確かめる（いいねは Issue 7 で確かめた） |
 | 2 | テスト用の DB（[test-strategy.md](test-strategy.md) の 3 章）はこの Issue で用意する |
 | 5 | JPEG の GPS 情報の除去もこの Issue で入れる |
 | 7〜8（いいねした人の一覧） | `isFollowing` は false を返す。SQL の `EXISTS (SELECT 1 FROM follows ...)` は Issue 9 で足す |
