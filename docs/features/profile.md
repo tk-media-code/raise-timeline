@@ -114,7 +114,7 @@
 
 ### 異常系
 
-- 本人の行がもう無い（更新で行が返らない）と、`PATCH /api/users/me` も `GET /api/users/me` も 401
+- 本人の行がもう無い（`GET` は行が無い、`PATCH` は更新で行が返らない）と、`PATCH /api/users/me` も `GET /api/users/me` も 401
 - 更新が `UPDATE … RETURNING` の 1 文で更新後の行を返す（Mapper）。無い id では空が返る
 - S3 への保存が失敗したら 500 で、`avatar_key` は変わらない
 - 古い画像の削除が失敗しても 200 で、WARN の出来事 `image.delete_failed` が出る（[logging-design.md](../logging-design.md) の 3 章）
