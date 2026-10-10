@@ -31,6 +31,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -122,8 +123,8 @@ class JwtAuthenticationTest {
 	}
 
 	@Test
-	@DisplayName("署名の正しいトークンでも、利用者がいなければ 401 UNAUTHENTICATED で、コントローラは呼ばれない")
-	void validSignatureButDeletedUserReturns401Problem() throws Exception {
+	@DisplayName("署名の正しいトークンでも、利用者がいなければ 401 UNAUTHENTICATED で、コントローラは呼ばれず、WARN と ERROR は出ない")
+	void validSignatureButDeletedUserReturns401Problem(CapturedOutput output) throws Exception {
 		when(userMapper.existsById(USER_ID)).thenReturn(false);
 
 		// whoami は呼ばれると sub をそのまま返す。呼ばれていれば 200 になるので、401 であることがコントローラに
@@ -132,6 +133,21 @@ class JwtAuthenticationTest {
 				.andExpect(status().isUnauthorized())
 				.andExpect(header().string("Content-Type", startsWith(PROBLEM_JSON)))
 				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+
+		verify(userMapper).existsById(USER_ID);
+		assertNoWarnOrError(output);
+	}
+
+	@Test
+	@DisplayName("存在確認で DB が失敗したら、401 ではなく 500 INTERNAL_ERROR になる（全員がログアウトされない）")
+	void existenceCheckFailureReturns500Problem() throws Exception {
+		when(userMapper.existsById(USER_ID)).thenThrow(new QueryTimeoutException("db down"));
+
+		// 401 にすると、画面は更新を試み、失敗すればログアウトさせてしまう。DB の障害は 500 のまま返す。
+		mockMvc.perform(get("/api/t/whoami").header("Authorization", "Bearer " + tokenService.issueAccessToken(USER_ID)))
+				.andExpect(status().isInternalServerError())
+				.andExpect(header().string("Content-Type", startsWith(PROBLEM_JSON)))
+				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
 	}
 
 	@Test

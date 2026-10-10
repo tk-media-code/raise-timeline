@@ -19,6 +19,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ import org.springframework.transaction.support.TransactionOperations;
  * （docs/error-handling-design.md の「DB の書き込みだけを {@code @Transactional} にする」）。
  * そのため {@code register} は {@link TransactionOperations} で書き込みの 2 つだけを 1 つのトランザクションにし、
  * {@code login} はトランザクションを持たない（読み 1 回と挿入 1 回で、まとめる必要がない）。
+ * ただし照合の間に本人が退会すると挿入が外部キー違反になるので、それは「メールアドレスまたはパスワードが違う」に変える。
  * {@code refresh} と {@code logout} は BCrypt を使わないので、{@code @Transactional} のまま。
  *
  * <p>ログには利用者 id を {@code MDC} で渡し、メールアドレス・パスワード・トークンは書かない。
@@ -47,6 +49,8 @@ public class AuthService {
 	/** 一意索引の名前（db/ の定義と合わせる）。競合のとき、どの項目が重なったかをこれで見分ける。 */
 	private static final String USERNAME_INDEX = "users_username_lower_key";
 	private static final String EMAIL_INDEX = "users_email_lower_key";
+	/** refresh_tokens の利用者の外部キーの名前（db/ の定義と合わせる）。ログインの途中で本人が退会したことを見分ける。 */
+	private static final String REFRESH_TOKEN_USER_FOREIGN_KEY = "refresh_tokens_user_id_fkey";
 
 	private final UserMapper userMapper;
 	private final RefreshTokenMapper refreshTokenMapper;
@@ -121,7 +125,14 @@ public class AuthService {
 			log.atInfo().addKeyValue(LogFields.EVENT_ACTION, LogEvents.AUTH_LOGIN_FAILED).log("ログインに失敗した");
 			throw new InvalidCredentialsException();
 		}
-		AuthResult result = issue(user, OffsetDateTime.now(clock));
+		AuthResult result;
+		try {
+			result = issue(user, OffsetDateTime.now(clock));
+		} catch (DataIntegrityViolationException e) {
+			// 照合（BCrypt）の間に本人が退会してコミットすると、挿入が外部キー違反になる。
+			// 利用者がいない場合と同じ失敗として返す。知らない制約は変換せず、そのまま投げて 500 にする。
+			throw translateLoginViolation(e);
+		}
 		MDC.put(LogFields.USER_ID, user.id().toString());
 		log.atInfo().addKeyValue(LogFields.EVENT_ACTION, LogEvents.AUTH_LOGIN_SUCCEEDED).log("ログインした");
 		return result;
@@ -171,6 +182,16 @@ public class AuthService {
 		refreshTokenMapper.insert(user.id(), tokenService.hashRefreshToken(refreshToken),
 				now.plus(props.refreshTokenTtl()));
 		return new AuthResult(tokenService.issueAccessToken(user.id()), refreshToken, userService.toMe(user));
+	}
+
+	private static RuntimeException translateLoginViolation(DataIntegrityViolationException e) {
+		String message = e.getMostSpecificCause().getMessage();
+		if (message != null && message.contains(REFRESH_TOKEN_USER_FOREIGN_KEY)) {
+			// 利用者 id もメールの有無も書かない。
+			log.atInfo().addKeyValue(LogFields.EVENT_ACTION, LogEvents.AUTH_LOGIN_FAILED).log("ログインに失敗した");
+			return new InvalidCredentialsException();
+		}
+		return e;
 	}
 
 	private static RuntimeException translate(DuplicateKeyException e) {

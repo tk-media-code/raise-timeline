@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -47,6 +48,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -241,6 +243,39 @@ class AuthServiceTest {
 		assertThat(lines.get(0).getFormattedMessage()).isEqualTo("ログインに失敗した");
 		assertThat(lines.get(0).getMDCPropertyMap().get("user.id")).isNull();
 		assertThat(allLogText()).doesNotContain(EMAIL).doesNotContain("wrong-password");
+	}
+
+	@Test
+	@DisplayName("ログインの途中で本人が退会していた（refresh_tokens の外部キー違反）なら、利用者がいない場合と同じ InvalidCredentialsException にする")
+	void loginTreatsWithdrawnUserAsInvalidCredentials() {
+		User stored = storedUser();
+		when(userMapper.findByEmail(EMAIL)).thenReturn(Optional.of(stored));
+		doThrow(new DataIntegrityViolationException(
+				"... violates foreign key constraint \"refresh_tokens_user_id_fkey\" ..."))
+				.when(refreshTokenMapper).insert(any(), anyString(), any());
+
+		assertThatThrownBy(() -> service.login(new LoginRequest(EMAIL, PASSWORD)))
+				.isInstanceOf(InvalidCredentialsException.class);
+
+		List<ILoggingEvent> lines = eventsOf("auth.login.failed");
+		assertThat(lines).hasSize(1);
+		assertThat(lines.get(0).getFormattedMessage()).isEqualTo("ログインに失敗した");
+		assertThat(lines.get(0).getMDCPropertyMap().get("user.id")).isNull();
+		assertThat(eventsOf("auth.login.succeeded")).isEmpty();
+		assertThat(allLogText()).doesNotContain(EMAIL).doesNotContain(PASSWORD);
+	}
+
+	@Test
+	@DisplayName("ログインの挿入がほかの制約に違反したときは、変換せずそのまま投げる")
+	void loginRethrowsUnknownIntegrityViolation() {
+		User stored = storedUser();
+		when(userMapper.findByEmail(EMAIL)).thenReturn(Optional.of(stored));
+		DataIntegrityViolationException original = new DataIntegrityViolationException("... other_key ...");
+		doThrow(original).when(refreshTokenMapper).insert(any(), anyString(), any());
+
+		assertThatThrownBy(() -> service.login(new LoginRequest(EMAIL, PASSWORD))).isSameAs(original);
+
+		assertThat(eventsOf("auth.login.failed")).isEmpty();
 	}
 
 	@Test

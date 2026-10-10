@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -22,6 +23,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
@@ -125,6 +127,11 @@ class WithdrawalServiceTest {
 		assertThat(calls).containsExactly(true, true, true, false);
 		assertThat(transactions.executions).isEqualTo(1);
 		verify(imageCleaner).deleteQuietly(KEYS);
+		// 押さえてから集めないと、進行中の投稿が足した画像のキーを取りこぼし、S3 に消し残しが出る。
+		InOrder order = inOrder(userMapper);
+		order.verify(userMapper).lockById(USER_ID);
+		order.verify(userMapper).findImageKeysOf(USER_ID);
+		order.verify(userMapper).deleteById(USER_ID);
 	}
 
 	@Test
