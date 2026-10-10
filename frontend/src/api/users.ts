@@ -4,7 +4,7 @@ import type { Page, Post, UserSummary } from './posts'
 
 // 他人にも見せる形。メールアドレスは本人（Me）にしか返らない。
 export type UserDetail = Omit<Me, 'email'>
-// 一覧の 1 行に出す形。isFollowing は Issue 9（フォロー）まで常に false。
+// 一覧の 1 行に出す形。isFollowing は見ている人がその人をフォローしているか。
 export type UserCard = UserSummary & { bio: string; isFollowing: boolean }
 export type ProfileInput = { displayName: string; bio: string }
 

@@ -2,9 +2,10 @@ import type { MouseEvent } from 'react'
 import { useNavigate } from 'react-router'
 import type { UserCard } from '../../api/users'
 import { shouldSkipCardNavigation } from '../../components/cardClick'
+import { FollowButton } from '../follows/FollowButton'
 import { UserLink } from './UserLink'
 
-// 一覧の 1 行に出すユーザー。フォローボタン（Issue 9）が中に入るので、カード全体は <a> にしない。
+// 一覧の 1 行に出すユーザー。右端のフォローボタン（自分には出ない）が中に入るので、カード全体は <a> にしない。
 export function UserCardItem({ user }: { user: UserCard }) {
   const navigate = useNavigate()
   const profilePath = `/users/${user.username}`
@@ -19,7 +20,13 @@ export function UserCardItem({ user }: { user: UserCard }) {
     // クリックでの移動はマウス向けの近道。キーボードと読み上げは、名前のリンクからプロフィールへ行ける。
     // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
     <article onClick={openProfile} className="cursor-pointer border-b border-gray-200 px-4 py-3 hover:bg-gray-50">
-      <UserLink user={user} />
+      <div className="flex items-start justify-between gap-3">
+        {/* 名前は折り返し、ボタンは縮めない。 */}
+        <div className="min-w-0">
+          <UserLink user={user} />
+        </div>
+        <FollowButton user={user} />
+      </div>
       {/* 改行はそのまま見せる。本文は文字として出すので、HTML は解釈されない。 */}
       {user.bio ? <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{user.bio}</p> : null}
     </article>

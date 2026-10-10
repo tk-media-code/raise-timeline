@@ -1,9 +1,16 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Route, Routes } from 'react-router'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UserCard } from '../../api/users'
+import { TestProviders } from '../../test/providers'
 import { UserCardItem } from './UserCardItem'
+
+const api = vi.hoisted(() => ({ followUser: vi.fn(), unfollowUser: vi.fn() }))
+vi.mock('../../api/follows', () => api)
+
+const useAuth = vi.hoisted(() => vi.fn())
+vi.mock('../../auth/AuthProvider', () => ({ useAuth }))
 
 function makeUser(overrides: Partial<UserCard> = {}): UserCard {
   return {
@@ -19,14 +26,20 @@ function makeUser(overrides: Partial<UserCard> = {}): UserCard {
 
 function renderCard(user: UserCard = makeUser()) {
   return render(
-    <MemoryRouter initialEntries={['/']}>
+    <TestProviders>
       <Routes>
         <Route path="/" element={<UserCardItem user={user} />} />
         <Route path="/users/:username" element={<p>プロフィールの画面</p>} />
       </Routes>
-    </MemoryRouter>,
+    </TestProviders>,
   )
 }
+
+beforeEach(() => {
+  api.followUser.mockReset()
+  api.followUser.mockResolvedValue(undefined)
+  useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u9', username: 'bob' } })
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -67,5 +80,26 @@ describe('UserCardItem', () => {
     await user.click(screen.getByText('自己紹介'))
 
     expect(screen.queryByText('プロフィールの画面')).not.toBeInTheDocument()
+  })
+
+  it('他人のカードの右端にフォローボタンが出て、自分のカードには出ない', () => {
+    const { unmount } = renderCard()
+
+    expect(screen.getByRole('button', { name: 'アリスさんをフォロー' })).toBeInTheDocument()
+    unmount()
+
+    useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u1', username: 'alice' } })
+    renderCard()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('フォローボタンを押しても、プロフィールへ移らない', async () => {
+    const user = userEvent.setup()
+    renderCard()
+
+    await user.click(screen.getByRole('button', { name: 'アリスさんをフォロー' }))
+
+    expect(screen.queryByText('プロフィールの画面')).not.toBeInTheDocument()
+    await waitFor(() => expect(api.followUser).toHaveBeenCalledWith('alice'))
   })
 })

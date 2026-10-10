@@ -1,7 +1,8 @@
-// タイムラインの一覧のキー。root は種類にかかわらず全部、all は「すべて」だけを指す。
+// タイムラインの一覧のキー。root は種類にかかわらず全部、all は「すべて」、following は「フォロー中」だけを指す。
 export const timelineKeys = {
   root: ['timeline'] as const,
   all: ['timeline', 'all'] as const,
+  following: ['timeline', 'following'] as const,
 }
 
 // 投稿詳細のキー。root は全部の詳細を指す（名前を変えても、印を付ける側が取りこぼさないよう定数にしてある）。

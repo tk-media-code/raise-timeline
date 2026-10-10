@@ -3,7 +3,10 @@ import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-q
 import { useIsMounted } from '../posts/useIsMounted'
 
 export type OptimisticToggleOptions = {
-  // 同じ対象のボタンが画面に複数あっても状態を 1 つにする鍵。useMutation の scope の id にも使う（例 `like:<postId>`）
+  // 同じ対象のボタンが画面に複数あっても状態を 1 つにする鍵。useMutation の scope の id にも使う（例 `like:<postId>`）。
+  // コンポーネントが画面にある間は変えない。useMutation の scope はマウント時の値で固定され、途中で変えると
+  // 状態の鍵と要求の順番待ちの鍵がずれる。対象が変わるなら、呼び出し側が key を付けてコンポーネントごと作り直す。
+  // ToggleSync のマップも useMutation の scope も機能をまたいで共有されるので、`like:` `follow:` のような接頭辞で一意にする。
   scopeId: string
   // 同期の状態が無いときに始める値（表示中のデータの状態）
   current: boolean
@@ -70,7 +73,9 @@ export function useOptimisticToggle(options: OptimisticToggleOptions): () => voi
   const client = useQueryClient()
   const mounted = useIsMounted()
   const { scopeId } = options
-  // options は描画のたびに作り直される。順番待ちの間や、押したあとに呼ばれる関数が、最初の描画の古い値を握らないよう、最新を読む。
+  // options は描画のたびに作り直される。順番待ちの間や、押したあとに呼ばれる関数（mutationFn・onError・onSettled）が、
+  // 最初の描画の古い値を握らないよう、最新を読む。押す関数は、その描画の options を直接使う
+  // （ref は commit のあとの effect で更新されるので、commit と effect の間に押されると 1 つ前の描画の値を読んでしまう）。
   const latest = useRef(options)
   useEffect(() => {
     latest.current = options
@@ -111,7 +116,7 @@ export function useOptimisticToggle(options: OptimisticToggleOptions): () => voi
   })
 
   return () => {
-    const { current, write, onRejected } = latest.current
+    const { current, write, onRejected } = options
     const syncs = syncsOf(client)
     let sync = syncs.get(scopeId)
     // 要求が生きていないのに残っている ToggleSync は、clear() で順番待ちの要求が消えた名残り。捨てて、表示中のデータから作り直す。
