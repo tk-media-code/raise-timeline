@@ -259,4 +259,71 @@ describe('useToggleLike', () => {
     await waitFor(() => expect(client.getQueryData(likersKeys.of('p1'))).toBeUndefined())
     expect(client.getQueryData(likersKeys.of('p2'))).toBeDefined()
   })
+
+  // アプリの QueryClient は 1 つで、ログアウトやセッション切れで clear() される。MutationCache が空になり、
+  // 順番待ちの要求は二度と動かない（onSettled も来ない）。
+  describe('client.clear() のあと', () => {
+    function putAgainAfterClear(post: Post = makePost()) {
+      client.setQueryData<Data>(timelineKeys.all, { pages: [{ items: [post], nextCursor: null }], pageParams: [null] })
+      client.setQueryData(postKey(post.id), post)
+    }
+
+    it('順番待ちの要求が消えたあとに押すと、post.likedByMe から始め直し、要求が全部終わると likers のキャッシュが消える', async () => {
+      const likes = holdCalls(api.likePost)
+      const { result } = setup()
+      await pressAndWaitSent(result.current, api.likePost)
+      press(result.current)
+      act(() => {
+        client.clear()
+      })
+      await settle(likes, 0, { reject: apiError({ status: 401 }) })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      putAgainAfterClear()
+      client.setQueryData(likersKeys.of('p1'), { pages: [], pageParams: [] })
+
+      await pressAndWaitSent(result.current, api.likePost)
+
+      await expectShown(true, 3)
+      await settle(likes, 1)
+      await waitFor(() => expect(client.getQueryData(likersKeys.of('p1'))).toBeUndefined())
+      await expectShown(true, 3)
+      expect(api.unlikePost).not.toHaveBeenCalled()
+    })
+
+    it('clear の前から送信中だった要求が後で終わっても、clear の後に置いたキャッシュを書き換えない', async () => {
+      const likes = holdCalls(api.likePost)
+      const { result } = setup()
+      await pressAndWaitSent(result.current, api.likePost)
+      act(() => {
+        client.clear()
+      })
+      putAgainAfterClear()
+      client.setQueryData(likersKeys.of('p1'), { pages: [], pageParams: [] })
+
+      await settle(likes, 0)
+
+      expect(listed()).toMatchObject({ likedByMe: false, likeCount: 2 })
+      expect(detail()).toMatchObject({ likedByMe: false, likeCount: 2 })
+      expect(client.getQueryData(likersKeys.of('p1'))).toBeDefined()
+    })
+
+    it('clear の前から送信中だった要求が、押し直したあとで失敗しても、通知も巻き戻しも出さない', async () => {
+      const likes = holdCalls(api.likePost)
+      const { result } = setup()
+      await pressAndWaitSent(result.current, api.likePost)
+      act(() => {
+        client.clear()
+      })
+      putAgainAfterClear()
+      await pressAndWaitSent(result.current, api.likePost)
+      await expectShown(true, 3)
+
+      await settle(likes, 0, { reject: apiError({ status: 500, requestId: 'r1' }) })
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      await expectShown(true, 3)
+      await settle(likes, 1)
+      await expectShown(true, 3)
+    })
+  })
 })

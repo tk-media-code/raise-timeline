@@ -21,6 +21,11 @@ type Variables = { sync: LikeSync; generation: number }
 // テストは毎回新しい QueryClient を作るので、状態が持ち越されない。
 const syncsByClient = new WeakMap<QueryClient, Map<string, LikeSync>>()
 
+// useMutation の scope と、生きている要求の判定で同じ文字列を使う。
+function scopeIdOf(postId: string): string {
+  return `like:${postId}`
+}
+
 function syncsOf(client: QueryClient): Map<string, LikeSync> {
   let syncs = syncsByClient.get(client)
   if (!syncs) {
@@ -28,6 +33,22 @@ function syncsOf(client: QueryClient): Map<string, LikeSync> {
     syncsByClient.set(client, syncs)
   }
   return syncs
+}
+
+// その投稿の要求が 1 つでも生きているか（待機中・送信中・onError / onSettled の実行中を含む）。
+// QueryClient.clear()（ログアウトやセッション切れで AuthProvider が呼ぶ）は MutationCache を空にするので、
+// 順番待ちの要求は二度と動かず、onSettled も来ない。すると pending が 0 に戻らず、LikeSync がマップに残り続ける。
+function hasLiveRequests(client: QueryClient, postId: string): boolean {
+  const scopeId = scopeIdOf(postId)
+  return client.isMutating({ predicate: (mutation) => mutation.options.scope?.id === scopeId }) > 0
+}
+
+// 今も使われている LikeSync か。マップの現役であり、かつ要求が生きていること。
+// clear() のあとに押されると、LikeSync は作り直されてマップの現役が入れ替わる。押されないまま、
+// clear() の前から送信中だった要求が終わった場合は、マップに残っているが要求が生きていない。
+// どちらの要求も、後始末（キャッシュへの書き込み・通知）をしてはいけない。新しいセッションのキャッシュを書き換えてしまうため。
+function isCurrent(client: QueryClient, postId: string, sync: LikeSync): boolean {
+  return syncsOf(client).get(postId) === sync && hasLiveRequests(client, postId)
 }
 
 // いいねの付け外しを、押した瞬間に画面へ反映し、要求は 1 つずつ送って、最後に押した状態に収束させる。
@@ -47,7 +68,7 @@ export function useToggleLike(post: Post, onRemoved?: () => void): () => void {
   const postId = post.id
 
   const mutation = useMutation<void, unknown, Variables>({
-    scope: { id: `like:${postId}` },
+    scope: { id: scopeIdOf(postId) },
     mutationFn: async ({ sync, generation }) => {
       if (generation !== sync.generation) return
       const target = sync.displayed
@@ -59,6 +80,8 @@ export function useToggleLike(post: Post, onRemoved?: () => void): () => void {
     onError: async (error, { sync }) => {
       sync.generation += 1
       sync.displayed = sync.confirmed
+      // 現役でない LikeSync（clear() で捨てられた分）は、書き込みも通知もしない。
+      if (!isCurrent(client, postId, sync)) return
       await setLikedInCache(client, postId, sync.confirmed)
       if (isApiError(error, 404)) {
         toast.show(failureMessage(error), 'error')
@@ -69,6 +92,11 @@ export function useToggleLike(post: Post, onRemoved?: () => void): () => void {
     },
     onSettled: async (_data, _error, { sync }) => {
       sync.pending -= 1
+      if (!isCurrent(client, postId, sync)) {
+        // 捨てられた LikeSync がマップに残っていれば片付ける。入れ替わっていれば、新しい方には触れない。
+        if (syncsOf(client).get(postId) === sync) syncsOf(client).delete(postId)
+        return
+      }
       if (sync.pending > 0) return
       syncsOf(client).delete(postId)
       // 要求の間に一覧が読み直されて古い状態が入っていても、保存済みの状態に直す。
@@ -80,6 +108,8 @@ export function useToggleLike(post: Post, onRemoved?: () => void): () => void {
   return () => {
     const syncs = syncsOf(client)
     let sync = syncs.get(postId)
+    // 要求が生きていないのに残っている LikeSync は、clear() で順番待ちの要求が消えた名残り。捨てて、表示中の投稿から作り直す。
+    if (sync && !hasLiveRequests(client, postId)) sync = undefined
     if (!sync) {
       sync = { displayed: post.likedByMe, confirmed: post.likedByMe, generation: 0, pending: 0, sending: false }
       syncs.set(postId, sync)
