@@ -143,6 +143,17 @@ describe('AppLayout', () => {
     expect(screen.getAllByRole('button', { name: '投稿する' })).toHaveLength(2)
   })
 
+  it('＋ボタンを出す画面では main の下の余白が pb-36、設定の画面では pb-16', () => {
+    const { unmount } = renderLayout('/')
+    expect(screen.getByRole('main')).toHaveClass('pb-36', 'md:pb-0')
+    expect(screen.getByRole('main')).not.toHaveClass('pb-16')
+    unmount()
+
+    renderLayout('/settings/profile')
+    expect(screen.getByRole('main')).toHaveClass('pb-16', 'md:pb-0')
+    expect(screen.getByRole('main')).not.toHaveClass('pb-36')
+  })
+
   it('ブラウザが先にダイアログを閉じても（open のまま close()）、状態が合い、もう一度開ける', async () => {
     renderLayout()
     const nav = screen.getByRole('navigation', { name: 'メインメニュー' })

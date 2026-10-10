@@ -82,7 +82,7 @@ function stubTimelineFetch() {
     'fetch',
     vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
-      const body = url.startsWith('/api/timeline/all')
+      const body = url.startsWith('/api/timeline/')
         ? { items: [], nextCursor: null }
         : url === `/api/posts/${detailPost.id}`
           ? detailPost

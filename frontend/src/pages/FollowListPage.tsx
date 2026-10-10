@@ -1,17 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router'
+import { useParams } from 'react-router'
 import { isNotFound } from '../api/client'
 import { getUser } from '../api/users'
 import { InfiniteList } from '../components/InfiniteList'
 import { NotFoundMessage } from '../components/NotFoundMessage'
 import { RetryMessage } from '../components/RetryMessage'
 import { Spinner } from '../components/Spinner'
+import { TabNav } from '../components/TabNav'
 import { USERNAME_PATTERN } from '../features/auth/validation'
 import { useFollowList, type FollowListKind } from '../features/follows/useFollowList'
 import { userKey } from '../features/profile/queryKeys'
 import { UserCardItem } from '../features/users/UserCardItem'
-
-const TAB_BASE = 'inline-flex min-h-11 min-w-11 items-center px-4 focus:outline-2 focus:outline-offset-2 focus:outline-sky-600'
 
 // 一覧の名前と空のときの文。タブの並び（フォロー中、フォロワー）とは別に、kind から引く。
 const LISTS: Record<FollowListKind, { label: string; empty: string }> = {
@@ -35,27 +34,17 @@ export default function FollowListPage({ kind }: { kind: FollowListKind }) {
     return <RetryMessage onRetry={() => void profile.refetch()} />
   }
 
-  const tabs = [
-    { to: `/users/${username}/following`, kind: 'following' as const },
-    { to: `/users/${username}/followers`, kind: 'followers' as const },
-  ]
+  const tabs = (['following', 'followers'] as const).map((tabKind) => ({
+    to: `/users/${username}/${tabKind}`,
+    label: LISTS[tabKind].label,
+    current: tabKind === kind,
+  }))
 
   return (
     <div className="flex flex-col">
       {/* 上部バーに出るのは「フォロー中」「フォロワー」で、誰の一覧かは出ない。見出しは表示名のまま、どの幅でも見せる。 */}
       <h1 className="p-4 text-2xl font-bold [overflow-wrap:anywhere]">{profile.data.displayName}</h1>
-      <nav aria-label="フォロー中とフォロワー" className="flex border-b border-gray-200">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.kind}
-            to={tab.to}
-            aria-current={tab.kind === kind ? 'page' : undefined}
-            className={tab.kind === kind ? `${TAB_BASE} border-b-2 border-sky-600 font-bold` : TAB_BASE}
-          >
-            {LISTS[tab.kind].label}
-          </Link>
-        ))}
-      </nav>
+      <TabNav label="フォロー中とフォロワー" tabs={tabs} />
       <InfiniteList
         query={list}
         getKey={(user) => user.id}

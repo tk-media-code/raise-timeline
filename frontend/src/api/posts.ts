@@ -39,3 +39,8 @@ export function getTimelineAll(cursor: string | null): Promise<Page<Post>> {
   const query = cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`
   return apiFetch<Page<Post>>(`/api/timeline/all${query}`)
 }
+
+export function getTimelineFollowing(cursor: string | null): Promise<Page<Post>> {
+  const query = cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`
+  return apiFetch<Page<Post>>(`/api/timeline/following${query}`)
+}

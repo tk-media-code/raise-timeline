@@ -49,6 +49,30 @@ describe('prependPost', () => {
     expect(data?.pageParams).toEqual([null, 'c2'])
   })
 
+  it('フォロー中とすべての 1 ページ目の先頭に足し、2 ページ目以降は変えない', async () => {
+    const client = new QueryClient()
+    client.setQueryData(timelineKeys.all, twoPages())
+    client.setQueryData(timelineKeys.following, twoPages())
+
+    await prependPost(client, makePost('new'))
+
+    for (const key of [timelineKeys.following, timelineKeys.all]) {
+      const data = client.getQueryData<Data>(key)
+      expect(ids(data, 0)).toEqual(['new', 'a', 'b'])
+      expect(ids(data, 1)).toEqual(['c', 'd'])
+    }
+  })
+
+  it('フォロー中だけ読み込み済みなら、すべてのキャッシュは作らない', async () => {
+    const client = new QueryClient()
+    client.setQueryData(timelineKeys.following, twoPages())
+
+    await prependPost(client, makePost('new'))
+
+    expect(ids(client.getQueryData<Data>(timelineKeys.following), 0)).toEqual(['new', 'a', 'b'])
+    expect(client.getQueryData(timelineKeys.all)).toBeUndefined()
+  })
+
   it('同じ id の投稿が既にあれば、重複せず先頭に移る', async () => {
     const client = new QueryClient()
     client.setQueryData(timelineKeys.all, twoPages())

@@ -121,7 +121,9 @@ export function AppLayout() {
         </div>
       </nav>
 
-      <main className="mx-auto w-full max-w-[800px] pb-16 md:pb-0">
+      {/* 下の余白は、固定の下部タブ（pb-16）に隠れない分。右下の丸い＋ボタンがあるスマホ幅では、さらにその分（pb-36）を空ける。
+          空けないと、一覧の最後のカードのフォローボタンが＋ボタンの下に隠れて押せない。 */}
+      <main className={'mx-auto w-full max-w-[800px] md:pb-0 ' + (showPhoneComposeButton ? 'pb-36' : 'pb-16')}>
         <Outlet />
       </main>
 
