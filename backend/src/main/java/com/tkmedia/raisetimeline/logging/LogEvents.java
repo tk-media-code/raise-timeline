@@ -17,6 +17,7 @@ public final class LogEvents {
 	public static final String AUTH_LOGIN_FAILED = "auth.login.failed";
 	public static final String AUTH_REFRESH_FAILED = "auth.refresh.failed";
 	public static final String AUTH_LOGOUT = "auth.logout";
+	public static final String USER_WITHDREW = "user.withdrew";
 
 	// 投稿。docs/logging-design.md 3 章。
 	public static final String POST_DELETED = "post.deleted";

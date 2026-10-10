@@ -39,9 +39,20 @@
 		SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower(#{email}))
 	</select>
 
-	<update id="updateProfile">
+	<select id="existsById" resultType="boolean">
+		SELECT EXISTS (SELECT 1 FROM users WHERE id = #{id})
+	</select>
+
+	<!--
+		更新した行を同じ文の RETURNING で受ける。更新してから SELECT し直すと、その間に退会されて行が消えたとき、
+		更新は成功したのに読み直しだけが空になる。1 文なら、行があれば更新後の行、無ければ空のどちらかに決まる。
+		INSERT ... RETURNING と同じ理由で、<select> でも flushCache="true" useCache="false" にする。
+	-->
+	<select id="updateProfile" resultType="com.tkmedia.raisetimeline.domain.User"
+			flushCache="true" useCache="false">
 		UPDATE users SET display_name = #{displayName}, bio = #{bio}, updated_at = #{updatedAt} WHERE id = #{id}
-	</update>
+		RETURNING <include refid="columns"/>
+	</select>
 
 	<!--
 		差し替え前のキーを、UPDATE と同じ文の RETURNING OLD で受ける（PostgreSQL 18 の構文）。
@@ -55,5 +66,28 @@
 		UPDATE users SET avatar_key = #{key}, updated_at = #{updatedAt} WHERE id = #{id}
 		RETURNING id AS user_id, OLD.avatar_key AS old_key
 	</select>
+
+	<!--
+		FOR UPDATE は行を押さえる。同じ人の投稿やアイコンの更新は、users の行を外部キーの検査で共有ロックするので、
+		進行中のものがあればここで待ち、押さえたあとに新しい挿入は入れない。
+		INSERT ... RETURNING と同じ理由で、<select> でも flushCache="true" useCache="false" にする。
+	-->
+	<select id="lockById" resultType="java.util.UUID" flushCache="true" useCache="false">
+		SELECT id FROM users WHERE id = #{id} FOR UPDATE
+	</select>
+
+	<!-- 投稿の画像とアイコンを UNION ALL で 1 本にする。アイコンを設定していない人は avatar_key が null なので入れない。 -->
+	<select id="findImageKeysOf" resultType="java.lang.String">
+		SELECT i.object_key
+		FROM post_images i
+		JOIN posts p ON p.id = i.post_id
+		WHERE p.user_id = #{userId}
+		UNION ALL
+		SELECT avatar_key FROM users WHERE id = #{userId} AND avatar_key IS NOT NULL
+	</select>
+
+	<delete id="deleteById">
+		DELETE FROM users WHERE id = #{id}
+	</delete>
 
 </mapper>

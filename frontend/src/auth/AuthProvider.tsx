@@ -24,6 +24,9 @@ export type AuthContextValue = {
   signedOut: boolean
   signIn: (response: AuthResponse) => void
   signOut: () => Promise<void>
+  // ログアウトの API を呼ばずに、この端末の状態だけを捨てて signedOut にする。退会のあとに使う
+  // （Cookie はサーバーの応答が消していて、呼ぶべきログアウトの相手がもういない）。
+  signOutLocally: () => void
   // プロフィールを保存したあとに、ログイン中の利用者の表示を新しい内容に差し替える。
   // トークンやセッションは触らない。今の利用者と id が違うときや、ログイン状態でないときは何もしない。
   updateUser: (user: Me) => void
@@ -117,12 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     announceAuthChanged()
   }, [])
 
-  const signOut = useCallback(async () => {
-    try {
-      await logout()
-    } catch {
-      // サーバーに届かなくても、この端末では必ずログアウト状態にする。
-    }
+  // この端末の状態を捨てて signedOut にする。signOut（API のあと）と退会のあとで共有する。
+  const signOutLocally = useCallback(() => {
     // 進行中の更新が、消したトークンを書き戻さないようにする。
     advanceSessionGeneration()
     setAccessToken(null)
@@ -130,9 +129,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState(SIGNED_OUT)
     // 前の利用者のキャッシュを残さない。
     queryClient.clear()
-    // API が失敗したときも知らせる。届かなかった側のタブも、次に取り直せば同じ結果になる。
+    // 他のタブにも知らせる。サーバーに届かなかったとき（signOut の API の失敗）も同じ。
+    // 届かなかった側のタブも、次に取り直せば同じ結果になる。
     announceAuthChanged()
   }, [])
+
+  const signOut = useCallback(async () => {
+    try {
+      await logout()
+    } catch {
+      // サーバーに届かなくても、この端末では必ずログアウト状態にする。
+    }
+    signOutLocally()
+  }, [signOutLocally])
 
   // 保存の応答は、送ってから返るまでに時間がかかる。その間にログアウトや別の人のログインがあり得るので、
   // 呼ばれた時点の状態ではなく、最新の状態と突き合わせる（関数形の setState）。
@@ -158,10 +167,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signedOut: state.signedOut,
       signIn,
       signOut,
+      signOutLocally,
       updateUser,
       updateAvatarUrl,
     }),
-    [state, signIn, signOut, updateUser, updateAvatarUrl],
+    [state, signIn, signOut, signOutLocally, updateUser, updateAvatarUrl],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>

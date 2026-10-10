@@ -1,6 +1,7 @@
 package com.tkmedia.raisetimeline.mapper;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,8 +29,14 @@ public interface UserMapper {
 
 	boolean existsByEmail(String email);
 
-	/** 表示名・自己紹介・更新日時を変え、変えた行数を返す。無い id では 0。ほかの列は触らない。 */
-	int updateProfile(@Param("id") UUID id, @Param("displayName") String displayName, @Param("bio") String bio,
+	/** 行があるか。アクセストークンを受けるたびに引くので、列を読まず主キーの有無だけを確かめる。 */
+	boolean existsById(UUID id);
+
+	/**
+	 * 表示名・自己紹介・更新日時を変え、更新後の行を返す。無い id では空。ほかの列は触らない。
+	 * 更新後の行は同じ文の {@code RETURNING} が返す（更新してから読み直すと、その間に行が消えたとき更新と読み取りの結果がずれる）。
+	 */
+	Optional<User> updateProfile(@Param("id") UUID id, @Param("displayName") String displayName, @Param("bio") String bio,
 			@Param("updatedAt") OffsetDateTime updatedAt);
 
 	/**
@@ -39,5 +46,20 @@ public interface UserMapper {
 	 */
 	Optional<ReplacedAvatar> replaceAvatarKey(@Param("id") UUID id, @Param("key") String key,
 			@Param("updatedAt") OffsetDateTime updatedAt);
+
+	/**
+	 * 行を {@code FOR UPDATE} で押さえ、あれば id を返す。無い id では空。
+	 * 退会が、同じ人の進行中の投稿やアイコンの更新（外部キーの検査が行を共有ロックする）を待つために使う。
+	 */
+	Optional<UUID> lockById(UUID id);
+
+	/**
+	 * その人の S3 のキー（投稿の画像と、設定していればアイコン）。行を消すと連鎖して画像の行も消えるので、
+	 * 消す前に集める。順は決まっていない。
+	 */
+	List<String> findImageKeysOf(UUID userId);
+
+	/** 行を消し、消した行数を返す。投稿・画像の行・リフレッシュトークンは外部キーの連鎖で一緒に消える。 */
+	int deleteById(UUID id);
 
 }

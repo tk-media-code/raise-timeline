@@ -7,12 +7,19 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
+import static org.mockito.Mockito.doThrow;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.config.ClockConfig;
 import com.tkmedia.raisetimeline.config.LoggingConfig;
 import com.tkmedia.raisetimeline.config.SecurityConfig;
@@ -23,12 +30,15 @@ import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
 import com.tkmedia.raisetimeline.dto.UserDetail;
 import com.tkmedia.raisetimeline.dto.UserSummary;
 import com.tkmedia.raisetimeline.error.ApiExceptionHandler;
+import com.tkmedia.raisetimeline.error.InvalidPasswordException;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
+import com.tkmedia.raisetimeline.error.UnauthenticatedException;
 import com.tkmedia.raisetimeline.dto.AvatarResponse;
 import com.tkmedia.raisetimeline.service.AvatarService;
 import com.tkmedia.raisetimeline.service.UserPostsService;
 import com.tkmedia.raisetimeline.service.UserService;
+import com.tkmedia.raisetimeline.service.WithdrawalService;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -51,11 +61,17 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @WebMvcTest(controllers = UserController.class)
 @Import({ SecurityConfig.class, ApiExceptionHandler.class, LoggingConfig.class, ClockConfig.class,
-		ProblemDetailWriter.class })
+		ProblemDetailWriter.class, RefreshTokenCookies.class })
 @TestPropertySource(properties = {
 		"auth.jwt-secret=dGVzdC1vbmx5LWp3dC1zZWNyZXQtMzItYnl0ZXMtbG9uZyE=",
-		"auth.issuer=raise-timeline" })
+		"auth.issuer=raise-timeline",
+		"auth.cookie-name=refresh_token",
+		"auth.cookie-secure=false" })
 class UserControllerTest {
+
+	// jwtDecoder が存在確認に使う。本物のトークンを送るテストは existsById を true にスタブする。
+	@MockitoBean
+	private UserMapper userMapper;
 
 	private static final UUID USER_ID = UUID.fromString("0199b000-0000-7000-8000-000000000001");
 
@@ -70,6 +86,9 @@ class UserControllerTest {
 
 	@MockitoBean
 	private AvatarService avatarService;
+
+	@MockitoBean
+	private WithdrawalService withdrawalService;
 
 	private static RequestPostProcessor me() {
 		return jwt().jwt(j -> j.subject(USER_ID.toString()));
@@ -98,18 +117,18 @@ class UserControllerTest {
 	}
 
 	@Test
-	@DisplayName("利用者がいなければ 404 の Problem Details になる")
-	void meOfMissingUserReturns404() throws Exception {
-		when(userService.getMe(USER_ID)).thenThrow(new NotFoundException());
+	@DisplayName("本人の行が無ければ 401 UNAUTHENTICATED の Problem Details になる")
+	void meOfMissingUserReturns401() throws Exception {
+		when(userService.getMe(USER_ID)).thenThrow(new UnauthenticatedException());
 
 		mockMvc.perform(get("/api/users/me").with(jwt().jwt(j -> j.subject(USER_ID.toString()))))
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.code").value("NOT_FOUND"));
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 	}
 
 	@ParameterizedTest(name = "{0}")
 	@ValueSource(strings = { "GET /api/users/alice", "GET /api/users/alice/posts", "PATCH /api/users/me",
-			"PUT /api/users/me/avatar" })
+			"PUT /api/users/me/avatar", "DELETE /api/users/me" })
 	@DisplayName("Bearer が無いプロフィールの API は 401 UNAUTHENTICATED になり、サービスは呼ばれない")
 	void requestsWithoutBearerReturn401(String route) throws Exception {
 		String[] parts = route.split(" ");
@@ -118,6 +137,8 @@ class UserControllerTest {
 					.content("{\"displayName\":\"アリス\",\"bio\":\"\"}".getBytes(StandardCharsets.UTF_8));
 			case "PUT" -> multipart(HttpMethod.PUT, parts[1])
 					.file(new MockMultipartFile("file", "a.png", "image/png", new byte[] { 1 }));
+			case "DELETE" -> delete(parts[1]).contentType(MediaType.APPLICATION_JSON)
+					.content("{\"password\":\"pw\"}".getBytes(StandardCharsets.UTF_8));
 			default -> get(parts[1]);
 		};
 
@@ -125,7 +146,7 @@ class UserControllerTest {
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 
-		verifyNoInteractions(userService, userPostsService, avatarService);
+		verifyNoInteractions(userService, userPostsService, avatarService, withdrawalService);
 	}
 
 	@Test
@@ -257,6 +278,59 @@ class UserControllerTest {
 				.andExpect(status().isBadRequest());
 
 		verifyNoInteractions(avatarService);
+	}
+
+	@Test
+	@DisplayName("DELETE /api/users/me は正しい要求で 204 になり、Cookie を消す")
+	void withdrawReturns204AndClearsCookie() throws Exception {
+		mockMvc.perform(delete("/api/users/me").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"password\":\"pw\"}".getBytes(StandardCharsets.UTF_8)).with(me()))
+				.andExpect(status().isNoContent())
+				.andExpect(header().string("Set-Cookie", startsWith("refresh_token=;")))
+				.andExpect(header().string("Set-Cookie", containsString("Max-Age=0")))
+				.andExpect(header().string("Set-Cookie", containsString("Path=/api/auth")))
+				.andExpect(header().string("Set-Cookie", containsString("HttpOnly")))
+				.andExpect(header().string("Set-Cookie", containsString("SameSite=Lax")))
+				.andExpect(header().string("Set-Cookie", not(containsString("Secure"))));
+
+		verify(withdrawalService).withdraw(USER_ID, "pw");
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@ValueSource(strings = { "{\"password\":\"\"}", "{\"password\":\"   \"}", "{\"password\":null}", "{}" })
+	@DisplayName("DELETE のパスワードが空・空白だけなら 422（field は password、文言は「入力してください」）で、サービスは呼ばれない")
+	void withdrawBlankPasswordReturns422(String content) throws Exception {
+		mockMvc.perform(delete("/api/users/me").contentType(MediaType.APPLICATION_JSON)
+				.content(content.getBytes(StandardCharsets.UTF_8)).with(me()))
+				.andExpect(status().isUnprocessableContent())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+				.andExpect(jsonPath("$.errors[0].field").value("password"))
+				.andExpect(jsonPath("$.errors[0].message").value("入力してください"))
+				.andExpect(header().doesNotExist("Set-Cookie"));
+
+		verifyNoInteractions(withdrawalService);
+	}
+
+	@Test
+	@DisplayName("DELETE に本文が無ければ 400 で、サービスは呼ばれない")
+	void withdrawWithoutBodyReturns400() throws Exception {
+		mockMvc.perform(delete("/api/users/me").with(me()))
+				.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(withdrawalService);
+	}
+
+	@Test
+	@DisplayName("InvalidPasswordException なら 401 INVALID_PASSWORD（detail「パスワードが違います」）で、Cookie を消さない")
+	void withdrawWithWrongPasswordReturns401WithoutCookie() throws Exception {
+		doThrow(new InvalidPasswordException()).when(withdrawalService).withdraw(USER_ID, "wrong");
+
+		mockMvc.perform(delete("/api/users/me").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"password\":\"wrong\"}".getBytes(StandardCharsets.UTF_8)).with(me()))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("INVALID_PASSWORD"))
+				.andExpect(jsonPath("$.detail").value("パスワードが違います"))
+				.andExpect(header().doesNotExist("Set-Cookie"));
 	}
 
 }

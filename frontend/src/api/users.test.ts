@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getMe, getUser, getUserPosts, updateAvatar, updateMe } from './users'
+import { getMe, getUser, getUserPosts, updateAvatar, updateMe, withdraw } from './users'
 
 const user = {
   id: 'u1',
@@ -107,5 +107,18 @@ describe('プロフィールの API', () => {
     expect(Array.from(form.keys())).toEqual(['file'])
     expect((form.get('file') as File).name).toBe('icon.png')
     expect(new Headers(init.headers).get('Content-Type')).toBeNull()
+  })
+
+  it('withdraw は DELETE /api/users/me に { password } の JSON を送り、204 なら何も返さない', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    const result = await withdraw('correct-horse-1')
+
+    expect(result).toBeUndefined()
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(path).toBe('/api/users/me')
+    expect(init.method).toBe('DELETE')
+    expect(init.body).toBe('{"password":"correct-horse-1"}')
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
   })
 })

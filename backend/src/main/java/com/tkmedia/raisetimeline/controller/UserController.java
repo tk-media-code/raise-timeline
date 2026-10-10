@@ -6,14 +6,19 @@ import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
 import com.tkmedia.raisetimeline.dto.UserDetail;
+import com.tkmedia.raisetimeline.dto.WithdrawRequest;
 import com.tkmedia.raisetimeline.service.AvatarService;
 import com.tkmedia.raisetimeline.service.UserPostsService;
 import com.tkmedia.raisetimeline.service.UserService;
+import com.tkmedia.raisetimeline.service.WithdrawalService;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,12 +34,16 @@ public class UserController {
 	private final UserService userService;
 	private final UserPostsService userPostsService;
 	private final AvatarService avatarService;
+	private final WithdrawalService withdrawalService;
+	private final RefreshTokenCookies cookies;
 
 	public UserController(UserService userService, UserPostsService userPostsService,
-			AvatarService avatarService) {
+			AvatarService avatarService, WithdrawalService withdrawalService, RefreshTokenCookies cookies) {
 		this.userService = userService;
 		this.userPostsService = userPostsService;
 		this.avatarService = avatarService;
+		this.withdrawalService = withdrawalService;
+		this.cookies = cookies;
 	}
 
 	/** ログイン中の本人の情報。利用者 id は、署名を確かめた JWT の sub から取る。 */
@@ -59,6 +68,21 @@ public class UserController {
 	@PutMapping(path = "/api/users/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public AvatarResponse replaceAvatar(@AuthenticationPrincipal Jwt jwt, @RequestParam("file") MultipartFile file) {
 		return avatarService.replace(CurrentUser.idOf(jwt), file);
+	}
+
+	/**
+	 * 本人が退会する。対象は JWT の sub の本人だけで、確認のために本文でパスワードを受ける。
+	 *
+	 * <p>Cookie はサービスの呼び出しが成功した後で {@link ResponseEntity} のヘッダーとして付ける。
+	 * パスワードが違うときなど、失敗の経路では Cookie を消さない（{@link AuthController} の説明と同じ理由）。
+	 */
+	@DeleteMapping("/api/users/me")
+	public ResponseEntity<Void> withdraw(@Valid @RequestBody WithdrawRequest request,
+			@AuthenticationPrincipal Jwt jwt) {
+		withdrawalService.withdraw(CurrentUser.idOf(jwt), request.password());
+		return ResponseEntity.noContent()
+				.header(HttpHeaders.SET_COOKIE, cookies.clear().toString())
+				.build();
 	}
 
 	/**

@@ -2,6 +2,7 @@ package com.tkmedia.raisetimeline.config;
 
 import com.tkmedia.raisetimeline.error.ErrorCode;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
+import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.web.UserIdLogFilter;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import jakarta.servlet.DispatcherType;
@@ -16,7 +17,10 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
@@ -123,10 +127,13 @@ public class SecurityConfig {
 
 	/**
 	 * アクセストークンの検証に使う。時刻の判定には、アプリ全体で使う {@link Clock} を渡す。
+	 *
+	 * <p>署名と期限が通ったあとに、利用者がまだいるかを確かめる（退会した人のトークンを期限の前でも断つ。
+	 * docs/auth-design.md 6 章）。
 	 */
 	@Bean
-	public JwtDecoder jwtDecoder(AuthProperties props, Clock clock) {
-		return createJwtDecoder(decodeKey(props), props.issuer(), clock);
+	public JwtDecoder jwtDecoder(AuthProperties props, Clock clock, UserMapper userMapper) {
+		return createJwtDecoder(decodeKey(props), props.issuer(), clock, new UserExistsValidator(userMapper));
 	}
 
 	/** HS256 の発行側。Bean とテストが同じ作り方になるよう、組み立てはここ 1 か所にする。 */
@@ -135,14 +142,26 @@ public class SecurityConfig {
 	}
 
 	/**
-	 * HS256 の検証側。署名・有効期限・発行者（iss）を確かめる。
+	 * HS256 の検証側。署名・有効期限・発行者（iss）を確かめる。利用者の存在は確かめない。
+	 */
+	public static JwtDecoder createJwtDecoder(byte[] key, String issuer, Clock clock) {
+		return createJwtDecoder(key, issuer, clock, jwt -> OAuth2TokenValidatorResult.success());
+	}
+
+	/**
+	 * HS256 の検証側。署名・有効期限・発行者（iss）に加えて、{@code userCheck} を確かめる。
 	 *
 	 * <p>{@code JwtValidators.createDefaultWithIssuer} には Clock を渡す口が無く、期限の判定がシステム時計に
 	 * 固定される。アプリは Clock を Bean で持ち、テストで差し替えて時刻を固定するので、Clock を設定した
 	 * 期限の検証を {@code createDefaultWithValidators} に渡す。この関数は、渡された検証と同じ型の既定の検証
 	 * （期限）を重ねて入れないので、Clock つきの検証が残る。既定の型（typ）と thumbprint の検証もここで加わる。
+	 *
+	 * <p>{@code userCheck} は、既定の検証が全部通ったときだけ呼ぶ。{@code DelegatingOAuth2TokenValidator} に
+	 * 並べると全部の検証が回り、期限切れや発行者違いのトークンでも DB に問い合わせてしまう。
+	 * 期限の前でも退会した人を断つための DB の問い合わせは、まだ使えるトークンに限る。
 	 */
-	public static JwtDecoder createJwtDecoder(byte[] key, String issuer, Clock clock) {
+	public static JwtDecoder createJwtDecoder(byte[] key, String issuer, Clock clock,
+			OAuth2TokenValidator<Jwt> userCheck) {
 		// javax.crypto は JDK の標準で、Jakarta EE 移行前のパッケージではない。ただし Checkstyle が javax の import を
 		// 一律に禁じているので、import せず完全修飾名で書く。
 		NimbusJwtDecoder decoder = NimbusJwtDecoder
@@ -151,8 +170,12 @@ public class SecurityConfig {
 				.build();
 		JwtTimestampValidator timestampValidator = new JwtTimestampValidator();
 		timestampValidator.setClock(clock);
-		decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(timestampValidator,
-				new JwtIssuerValidator(issuer)));
+		OAuth2TokenValidator<Jwt> defaults = JwtValidators.createDefaultWithValidators(timestampValidator,
+				new JwtIssuerValidator(issuer));
+		decoder.setJwtValidator(jwt -> {
+			OAuth2TokenValidatorResult result = defaults.validate(jwt);
+			return result.hasErrors() ? result : userCheck.validate(jwt);
+		});
 		return decoder;
 	}
 

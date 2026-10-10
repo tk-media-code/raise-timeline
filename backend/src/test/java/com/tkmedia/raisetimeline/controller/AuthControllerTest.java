@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.config.ClockConfig;
 import com.tkmedia.raisetimeline.config.LoggingConfig;
 import com.tkmedia.raisetimeline.config.SecurityConfig;
@@ -57,7 +58,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 @WebMvcTest(controllers = AuthController.class)
 @Import({ SecurityConfig.class, ApiExceptionHandler.class, LoggingConfig.class, ClockConfig.class,
-		ProblemDetailWriter.class })
+		ProblemDetailWriter.class, RefreshTokenCookies.class })
 @TestPropertySource(properties = {
 		"auth.jwt-secret=dGVzdC1vbmx5LWp3dC1zZWNyZXQtMzItYnl0ZXMtbG9uZyE=",
 		"auth.issuer=raise-timeline",
@@ -65,6 +66,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 		"auth.cookie-name=refresh_token",
 		"auth.cookie-secure=false" })
 class AuthControllerTest {
+
+	// jwtDecoder が存在確認に使う。本物のトークンを送るテストは existsById を true にスタブする。
+	@MockitoBean
+	private UserMapper userMapper;
 
 	private static final String PROBLEM_JSON = "application/problem+json";
 	private static final String RAW_REFRESH = "raw-refresh-token-value";

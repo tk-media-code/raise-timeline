@@ -2,7 +2,9 @@ package com.tkmedia.raisetimeline.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -38,11 +40,11 @@ class UserServiceTest {
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
 	@Test
-	@DisplayName("利用者がいなければ NotFoundException を投げる")
-	void getMeThrowsNotFoundWhenMissing() {
+	@DisplayName("getMe は利用者がいなければ 401（UnauthenticatedException）")
+	void getMeThrowsUnauthenticatedWhenMissing() {
 		when(userMapper.findById(USER_ID)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.getMe(USER_ID)).isInstanceOf(NotFoundException.class);
+		assertThatThrownBy(() -> service.getMe(USER_ID)).isInstanceOf(UnauthenticatedException.class);
 	}
 
 	@Test
@@ -126,17 +128,17 @@ class UserServiceTest {
 	}
 
 	@Test
-	@DisplayName("updateProfile は Clock の時刻で更新し、読み直した行を email 付きの Me で返す")
+	@DisplayName("updateProfile は Clock の時刻で更新し、RETURNING の行から email 付きの Me を作る")
 	void updateProfileUsesClock() {
 		OffsetDateTime now = OffsetDateTime.ofInstant(NOW, ZoneOffset.UTC);
-		when(userMapper.updateProfile(USER_ID, "新しい名前", "新しい自己紹介", now)).thenReturn(1);
 		User updated = new User(USER_ID, "alice", "新しい名前", "alice@example.com", "$2a$10$hash", "新しい自己紹介", null,
 				CREATED_AT, now);
-		when(userMapper.findById(USER_ID)).thenReturn(Optional.of(updated));
+		when(userMapper.updateProfile(USER_ID, "新しい名前", "新しい自己紹介", now)).thenReturn(Optional.of(updated));
 
 		Me me = service.updateProfile(USER_ID, new UpdateProfileRequest("新しい名前", "新しい自己紹介"));
 
 		verify(userMapper).updateProfile(USER_ID, "新しい名前", "新しい自己紹介", now);
+		verify(userMapper, never()).findById(any());
 		assertThat(me.displayName()).isEqualTo("新しい名前");
 		assertThat(me.bio()).isEqualTo("新しい自己紹介");
 		assertThat(me.email()).isEqualTo("alice@example.com");
@@ -144,12 +146,14 @@ class UserServiceTest {
 	}
 
 	@Test
-	@DisplayName("更新が 0 行（本人がもう居ない）なら UnauthenticatedException")
+	@DisplayName("updateProfile は行が無ければ 401（UnauthenticatedException）で、findById を呼ばない")
 	void updateProfileOfGoneUser() {
-		when(userMapper.updateProfile(USER_ID, "アリス", "", OffsetDateTime.ofInstant(NOW, ZoneOffset.UTC))).thenReturn(0);
+		when(userMapper.updateProfile(USER_ID, "アリス", "", OffsetDateTime.ofInstant(NOW, ZoneOffset.UTC)))
+				.thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.updateProfile(USER_ID, new UpdateProfileRequest("アリス", "")))
 				.isInstanceOf(UnauthenticatedException.class);
+		verify(userMapper, never()).findById(any());
 	}
 
 	@Test

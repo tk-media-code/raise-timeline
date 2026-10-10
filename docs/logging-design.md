@@ -58,7 +58,7 @@
 | `user.withdrew` | INFO | 無し（`user.id` は MDC にある） | 退会 |
 | `post.deleted` | INFO | 投稿 id（`app.post.id`） | 投稿の削除 |
 | `comment.deleted` | INFO | コメント id（`app.comment.id`） | コメントの削除 |
-| `image.delete_failed` | WARN | 消せなかった S3 のキー（`app.image.keys`）。原因の例外付き | S3 の削除失敗。応答は変えない（投稿の削除のあと、アイコンの古いキーなら成功のまま。投稿の作成やアイコンの 401・DB の失敗の後始末なら、元の失敗の応答のまま）（[error-handling-design.md](error-handling-design.md)） |
+| `image.delete_failed` | WARN | 消せなかった S3 のキー（`app.image.keys`）。原因の例外付き | S3 の削除失敗。応答は変えない（投稿の削除のあと、退会（応答は 204 のまま）、アイコンの古いキーなら成功のまま。投稿の作成やアイコンの 401・DB の失敗の後始末なら、元の失敗の応答のまま）（[error-handling-design.md](error-handling-design.md)） |
 | `health.db_unreachable` | WARN | 例外 | `GET /api/health` で DB に届かず 503 を返した。今の `HealthCheckController` の WARN に名前を付けるもの |
 
 機能別文書に書かれている「WARN で残す」「INFO で残す」は、この表が正本で、文書からはここを参照する。

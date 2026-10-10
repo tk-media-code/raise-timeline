@@ -110,14 +110,26 @@ describe('ProfileEditPage', () => {
       expect(screen.getAllByRole('textbox')).toHaveLength(2)
     })
 
-    it('アイコンのプレビューと「画像を変更」はあるが、「退会」は無い（退会は後の Issue）', async () => {
+    it('アイコンのプレビューと「画像を変更」がある', async () => {
       await openForm()
 
       expect(screen.getByText('アイコン')).toBeInTheDocument()
       // 表示名の頭文字が丸に出る（Avatar は装飾なので、文字で探す）。
       expect(screen.getByText('ア')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: '画像を変更' })).toBeEnabled()
-      expect(screen.queryByText('退会')).not.toBeInTheDocument()
+    })
+
+    it('末尾に「退会」の節があり、「退会する」を押すと確認ダイアログが開く', async () => {
+      const { user } = await openForm()
+
+      const section = screen.getByRole('region', { name: '退会' })
+      expect(within(section).getByRole('heading', { level: 2, name: '退会' })).toBeInTheDocument()
+      // フォームの「保存」より後ろにある。
+      expect(saveButton().compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+      await user.click(within(section).getByRole('button', { name: '退会する' }))
+
+      expect(screen.getByRole('dialog', { name: '本当に退会しますか？' })).toBeInTheDocument()
     })
 
     it('表示名を入力しても、アイコンのプレビューの頭文字は変わらない', async () => {

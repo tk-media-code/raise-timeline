@@ -172,7 +172,7 @@ public interface ImageStorage {
 - 画像の形式判定は `ImageTypeDetector`（先頭バイトを見る）に分け、単体テストで確かめる
 - キーの生成は `ImageKeys`（`posts/...`、`avatars/...`）に分ける
 - GPS の除去は `GpsMetadataRemover` に分け、GPS を含む JPEG を渡すと GPS が無くなり、Orientation が残ることと、Exif の無い JPEG がそのまま通ることを単体テストで確かめる
-- S3 の削除は `ImageCleaner.deleteQuietly` を通す。失敗しても呼び出し元には伝えず、WARN の出来事 `image.delete_failed` に消せなかったキー（`app.image.keys`、配列）と原因を載せる。使うのは 3 か所で、投稿の削除のあと、投稿の作成の失敗の後始末（上げた分）、アイコンの差し替え（古いキー。401 や DB の失敗では新しいキー）
+- S3 の削除は `ImageCleaner.deleteQuietly` を通す。失敗しても呼び出し元には伝えず、WARN の出来事 `image.delete_failed` に消せなかったキー（`app.image.keys`、配列）と原因を載せる。使うのは 4 か所で、投稿の削除のあと、投稿の作成の失敗の後始末（上げた分）、アイコンの差し替え（古いキー。401 や DB の失敗では新しいキー）、退会のあと（集めた投稿画像とアイコンのキー。応答は 204 のまま）
 - 応答に載せる URL は、キーから `urlOf` で作る。URL を作れない（保存先が使えない）画像は応答から外し、アイコンは null にする
 - S3 クライアントは `apiCallTimeout` 30 秒、再試行 2 回にする
 

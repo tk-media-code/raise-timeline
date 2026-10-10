@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getMe } from '../api/users'
 import { RetryMessage } from '../components/RetryMessage'
 import { Spinner } from '../components/Spinner'
+import { WithdrawSection } from '../features/auth/WithdrawSection'
 import { ProfileForm } from '../features/profile/ProfileForm'
 import { meKey } from '../features/profile/queryKeys'
 
@@ -22,6 +23,7 @@ export default function ProfileEditPage() {
       {/* スマホ幅は上部バーに同じ画面名が出るので、見出しは読み上げ用に残して見た目では隠す。 */}
       <h1 className="p-4 text-2xl font-bold max-md:sr-only">プロフィール編集</h1>
       <ProfileForm me={query.data} />
+      <WithdrawSection />
     </div>
   )
 }
