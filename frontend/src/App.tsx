@@ -3,6 +3,7 @@ import { RedirectIfAuthenticated } from './auth/RedirectIfAuthenticated'
 import { RequireAuth } from './auth/RequireAuth'
 import { AppLayout } from './components/layout/AppLayout'
 import HomePage from './pages/HomePage'
+import LikersPage from './pages/LikersPage'
 import LoginPage from './pages/LoginPage'
 import NotFoundPage from './pages/NotFoundPage'
 import PostDetailPage from './pages/PostDetailPage'
@@ -21,6 +22,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/posts/:id" element={<PostDetailPage />} />
+          <Route path="/posts/:id/likes" element={<LikersPage />} />
           <Route path="/users/:username" element={<ProfilePage />} />
           <Route path="/settings/profile" element={<ProfileEditPage />} />
         </Route>

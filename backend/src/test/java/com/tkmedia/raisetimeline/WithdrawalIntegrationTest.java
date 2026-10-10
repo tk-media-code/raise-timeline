@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import com.jayway.jsonpath.JsonPath;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
@@ -116,6 +117,20 @@ class WithdrawalIntegrationTest {
 		assertThat(statusOf(mockMvc.perform(request).andReturn())).isEqualTo(201);
 	}
 
+	/** 文字だけの投稿を作り、その id を返す。 */
+	private String createTextPost(Account account) throws Exception {
+		MvcResult result = mockMvc.perform(multipart("/api/posts").param("body", "いいねの的")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + account.token())).andReturn();
+		assertThat(statusOf(result)).isEqualTo(201);
+		return JsonPath.read(json(result), "$.id");
+	}
+
+	private void like(Account account, String postId) throws Exception {
+		MvcResult result = mockMvc.perform(put("/api/posts/{id}/like", postId)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + account.token())).andReturn();
+		assertThat(statusOf(result)).isEqualTo(204);
+	}
+
 	private void putAvatar(Account account) throws Exception {
 		var request = multipart(HttpMethod.PUT, "/api/users/me/avatar")
 				.file(new MockMultipartFile("file", "icon.png", "image/png", TestImages.png()))
@@ -132,6 +147,11 @@ class WithdrawalIntegrationTest {
 
 	private MvcResult getMe(String token) throws Exception {
 		return mockMvc.perform(get("/api/users/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)).andReturn();
+	}
+
+	private MvcResult getPost(Account account, String postId) throws Exception {
+		return mockMvc.perform(get("/api/posts/{id}", postId)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + account.token())).andReturn();
 	}
 
 	private static String json(MvcResult result) throws Exception {
@@ -293,6 +313,26 @@ class WithdrawalIntegrationTest {
 		assertThat(mine).isNotEmpty();
 		assertThat(mine).noneSatisfy(line -> assertThat(line.toString()).contains(PASSWORD));
 		assertThat(output.getOut()).doesNotContain(PASSWORD);
+	}
+
+	@Test
+	@DisplayName("退会すると、本人のいいねと、本人の投稿へのいいねが消え、他人の投稿の likeCount が減る")
+	void withdrawalRemovesLikesGivenAndReceived() throws Exception {
+		Account a = newAccount();
+		Account b = newAccount();
+		String postOfA = createTextPost(a);
+		String postOfB = createTextPost(b);
+		like(a, postOfB);
+		like(b, postOfA);
+		assertThat((Integer) JsonPath.read(json(getPost(b, postOfB)), "$.likeCount")).isEqualTo(1);
+
+		assertThat(statusOf(withdraw(a, PASSWORD))).isEqualTo(204);
+
+		assertThat(count("SELECT count(*) FROM likes WHERE user_id = ?::uuid", a.userId())).isZero();
+		assertThat(count("SELECT count(*) FROM likes WHERE post_id = ?::uuid", postOfA)).isZero();
+		MvcResult postB = getPost(b, postOfB);
+		assertThat(statusOf(postB)).isEqualTo(200);
+		assertThat((Integer) JsonPath.read(json(postB), "$.likeCount")).isZero();
 	}
 
 }

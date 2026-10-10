@@ -52,6 +52,14 @@ describe('PostDetailPage', () => {
     expect(api.getPost).toHaveBeenCalledWith('p1')
   })
 
+  it('「いいねした人を見る（0 件）」のリンクがあり、いいねのボタンとは別になっている', async () => {
+    api.getPost.mockResolvedValue(makePost({ likeCount: 0 }))
+    renderDetail()
+
+    expect(await screen.findByRole('link', { name: 'いいねした人を見る（0 件）' })).toHaveAttribute('href', '/posts/p1/likes')
+    expect(screen.getByRole('button', { name: 'いいね 0 件' })).toBeInTheDocument()
+  })
+
   it('読み込み中は「読み込み中」を出す', () => {
     api.getPost.mockReturnValue(new Promise(() => {}))
     renderDetail()

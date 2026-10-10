@@ -44,8 +44,8 @@ public class PostController {
 	}
 
 	@GetMapping("/api/posts/{id}")
-	public PostResponse get(@PathVariable UUID id) {
-		return postService.get(id);
+	public PostResponse get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+		return postService.get(CurrentUser.idOf(jwt), id);
 	}
 
 	@PatchMapping("/api/posts/{id}")

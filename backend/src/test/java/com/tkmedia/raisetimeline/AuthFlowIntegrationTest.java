@@ -15,12 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,7 +49,6 @@ class AuthFlowIntegrationTest {
 
 	private static final String COOKIE_NAME = "refresh_token";
 	private static final String PASSWORD = "Passw0rd!secret";
-	private static final long TIMEOUT_SECONDS = 30;
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -277,7 +270,7 @@ class AuthFlowIntegrationTest {
 		MvcResult registered = register(username, username + "@example.com", PASSWORD);
 		String cookie = cookieValue(registered);
 
-		List<Integer> statuses = runConcurrently(() -> statusOf(refresh(cookie, null)),
+		List<Integer> statuses = Concurrently.run(() -> statusOf(refresh(cookie, null)),
 				() -> statusOf(refresh(cookie, null)));
 
 		assertThat(statuses).containsExactlyInAnyOrder(200, 401);
@@ -288,7 +281,7 @@ class AuthFlowIntegrationTest {
 	void concurrentRegisterSameUsernameCreatesOne() throws Exception {
 		String username = newName("dup");
 
-		List<Integer> statuses = runConcurrently(
+		List<Integer> statuses = Concurrently.run(
 				() -> statusOf(register(username, "a_" + username + "@example.com", PASSWORD)),
 				() -> statusOf(register(username, "b_" + username + "@example.com", PASSWORD)));
 
@@ -361,36 +354,6 @@ class AuthFlowIntegrationTest {
 		String id = result.getResponse().getHeader("X-Request-Id");
 		assertThat(id).isNotBlank();
 		return id;
-	}
-
-	/**
-	 * 2 つの処理を、開始の合図をそろえて別スレッドから同時に走らせ、返した値（HTTP の status）を集める。
-	 * 待ちには時間切れを付け、デッドロックしてもビルドが止まらず失敗になるようにする。
-	 */
-	@SafeVarargs
-	private static List<Integer> runConcurrently(Callable<Integer>... tasks) throws Exception {
-		ExecutorService executor = Executors.newFixedThreadPool(tasks.length);
-		try {
-			CountDownLatch ready = new CountDownLatch(tasks.length);
-			CountDownLatch start = new CountDownLatch(1);
-			List<Future<Integer>> futures = new ArrayList<>();
-			for (Callable<Integer> task : tasks) {
-				futures.add(executor.submit(() -> {
-					ready.countDown();
-					start.await();
-					return task.call();
-				}));
-			}
-			assertThat(ready.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-			start.countDown();
-			List<Integer> results = new ArrayList<>();
-			for (Future<Integer> future : futures) {
-				results.add(future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-			}
-			return results;
-		} finally {
-			executor.shutdownNow();
-		}
 	}
 
 }

@@ -24,6 +24,7 @@ function screenName(pathname: string): string {
   if (pathname.startsWith('/search')) return '検索'
   if (pathname.startsWith('/users/')) return 'プロフィール'
   if (pathname === '/settings/profile') return 'プロフィール編集'
+  if (/^\/posts\/[^/]+\/likes$/.test(pathname)) return 'いいねした人'
   if (pathname.startsWith('/posts/')) return '投稿'
   return 'raise-timeline'
 }

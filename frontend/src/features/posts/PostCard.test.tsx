@@ -30,7 +30,7 @@ function renderCard(props: Props = {}) {
       <Routes>
         <Route
           path="/"
-          element={<PostCard post={makePost()} isMine={false} timeStyle="relative" linkToDetail={false} now={NOW} {...props} />}
+          element={<PostCard post={makePost()} isMine={false} timeStyle="relative" linkToDetail={false} onToggleLike={() => {}} now={NOW} {...props} />}
         />
         <Route path="/posts/:id" element={<p>投稿詳細の画面</p>} />
         <Route path="/users/:username" element={<p>プロフィールの画面</p>} />
@@ -77,19 +77,61 @@ describe('PostCard の表示', () => {
     expect(screen.getByText('編集済み')).toBeInTheDocument()
   })
 
-  it('いいね数とコメント数は、押せない表示（img）で出す', () => {
-    renderCard({ post: makePost({ likeCount: 0, commentCount: 0 }) })
+  it('コメント数は、押せない表示（img）で出す', () => {
+    renderCard({ post: makePost({ commentCount: 12 }) })
 
-    expect(screen.getByRole('img', { name: 'いいね 0 件' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'コメント 0 件' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /いいね|コメント/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'コメント 12 件' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /コメント/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('PostCard のいいね', () => {
+  it('いいねは「いいね 3 件」のボタンで、付けていなければ aria-pressed が false で ♡ を出す', () => {
+    renderCard({ post: makePost({ likeCount: 3, likedByMe: false }) })
+
+    const button = screen.getByRole('button', { name: 'いいね 3 件' })
+    expect(button).toHaveAttribute('aria-pressed', 'false')
+    expect(button).toHaveTextContent('♡')
+    expect(button).toHaveTextContent('3')
+    expect(button).toHaveClass('min-h-11', 'min-w-11')
   })
 
-  it('数は件数に合わせた名前にする', () => {
-    renderCard({ post: makePost({ likeCount: 3, commentCount: 12 }) })
+  it('付けていれば aria-pressed が true で、♥ を出す', () => {
+    renderCard({ post: makePost({ likeCount: 3, likedByMe: true }) })
 
-    expect(screen.getByRole('img', { name: 'いいね 3 件' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'コメント 12 件' })).toBeInTheDocument()
+    const button = screen.getByRole('button', { name: 'いいね 3 件' })
+    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(button).toHaveTextContent('♥')
+    expect(button).not.toHaveTextContent('♡')
+  })
+
+  it('ボタンを押すと onToggleLike が呼ばれ、詳細へは移らない', async () => {
+    const user = userEvent.setup()
+    const onToggleLike = vi.fn()
+    renderCard({ linkToDetail: true, onToggleLike })
+
+    await user.click(screen.getByRole('button', { name: 'いいね 0 件' }))
+
+    expect(onToggleLike).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
+  })
+
+  it('showLikersLink が無いときは、「いいねした人」のリンクは出さない', () => {
+    renderCard({ post: makePost({ likeCount: 3 }) })
+
+    expect(screen.queryByRole('link', { name: /いいねした人/ })).not.toBeInTheDocument()
+  })
+
+  it('showLikersLink のときは、ボタンとは別に「いいねした人を見る（3 件）」のリンクがあり、/posts/p1/likes を指す', () => {
+    renderCard({ post: makePost({ likeCount: 3 }), showLikersLink: true })
+
+    const link = screen.getByRole('link', { name: 'いいねした人を見る（3 件）' })
+    expect(link).toHaveAttribute('href', '/posts/p1/likes')
+    expect(link).toHaveTextContent('3')
+    expect(link).toHaveClass('min-h-11', 'min-w-11')
+    const button = screen.getByRole('button', { name: 'いいね 3 件' })
+    expect(button).not.toHaveTextContent('3')
+    expect(button).toHaveTextContent('♡')
   })
 })
 

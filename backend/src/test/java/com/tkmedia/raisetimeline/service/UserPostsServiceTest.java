@@ -13,6 +13,7 @@ import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -30,8 +31,9 @@ class UserPostsServiceTest {
 
 	private final UserService userService = mock(UserService.class);
 	private final PostMapper postMapper = mock(PostMapper.class);
+	private final LikeMapper likeMapper = mock(LikeMapper.class);
 	private final UserPostsService service = new UserPostsService(userService, postMapper,
-			new PostAssembler(postMapper, new InMemoryImageStorage()));
+			new PostAssembler(postMapper, likeMapper, new InMemoryImageStorage()));
 
 	private static List<PostWithAuthor> rows(int n) {
 		List<PostWithAuthor> rows = new ArrayList<>();
@@ -47,7 +49,7 @@ class UserPostsServiceTest {
 	void postsOfMissingUser() {
 		when(userService.requireByUsername("ghost")).thenThrow(new NotFoundException());
 
-		assertThatThrownBy(() -> service.postsOf("ghost", null, 20)).isInstanceOf(NotFoundException.class);
+		assertThatThrownBy(() -> service.postsOf(USER_ID, "ghost", null, 20)).isInstanceOf(NotFoundException.class);
 
 		verifyNoInteractions(postMapper);
 	}
@@ -60,7 +62,7 @@ class UserPostsServiceTest {
 		List<PostWithAuthor> rows = rows(21);
 		when(postMapper.findByUser(USER_ID, CURSOR, 21)).thenReturn(rows);
 
-		PageResponse<PostResponse> page = service.postsOf("alice", CURSOR, 20);
+		PageResponse<PostResponse> page = service.postsOf(USER_ID, "alice", CURSOR, 20);
 
 		verify(postMapper).findByUser(USER_ID, CURSOR, 21);
 		assertThat(page.items()).hasSize(20);

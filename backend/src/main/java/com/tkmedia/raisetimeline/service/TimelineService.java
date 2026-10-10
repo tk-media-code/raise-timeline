@@ -25,8 +25,8 @@ public class TimelineService {
 	}
 
 	/** ページの打ち切り方（{@code limit} より 1 行多く読む理由）は {@link PostPages}。 */
-	public PageResponse<PostResponse> all(UUID cursor, int limit) {
-		return PostPages.of(postMapper.findAll(cursor, limit + 1), limit, assembler);
+	public PageResponse<PostResponse> all(UUID viewer, UUID cursor, int limit) {
+		return PostPages.of(postMapper.findAll(cursor, limit + 1), limit, assembler, viewer);
 	}
 
 }

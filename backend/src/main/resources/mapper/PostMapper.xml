@@ -20,6 +20,10 @@
 		WHERE p.id = #{id}
 	</select>
 
+	<select id="existsById" resultType="boolean">
+		SELECT EXISTS (SELECT 1 FROM posts WHERE id = #{id})
+	</select>
+
 	<update id="updateBody">
 		UPDATE posts SET body = #{body}, updated_at = #{updatedAt} WHERE id = #{id}
 	</update>

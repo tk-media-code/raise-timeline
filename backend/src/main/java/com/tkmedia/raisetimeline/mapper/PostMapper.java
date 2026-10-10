@@ -20,6 +20,9 @@ public interface PostMapper {
 
 	Optional<PostWithAuthor> findById(@Param("id") UUID id);
 
+	/** 投稿があるか。いいねの付け外しと「いいねした人」の一覧が、投稿が無いこと（404）と 0 件を区別するために使う。 */
+	boolean existsById(@Param("id") UUID id);
+
 	/** 本文と更新日時を変え、変えた行数を返す。無い id では 0。 */
 	int updateBody(@Param("id") UUID id, @Param("body") String body, @Param("updatedAt") OffsetDateTime updatedAt);
 

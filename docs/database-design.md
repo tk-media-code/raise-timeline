@@ -224,7 +224,7 @@ ORDER BY p.id DESC
 LIMIT 21;
 ```
 
-投稿に付く画像・数・「自分がいいね済みか」は、投稿の一覧を取ったあとに、その投稿 id の集合に対してまとめて取る（投稿ごとに取りに行かない）。1 ページあたりの問い合わせは本体を含めて 5 本で固定になる。
+投稿に付く画像・数・「自分がいいね済みか」は、投稿の一覧を取ったあとに、その投稿 id の集合に対してまとめて取る（投稿ごとに取りに行かない）。1 ページあたりの問い合わせは本体を含めて 5 本で固定になる（コメント数を足す Issue 8 までは 4 本）。
 
 ```sql
 SELECT post_id, object_key, position FROM post_images WHERE post_id IN (<foreach>) ORDER BY post_id, position;

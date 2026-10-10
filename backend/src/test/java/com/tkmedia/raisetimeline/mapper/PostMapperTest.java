@@ -85,6 +85,15 @@ class PostMapperTest {
 	}
 
 	@Test
+	@DisplayName("existsById はある投稿で true、無い id で false")
+	void existsById() {
+		UUID id = createPost(createUser(), "ある");
+
+		assertThat(postMapper.existsById(id)).isTrue();
+		assertThat(postMapper.existsById(UUID.randomUUID())).isFalse();
+	}
+
+	@Test
 	@DisplayName("存在しない id では空が返る")
 	void findByIdReturnsEmptyWhenMissing() {
 		assertThat(postMapper.findById(UUID.randomUUID())).isEmpty();

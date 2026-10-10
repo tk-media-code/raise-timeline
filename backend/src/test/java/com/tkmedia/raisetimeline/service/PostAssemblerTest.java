@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.tkmedia.raisetimeline.domain.LikeCount;
 import com.tkmedia.raisetimeline.domain.PostImage;
 import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PostImageResponse;
@@ -17,6 +18,7 @@ import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.dto.UserSummary;
 import com.tkmedia.raisetimeline.image.ImageStorage;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -29,10 +31,12 @@ class PostAssemblerTest {
 
 	private static final UUID POST_ID = UUID.fromString("0199b000-0000-7000-8000-0000000000a1");
 	private static final UUID USER_ID = UUID.fromString("0199b000-0000-7000-8000-000000000001");
+	private static final UUID VIEWER = UUID.fromString("0199b000-0000-7000-8000-000000000009");
 	private static final OffsetDateTime CREATED = OffsetDateTime.parse("2026-10-09T00:00:00Z");
 
 	private final PostMapper postMapper = mock(PostMapper.class);
-	private final PostAssembler assembler = new PostAssembler(postMapper, new InMemoryImageStorage());
+	private final LikeMapper likeMapper = mock(LikeMapper.class);
+	private final PostAssembler assembler = new PostAssembler(postMapper, likeMapper, new InMemoryImageStorage());
 
 	private static PostWithAuthor row(OffsetDateTime updatedAt) {
 		return new PostWithAuthor(POST_ID, USER_ID, "本文", CREATED, updatedAt, "taro_1", "太郎", "avatars/x.png");
@@ -45,19 +49,19 @@ class PostAssemblerTest {
 	@Test
 	@DisplayName("updatedAt が createdAt と同じなら edited は false")
 	void notEditedWhenUpdatedAtEqualsCreatedAt() {
-		assertThat(assembler.toResponse(row(CREATED)).edited()).isFalse();
+		assertThat(assembler.toResponse(row(CREATED), VIEWER).edited()).isFalse();
 	}
 
 	@Test
 	@DisplayName("updatedAt が createdAt の 1 秒後なら edited は true")
 	void editedWhenUpdatedAtIsLater() {
-		assertThat(assembler.toResponse(row(CREATED.plusSeconds(1))).edited()).isTrue();
+		assertThat(assembler.toResponse(row(CREATED.plusSeconds(1)), VIEWER).edited()).isTrue();
 	}
 
 	@Test
 	@DisplayName("avatarKey のある投稿者の avatarUrl は、保存先が作る URL になる")
 	void authorHasAvatarUrl() {
-		PostResponse response = assembler.toResponse(row(CREATED));
+		PostResponse response = assembler.toResponse(row(CREATED), VIEWER);
 
 		assertThat(response.author())
 				.isEqualTo(new UserSummary(USER_ID, "taro_1", "太郎", "https://images.test/avatars/x.png"));
@@ -71,18 +75,52 @@ class PostAssemblerTest {
 	void authorWithoutAvatarHasNullUrl() {
 		PostWithAuthor row = new PostWithAuthor(POST_ID, USER_ID, "本文", CREATED, CREATED, "taro_1", "太郎", null);
 
-		assertThat(assembler.toResponse(row).author().avatarUrl()).isNull();
+		assertThat(assembler.toResponse(row, VIEWER).author().avatarUrl()).isNull();
 	}
 
 	@Test
-	@DisplayName("いいね・コメントは暫定値: 数は 0、likedByMe は false。画像が無ければ images は空")
-	void interimValues() {
-		PostResponse response = assembler.toResponse(row(CREATED));
+	@DisplayName("いいねの無い投稿は likeCount 0・likedByMe false。commentCount は暫定値の 0。画像が無ければ images は空")
+	void noLikesAndInterimComments() {
+		PostResponse response = assembler.toResponse(row(CREATED), VIEWER);
 
 		assertThat(response.images()).isEmpty();
 		assertThat(response.likeCount()).isZero();
 		assertThat(response.commentCount()).isZero();
 		assertThat(response.likedByMe()).isFalse();
+	}
+
+	@Test
+	@DisplayName("countByPosts の数が likeCount に入り、findLikedPostIds に入った投稿だけ likedByMe が true になる")
+	void likeCountsAndLikedByMe() {
+		UUID bId = UUID.fromString("0199b000-0000-7000-8000-0000000000a2");
+		PostWithAuthor a = row(CREATED);
+		PostWithAuthor b = new PostWithAuthor(bId, USER_ID, "二つ目", CREATED, CREATED, "taro_1", "太郎", null);
+		when(likeMapper.countByPosts(List.of(POST_ID, bId))).thenReturn(List.of(new LikeCount(POST_ID, 3)));
+		when(likeMapper.findLikedPostIds(VIEWER, List.of(POST_ID, bId))).thenReturn(List.of(POST_ID));
+
+		List<PostResponse> responses = assembler.toResponses(List.of(a, b), VIEWER);
+
+		assertThat(responses.get(0).likeCount()).isEqualTo(3);
+		assertThat(responses.get(0).likedByMe()).isTrue();
+		assertThat(responses.get(1).likeCount()).isZero();
+		assertThat(responses.get(1).likedByMe()).isFalse();
+	}
+
+	@Test
+	@DisplayName("1 ページの問い合わせは、画像・数・自分のいいねが 1 回ずつで、投稿の件数によらない")
+	void queriesOnceEachRegardlessOfPostCount() {
+		List<PostWithAuthor> rows = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			UUID id = UUID.fromString(String.format("0199b000-0000-7000-8000-%012x", 0x1000 - i));
+			rows.add(new PostWithAuthor(id, USER_ID, "本文" + i, CREATED, CREATED, "taro_1", "太郎", null));
+		}
+		List<UUID> ids = rows.stream().map(PostWithAuthor::id).toList();
+
+		assertThat(assembler.toResponses(rows, VIEWER)).hasSize(3);
+
+		verify(postMapper, times(1)).findImages(ids);
+		verify(likeMapper, times(1)).countByPosts(ids);
+		verify(likeMapper, times(1)).findLikedPostIds(VIEWER, ids);
 	}
 
 	@Test
@@ -94,7 +132,7 @@ class PostAssemblerTest {
 				new PostImage(first, POST_ID, "posts/a.jpg", 0),
 				new PostImage(second, POST_ID, "posts/b.png", 1)));
 
-		PostResponse response = assembler.toResponse(row(CREATED));
+		PostResponse response = assembler.toResponse(row(CREATED), VIEWER);
 
 		assertThat(response.images()).containsExactly(
 				new PostImageResponse(first, "https://images.test/posts/a.jpg"),
@@ -107,13 +145,13 @@ class PostAssemblerTest {
 		ImageStorage disabled = mock(ImageStorage.class);
 		when(disabled.urlOf("posts/a.jpg")).thenReturn(null);
 		when(disabled.urlOf("posts/b.jpg")).thenReturn("https://images.test/posts/b.jpg");
-		PostAssembler assemblerWithoutUrl = new PostAssembler(postMapper, disabled);
+		PostAssembler assemblerWithoutUrl = new PostAssembler(postMapper, likeMapper, disabled);
 		UUID kept = UUID.fromString("0199b000-0000-7000-8000-0000000000b2");
 		when(postMapper.findImages(List.of(POST_ID))).thenReturn(List.of(
 				image("0199b000-0000-7000-8000-0000000000b1", POST_ID, "posts/a.jpg", 0),
 				new PostImage(kept, POST_ID, "posts/b.jpg", 1)));
 
-		PostResponse response = assemblerWithoutUrl.toResponse(row(CREATED));
+		PostResponse response = assemblerWithoutUrl.toResponse(row(CREATED), VIEWER);
 
 		assertThat(response.images()).containsExactly(new PostImageResponse(kept, "https://images.test/posts/b.jpg"));
 	}
@@ -130,7 +168,7 @@ class PostAssemblerTest {
 				image("0199b000-0000-7000-8000-0000000000b2", secondId, "posts/b.jpg", 0),
 				image("0199b000-0000-7000-8000-0000000000b3", secondId, "posts/c.jpg", 1)));
 
-		List<PostResponse> responses = assembler.toResponses(List.of(first, second));
+		List<PostResponse> responses = assembler.toResponses(List.of(first, second), VIEWER);
 
 		assertThat(responses).extracting(PostResponse::body).containsExactly("本文", "二つ目");
 		assertThat(responses.get(0).images()).extracting(PostImageResponse::url)
@@ -142,9 +180,9 @@ class PostAssemblerTest {
 	@Test
 	@DisplayName("行が空なら、画像を問い合わせずに空のリストを返す")
 	void emptyRowsDoNotQuery() {
-		assertThat(assembler.toResponses(List.of())).isEmpty();
+		assertThat(assembler.toResponses(List.of(), VIEWER)).isEmpty();
 
-		verifyNoInteractions(postMapper);
+		verifyNoInteractions(postMapper, likeMapper);
 	}
 
 	@Test
@@ -157,7 +195,7 @@ class PostAssemblerTest {
 		}
 		when(postMapper.findImages(anyList())).thenReturn(List.of());
 
-		assertThat(assembler.toResponses(rows)).hasSize(20);
+		assertThat(assembler.toResponses(rows, VIEWER)).hasSize(20);
 
 		verify(postMapper, times(1)).findImages(rows.stream().map(PostWithAuthor::id).toList());
 		verify(postMapper, never()).findImageKeys(any());

@@ -103,7 +103,7 @@ public class PostService {
 			imageCleaner.deleteQuietly(keys);
 			throw e;
 		}
-		return assembler.toResponse(postMapper.findById(id).orElseThrow(NotFoundException::new));
+		return assembler.toResponse(postMapper.findById(id).orElseThrow(NotFoundException::new), me);
 	}
 
 	/** 送られた順に検査し、保存できる状態にする。1 枚でも通らなければ例外にし、何も保存しない。 */
@@ -141,8 +141,9 @@ public class PostService {
 		return keys;
 	}
 
-	public PostResponse get(UUID id) {
-		return assembler.toResponse(postMapper.findById(id).orElseThrow(NotFoundException::new));
+	/** {@code viewer} は見ている人。{@code likedByMe} の基準になる（投稿の持ち主とは限らない）。 */
+	public PostResponse get(UUID viewer, UUID id) {
+		return assembler.toResponse(postMapper.findById(id).orElseThrow(NotFoundException::new), viewer);
 	}
 
 	/** 判定の順序は 404、403、422。他人の投稿には、本文が不正でも 403 を返す。 */
@@ -153,7 +154,7 @@ public class PostService {
 		if (postMapper.updateBody(post.id(), body, OffsetDateTime.now(clock)) == 0) {
 			throw new NotFoundException();
 		}
-		return assembler.toResponse(postMapper.findById(id).orElseThrow(NotFoundException::new));
+		return assembler.toResponse(postMapper.findById(id).orElseThrow(NotFoundException::new), me);
 	}
 
 	public void delete(UUID me, UUID id) {

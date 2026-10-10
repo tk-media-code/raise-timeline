@@ -81,6 +81,28 @@ export async function replacePost(client: QueryClient, post: Post): Promise<void
   ])
 }
 
+// 一覧（種類を問わず全ページ）と詳細のキャッシュの、同じ投稿の「自分がいいねしたか」と数を書き換える。
+// 同じ状態を何度書いても結果が変わらない（既に liked なら何もしない。数は 0 未満にしない）ので、
+// 押したとき・失敗で戻すとき・要求が全部終わったときの 3 回、どの順で呼ばれても壊れない。
+export async function setLikedInCache(client: QueryClient, postId: string, liked: boolean): Promise<void> {
+  function apply(post: Post): Post {
+    if (post.id !== postId || post.likedByMe === liked) return post
+    return { ...post, likedByMe: liked, likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)) }
+  }
+  await Promise.all([
+    ...LIST_ROOTS.map((queryKey) => client.cancelQueries({ queryKey, predicate: hasData })),
+    client.cancelQueries({ queryKey: postKey(postId), exact: true, predicate: hasData }),
+  ])
+  for (const queryKey of LIST_ROOTS) {
+    client.setQueriesData<TimelineData>({ queryKey }, (data) => mapItems(data, (items) => items.map(apply)))
+  }
+  client.setQueryData<Post>(postKey(postId), (current) => (current ? apply(current) : current))
+  await Promise.all([
+    ...LIST_ROOTS.map((queryKey) => reloadFirstLoads(client, { queryKey })),
+    reloadFirstLoads(client, { queryKey: postKey(postId), exact: true }),
+  ])
+}
+
 // すべての一覧から投稿を除き、詳細のキャッシュを捨てる。
 export async function removePost(client: QueryClient, postId: string): Promise<void> {
   await Promise.all([
