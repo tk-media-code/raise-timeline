@@ -28,9 +28,11 @@ export function FollowButton({ user }: { user: FollowTarget }) {
       }}
       onMouseLeave={settle}
       onBlur={settle}
-      // 幅の下限（104px）は「フォロー中」と「解除」で幅が変わらないようにする（プロトタイプの .follow-btn と同じ）。
-      // 右端に置くので、幅が縮むとボタンの左端がポインタの下から外れ、ホバーが切れて「フォロー中」に戻り、ちらつく。
-      className={`group min-h-11 min-w-26 shrink-0 rounded-full px-4 font-bold focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 ${
+      // 「解除」は「フォロー中」の上に重ね、幅は常に「フォロー中」が決める。フォントによらず、替わっても幅が変わらない。
+      // 右端に置くので、幅が縮むとボタンの左端がポインタの下から外れ、ホバーが切れて「フォロー中」に戻り、ちらつく
+      // （ユーザーカードでは、その帯を押すと <article> に当たってプロフィールが開く）。
+      // min-w-26（104px）はプロトタイプの .follow-btn の下限で、「フォロー」と「フォロー中」の幅を近づける。
+      className={`group relative min-h-11 min-w-26 shrink-0 rounded-full px-4 font-bold focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 ${
         following
           ? `border border-gray-400 bg-white text-black ${justToggled ? '' : 'hover:border-red-300 hover:text-red-600'}`
           : 'bg-sky-600 text-white hover:bg-sky-700'
@@ -39,9 +41,10 @@ export function FollowButton({ user }: { user: FollowTarget }) {
       {following ? (
         <>
           {/* マウスを載せると「解除」に替わる。名前（aria-label）が「押すと解除」を伝えるので、読み上げには出さない。 */}
-          <span className={justToggled ? '' : 'group-hover:hidden'}>フォロー中</span>
+          {/* 「フォロー中」は invisible にするだけで、場所は残す（hidden にすると幅が「解除」の分に縮む）。 */}
+          <span className={justToggled ? '' : 'group-hover:invisible'}>フォロー中</span>
           {justToggled ? null : (
-            <span aria-hidden="true" className="hidden group-hover:inline">
+            <span aria-hidden="true" className="absolute inset-0 hidden items-center justify-center group-hover:flex">
               解除
             </span>
           )}

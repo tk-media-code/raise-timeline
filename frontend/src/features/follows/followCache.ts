@@ -24,7 +24,7 @@ function mapCards(data: CardsData | undefined, fn: (items: UserCard[]) => UserCa
 
 // 一覧（いいねした人・フォロワー・フォロー中。全ページ）と相手のプロフィールのキャッシュを書き換える。
 // プロフィールは isFollowing と followersCount（±1）、一覧は同じ id のカードの isFollowing。
-// 同じ状態を何度書いても結果が変わらない（isFollowing が同じなら何もしない。数は 0 未満にしない）ので、
+// 同じ状態を何度書いても結果が変わらない（isFollowing が同じなら値は変えず、数も増減させない。数は 0 未満にしない）ので、
 // 押したとき・失敗で戻すとき・要求が全部終わったときの 3 回、どの順で呼ばれても壊れない。
 // ほかの人と、キャッシュの無いプロフィールには触れない。
 export async function setFollowingInCache(client: QueryClient, target: FollowTarget, following: boolean): Promise<void> {

@@ -114,13 +114,17 @@ describe('FollowButton', () => {
     await waitFor(() => expect(api.unfollowUser).toHaveBeenCalledWith('alice'))
   })
 
-  it('幅の下限を固定し（min-w-26 = 104px）、「フォロー中」と「解除」で幅が変わらないようにする', () => {
-    const { unmount } = renderButton(makeDetail({ isFollowing: true }))
-    expect(screen.getByRole('button')).toHaveClass('min-w-26')
-    unmount()
+  // jsdom は幅を測れないので、幅が変わらない仕組みそのものを固定する。
+  // 「フォロー中」は場所を残す（invisible。hidden だと幅が「解除」の分に縮む）。「解除」はその上に重ねる。
+  it('フォロー中でホバーしても幅が変わらないよう、「フォロー中」は invisible にして場所を残し、「解除」は重ねて置く', () => {
+    renderButton(makeDetail({ isFollowing: true }))
 
-    renderButton()
-    expect(screen.getByRole('button')).toHaveClass('min-w-26')
+    const label = screen.getByText('フォロー中')
+    expect(label).toHaveClass('group-hover:invisible')
+    expect(label).not.toHaveClass('group-hover:hidden')
+    const hover = screen.getByText('解除')
+    expect(hover).toHaveClass('absolute', 'inset-0')
+    expect(screen.getByRole('button')).toHaveClass('relative', 'min-w-26')
   })
 
   it('自分（useAuth の利用者と同じ id）には何も出さない', () => {
