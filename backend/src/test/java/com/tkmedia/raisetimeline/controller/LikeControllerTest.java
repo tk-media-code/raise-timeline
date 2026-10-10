@@ -35,6 +35,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.RequestBuilder;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @WebMvcTest(controllers = LikeController.class)
@@ -128,6 +129,24 @@ class LikeControllerTest {
 	@DisplayName("GET は cursor が UUID でないと 400 BAD_REQUEST で、サービスは呼ばれない")
 	void invalidCursorReturns400() throws Exception {
 		mockMvc.perform(get("/api/posts/{id}/likes", POST_ID).param("cursor", "abc").with(me()))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+
+		verifyNoInteractions(likeService);
+	}
+
+	@ParameterizedTest(name = "{0} /api/posts/abc")
+	@ValueSource(strings = { "PUT", "DELETE", "GET" })
+	@DisplayName("id が UUID でないと 400 BAD_REQUEST で、サービスは呼ばれない")
+	void nonUuidIdReturns400(String method) throws Exception {
+		MockHttpServletRequestBuilder request = switch (method) {
+			case "PUT" -> put("/api/posts/abc/like");
+			case "DELETE" -> delete("/api/posts/abc/like");
+			case "GET" -> get("/api/posts/abc/likes");
+			default -> throw new IllegalArgumentException(method);
+		};
+
+		mockMvc.perform(request.with(me()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("BAD_REQUEST"));
 

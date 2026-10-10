@@ -36,8 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * いいねの付け外しと、いいねした人の一覧を、本物の PostgreSQL（テスト専用 DB）に対して端から端まで確かめる。
  *
- * <p>テストごとにロールバックする。存在しない投稿への付け外しは外部キー違反で PostgreSQL のトランザクションが
- * 中断するので、そのテストは要求を 1 回送って応答を見るだけにする。
+ * <p>テストごとにロールバックする。存在しない投稿への PUT は外部キー違反で PostgreSQL のトランザクションが
+ * 中断するので、そのテストは要求を 1 回送って応答を見るだけにする（DELETE と GET は existsById で先に 404 にする）。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -155,6 +155,23 @@ class LikeIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("自分が外しても、同じ投稿への他人のいいねは残る")
+	void unlikeKeepsOthersLikes() throws Exception {
+		UUID post = createPost(other);
+		assertThat(like(me, post)).isEqualTo(204);
+		assertThat(like(other, post)).isEqualTo(204);
+
+		assertThat(unlike(me, post)).isEqualTo(204);
+
+		assertThat(likeRows(post)).isEqualTo(1);
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM likes WHERE post_id = ? AND user_id = ?", Integer.class,
+				post, other)).isEqualTo(1);
+		String json = postJson(other, post);
+		assertThat((Integer) JsonPath.read(json, "$.likeCount")).isEqualTo(1);
+		assertThat((Boolean) JsonPath.read(json, "$.likedByMe")).isTrue();
+	}
+
+	@Test
 	@DisplayName("自分の投稿にも付けられる")
 	void canLikeOwnPost() throws Exception {
 		UUID post = createPost(me);
@@ -225,6 +242,32 @@ class LikeIntegrationTest {
 		List<String> secondIds = JsonPath.read(json(second), "$.items[*].id");
 		assertThat(secondIds).containsExactly(likers.get(0).toString());
 		assertThat(JsonPath.<Object>read(json(second), "$.nextCursor")).isNull();
+	}
+
+	@Test
+	@DisplayName("nextCursor の likes の行が消えても、2 ページ目は残りの 1 人だけで、欠けも重複も無い")
+	void deletedCursorLike() throws Exception {
+		UUID post = createPost(other);
+		List<UUID> likers = new ArrayList<>();
+		for (int i = 0; i < 21; i++) {
+			UUID liker = createUser("liker");
+			likers.add(liker);
+			likeMapper.insert(post, liker);
+		}
+		MvcResult first = likes(me, post, null);
+		String cursor = JsonPath.read(json(first), "$.nextCursor");
+		List<String> firstIds = JsonPath.read(json(first), "$.items[*].id");
+		// nextCursor の行は、1 ページ目の最後（= 20 件目）の人のいいね
+		assertThat(firstIds.get(19)).isEqualTo(likers.get(1).toString());
+
+		assertThat(unlike(likers.get(1), post)).isEqualTo(204);
+		MvcResult second = likes(me, post, cursor);
+
+		assertThat(second.getResponse().getStatus()).isEqualTo(200);
+		List<String> secondIds = JsonPath.read(json(second), "$.items[*].id");
+		assertThat(secondIds).containsExactly(likers.get(0).toString());
+		assertThat(JsonPath.<Object>read(json(second), "$.nextCursor")).isNull();
+		assertThat(firstIds).doesNotContainAnyElementsOf(secondIds);
 	}
 
 	@Test

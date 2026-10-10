@@ -122,13 +122,18 @@ class LikeMapperTest {
 	@Test
 	@DisplayName("findLikers は likes.id の降順で、cursor より古い行だけを limit 件返し、利用者の値が付く")
 	void findLikersPagesByLikeIdDescending() {
-		UUID post = createPost(createUser());
+		UUID author = createUser();
+		UUID post = createPost(author);
+		UUID otherPost = createPost(author);
 		UUID u1 = createUser();
 		UUID u2 = createUser();
 		UUID u3 = createUser();
+		UUID stranger = createUser();
 		likeMapper.insert(post, u1);
 		likeMapper.insert(post, u2);
 		likeMapper.insert(post, u3);
+		// 別の投稿へのいいね（post_id の絞り込みが無いと、新しい順で先頭に混ざる）
+		likeMapper.insert(otherPost, stranger);
 
 		List<Liker> firstPage = likeMapper.findLikers(post, null, 2);
 
