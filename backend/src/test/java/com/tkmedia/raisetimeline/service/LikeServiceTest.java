@@ -8,7 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.tkmedia.raisetimeline.domain.Liker;
+import com.tkmedia.raisetimeline.domain.UserCardRow;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.UserCard;
 import com.tkmedia.raisetimeline.error.NotFoundException;
@@ -28,6 +28,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 class LikeServiceTest {
 
 	private static final UUID ME = UUID.fromString("0199b000-0000-7000-8000-000000000001");
+	private static final UUID VIEWER = UUID.fromString("0199b000-0000-7000-8000-000000000009");
 	private static final UUID POST_ID = UUID.fromString("0199b000-0000-7000-8000-0000000000a1");
 
 	private final LikeMapper likeMapper = mock(LikeMapper.class);
@@ -39,16 +40,17 @@ class LikeServiceTest {
 				"insert or update on table \"likes\" violates foreign key constraint \"" + constraint + "\""));
 	}
 
-	private static Liker liker(int n, String avatarKey) {
-		return new Liker(UUID.fromString("0199b000-0000-7000-8000-0000000001%02d".formatted(n)),
+	private static UserCardRow liker(int n, String avatarKey, boolean isFollowing) {
+		return new UserCardRow(UUID.fromString("0199b000-0000-7000-8000-0000000001%02d".formatted(n)),
 				UUID.fromString("0199b000-0000-7000-8000-0000000002%02d".formatted(n)),
-				"user_" + n, "表示名" + n, avatarKey, "自己紹介\n" + n);
+				"user_" + n, "表示名" + n, avatarKey, "自己紹介\n" + n,
+				isFollowing);
 	}
 
-	private static List<Liker> likers(int count) {
-		List<Liker> rows = new ArrayList<>();
+	private static List<UserCardRow> likers(int count) {
+		List<UserCardRow> rows = new ArrayList<>();
 		for (int i = 0; i < count; i++) {
-			rows.add(liker(i, null));
+			rows.add(liker(i, null, false));
 		}
 		return rows;
 	}
@@ -114,50 +116,50 @@ class LikeServiceTest {
 	void likersMissingPost() {
 		when(postMapper.existsById(POST_ID)).thenReturn(false);
 
-		assertThatThrownBy(() -> service.likers(POST_ID, null, 20)).isInstanceOf(NotFoundException.class);
+		assertThatThrownBy(() -> service.likers(VIEWER, POST_ID, null, 20)).isInstanceOf(NotFoundException.class);
 
 		verify(likeMapper, never()).findLikers(ArgumentMatchers.any(), ArgumentMatchers.any(),
-				ArgumentMatchers.anyInt());
+				ArgumentMatchers.any(), ArgumentMatchers.anyInt());
 	}
 
 	@Test
-	@DisplayName("一覧は limit + 1 行を読む。limit を超えた分は返さず、nextCursor は返す最後の行の likeId")
+	@DisplayName("一覧は limit + 1 行を読む。limit を超えた分は返さず、nextCursor は返す最後の行の cursorId")
 	void likersCutsExtraRow() {
 		UUID cursor = UUID.fromString("0199b000-0000-7000-8000-0000000009ff");
-		List<Liker> rows = likers(3);
+		List<UserCardRow> rows = likers(3);
 		when(postMapper.existsById(POST_ID)).thenReturn(true);
-		when(likeMapper.findLikers(POST_ID, cursor, 3)).thenReturn(rows);
+		when(likeMapper.findLikers(POST_ID, VIEWER, cursor, 3)).thenReturn(rows);
 
-		PageResponse<UserCard> page = service.likers(POST_ID, cursor, 2);
+		PageResponse<UserCard> page = service.likers(VIEWER, POST_ID, cursor, 2);
 
 		assertThat(page.items()).extracting(UserCard::id).containsExactly(rows.get(0).userId(), rows.get(1).userId());
-		assertThat(page.nextCursor()).isEqualTo(rows.get(1).likeId());
+		assertThat(page.nextCursor()).isEqualTo(rows.get(1).cursorId());
 	}
 
 	@Test
 	@DisplayName("limit を超えなければ nextCursor は null")
 	void likersLastPage() {
 		when(postMapper.existsById(POST_ID)).thenReturn(true);
-		when(likeMapper.findLikers(POST_ID, null, 3)).thenReturn(likers(2));
+		when(likeMapper.findLikers(POST_ID, VIEWER, null, 3)).thenReturn(likers(2));
 
-		PageResponse<UserCard> page = service.likers(POST_ID, null, 2);
+		PageResponse<UserCard> page = service.likers(VIEWER, POST_ID, null, 2);
 
 		assertThat(page.items()).hasSize(2);
 		assertThat(page.nextCursor()).isNull();
 	}
 
 	@Test
-	@DisplayName("各行の avatarUrl は保存先が作る URL（avatarKey が null なら null）、bio はそのまま、isFollowing は false")
+	@DisplayName("各行の avatarUrl は保存先が作る URL（avatarKey が null なら null）、bio と isFollowing はそのまま")
 	void likersMapsCards() {
-		Liker withAvatar = liker(1, "avatars/a.png");
-		Liker withoutAvatar = liker(2, null);
+		UserCardRow withAvatar = liker(1, "avatars/a.png", true);
+		UserCardRow withoutAvatar = liker(2, null, false);
 		when(postMapper.existsById(POST_ID)).thenReturn(true);
-		when(likeMapper.findLikers(POST_ID, null, 21)).thenReturn(List.of(withAvatar, withoutAvatar));
+		when(likeMapper.findLikers(POST_ID, VIEWER, null, 21)).thenReturn(List.of(withAvatar, withoutAvatar));
 
-		List<UserCard> items = service.likers(POST_ID, null, 20).items();
+		List<UserCard> items = service.likers(VIEWER, POST_ID, null, 20).items();
 
 		assertThat(items.get(0)).isEqualTo(new UserCard(withAvatar.userId(), "user_1", "表示名1",
-				"https://images.test/avatars/a.png", "自己紹介\n1", false));
+				"https://images.test/avatars/a.png", "自己紹介\n1", true));
 		assertThat(items.get(1).avatarUrl()).isNull();
 		assertThat(items.get(1).bio()).isEqualTo("自己紹介\n2");
 		assertThat(items.get(1).isFollowing()).isFalse();

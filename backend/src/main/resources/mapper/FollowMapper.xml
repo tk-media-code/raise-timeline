@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tkmedia.raisetimeline.mapper.FollowMapper">
+
+	<!--
+		すでにフォローしているときは何も入れず 0 を返す。同時に 2 回押しても一意制約が 1 行に保つ。
+		相手か自分が無いときの外部キー違反は握りつぶさない（ON CONFLICT は一意制約の衝突だけを対象にする）。
+	-->
+	<insert id="insert">
+		INSERT INTO follows (follower_id, followee_id)
+		VALUES (#{followerId}, #{followeeId})
+		ON CONFLICT (follower_id, followee_id) DO NOTHING
+	</insert>
+
+	<delete id="delete">
+		DELETE FROM follows WHERE follower_id = #{followerId} AND followee_id = #{followeeId}
+	</delete>
+
+	<!--
+		users からは表示に要る列だけを読む。email と password_hash は読まない。
+		(followee_id, id) の索引 follows_followee_id_id_idx が絞り込みと id の降順の並びの両方にそのまま使える。
+		is_following は viewer の目から見た行の人（u）で、一覧の持ち主（userId）ではない。
+		cursor が null のときは <if> で条件ごと外す（PostMapper.findAll と同じ）。
+	-->
+	<select id="findFollowers" resultType="com.tkmedia.raisetimeline.domain.UserCardRow">
+		SELECT f.id AS cursor_id, u.id AS user_id, u.username, u.display_name, u.avatar_key, u.bio,
+		       EXISTS (SELECT 1 FROM follows v WHERE v.follower_id = #{viewer} AND v.followee_id = u.id) AS is_following
+		FROM follows f JOIN users u ON u.id = f.follower_id
+		WHERE f.followee_id = #{userId}
+		<if test="cursor != null">AND f.id &lt; #{cursor}</if>
+		ORDER BY f.id DESC
+		LIMIT #{limit}
+	</select>
+
+	<!-- 向きが逆なだけで、findFollowers と同じ形。索引は follows_follower_id_id_idx。 -->
+	<select id="findFollowing" resultType="com.tkmedia.raisetimeline.domain.UserCardRow">
+		SELECT f.id AS cursor_id, u.id AS user_id, u.username, u.display_name, u.avatar_key, u.bio,
+		       EXISTS (SELECT 1 FROM follows v WHERE v.follower_id = #{viewer} AND v.followee_id = u.id) AS is_following
+		FROM follows f JOIN users u ON u.id = f.followee_id
+		WHERE f.follower_id = #{userId}
+		<if test="cursor != null">AND f.id &lt; #{cursor}</if>
+		ORDER BY f.id DESC
+		LIMIT #{limit}
+	</select>
+
+	<!-- 副問い合わせの集計は必ず 1 行返すので、無い利用者でも 0・0・false の 1 行になる。 -->
+	<select id="stats" resultType="com.tkmedia.raisetimeline.domain.FollowStats">
+		SELECT (SELECT count(*) FROM follows WHERE followee_id = #{userId}) AS followers_count,
+		       (SELECT count(*) FROM follows WHERE follower_id = #{userId}) AS following_count,
+		       EXISTS (SELECT 1 FROM follows WHERE follower_id = #{viewer} AND followee_id = #{userId}) AS is_following
+	</select>
+
+</mapper>
