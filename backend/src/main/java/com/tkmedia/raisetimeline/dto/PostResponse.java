@@ -5,8 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 投稿 1 件の応答。{@code likedByMe} は、見ている人が付けたか。{@code commentCount} は、コメントを作る
- * Issue 8 まで暫定値の 0 を入れる。{@code images} は表示の順で、無ければ空。
+ * 投稿 1 件の応答。{@code likedByMe} は、見ている人が付けたか。{@code images} は表示の順で、無ければ空。
  */
 public record PostResponse(
 		UUID id,

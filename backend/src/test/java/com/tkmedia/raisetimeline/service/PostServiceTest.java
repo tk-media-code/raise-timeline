@@ -27,6 +27,7 @@ import com.tkmedia.raisetimeline.image.ImageCleaner;
 import com.tkmedia.raisetimeline.image.ImageUploadRules;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
 import com.tkmedia.raisetimeline.image.TestImages;
+import com.tkmedia.raisetimeline.mapper.CommentMapper;
 import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.sql.SQLException;
@@ -61,7 +62,7 @@ class PostServiceTest {
 	private final PostService service = serviceWith(storage);
 
 	private PostService serviceWith(ImageStorage imageStorage) {
-		return new PostService(postMapper, new PostAssembler(postMapper, likeMapper, imageStorage), imageStorage,
+		return new PostService(postMapper, new PostAssembler(postMapper, likeMapper, mock(CommentMapper.class), imageStorage), imageStorage,
 				new ImageCleaner(imageStorage), TransactionOperations.withoutTransaction(),
 				Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
 	}
@@ -368,7 +369,7 @@ class PostServiceTest {
 	@DisplayName("投稿の行と画像の行は、同じ 1 回のトランザクションの中で入れる（外では入れない）")
 	void createInsertsPostAndImageRowsInsideOneTransaction() {
 		RecordingTransactions transactions = new RecordingTransactions();
-		PostService recording = new PostService(postMapper, new PostAssembler(postMapper, likeMapper, storage), storage,
+		PostService recording = new PostService(postMapper, new PostAssembler(postMapper, likeMapper, mock(CommentMapper.class), storage), storage,
 				new ImageCleaner(storage), transactions, Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
 		// 呼ばれた瞬間にトランザクションの中だったかを記録する。範囲を外すと false が残って落ちる。
 		List<Boolean> insertCalls = new ArrayList<>();

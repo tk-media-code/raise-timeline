@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.tkmedia.raisetimeline.domain.CommentCount;
 import com.tkmedia.raisetimeline.domain.LikeCount;
 import com.tkmedia.raisetimeline.domain.PostImage;
 import com.tkmedia.raisetimeline.domain.PostWithAuthor;
@@ -18,6 +19,7 @@ import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.dto.UserSummary;
 import com.tkmedia.raisetimeline.image.ImageStorage;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.CommentMapper;
 import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
@@ -36,7 +38,9 @@ class PostAssemblerTest {
 
 	private final PostMapper postMapper = mock(PostMapper.class);
 	private final LikeMapper likeMapper = mock(LikeMapper.class);
-	private final PostAssembler assembler = new PostAssembler(postMapper, likeMapper, new InMemoryImageStorage());
+	private final CommentMapper commentMapper = mock(CommentMapper.class);
+	private final PostAssembler assembler = new PostAssembler(postMapper, likeMapper, commentMapper,
+			new InMemoryImageStorage());
 
 	private static PostWithAuthor row(OffsetDateTime updatedAt) {
 		return new PostWithAuthor(POST_ID, USER_ID, "本文", CREATED, updatedAt, "taro_1", "太郎", "avatars/x.png");
@@ -79,8 +83,8 @@ class PostAssemblerTest {
 	}
 
 	@Test
-	@DisplayName("いいねの無い投稿は likeCount 0・likedByMe false。commentCount は暫定値の 0。画像が無ければ images は空")
-	void noLikesAndInterimComments() {
+	@DisplayName("いいねもコメントも無い投稿は likeCount 0・likedByMe false・commentCount 0。画像が無ければ images は空")
+	void noLikesAndNoComments() {
 		PostResponse response = assembler.toResponse(row(CREATED), VIEWER);
 
 		assertThat(response.images()).isEmpty();
@@ -107,7 +111,21 @@ class PostAssemblerTest {
 	}
 
 	@Test
-	@DisplayName("1 ページの問い合わせは、画像・数・自分のいいねが 1 回ずつで、投稿の件数によらない")
+	@DisplayName("countByPosts の数が commentCount に入り、コメントの無い投稿は 0 になる")
+	void commentCounts() {
+		UUID bId = UUID.fromString("0199b000-0000-7000-8000-0000000000a2");
+		PostWithAuthor a = row(CREATED);
+		PostWithAuthor b = new PostWithAuthor(bId, USER_ID, "二つ目", CREATED, CREATED, "taro_1", "太郎", null);
+		when(commentMapper.countByPosts(List.of(POST_ID, bId))).thenReturn(List.of(new CommentCount(POST_ID, 4)));
+
+		List<PostResponse> responses = assembler.toResponses(List.of(a, b), VIEWER);
+
+		assertThat(responses.get(0).commentCount()).isEqualTo(4);
+		assertThat(responses.get(1).commentCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("1 ページの問い合わせは、画像・いいね数・自分のいいね・コメント数が 1 回ずつで、投稿の件数によらない")
 	void queriesOnceEachRegardlessOfPostCount() {
 		List<PostWithAuthor> rows = new ArrayList<>();
 		for (int i = 0; i < 3; i++) {
@@ -121,6 +139,7 @@ class PostAssemblerTest {
 		verify(postMapper, times(1)).findImages(ids);
 		verify(likeMapper, times(1)).countByPosts(ids);
 		verify(likeMapper, times(1)).findLikedPostIds(VIEWER, ids);
+		verify(commentMapper, times(1)).countByPosts(ids);
 	}
 
 	@Test
@@ -145,7 +164,7 @@ class PostAssemblerTest {
 		ImageStorage disabled = mock(ImageStorage.class);
 		when(disabled.urlOf("posts/a.jpg")).thenReturn(null);
 		when(disabled.urlOf("posts/b.jpg")).thenReturn("https://images.test/posts/b.jpg");
-		PostAssembler assemblerWithoutUrl = new PostAssembler(postMapper, likeMapper, disabled);
+		PostAssembler assemblerWithoutUrl = new PostAssembler(postMapper, likeMapper, commentMapper, disabled);
 		UUID kept = UUID.fromString("0199b000-0000-7000-8000-0000000000b2");
 		when(postMapper.findImages(List.of(POST_ID))).thenReturn(List.of(
 				image("0199b000-0000-7000-8000-0000000000b1", POST_ID, "posts/a.jpg", 0),
@@ -182,7 +201,7 @@ class PostAssemblerTest {
 	void emptyRowsDoNotQuery() {
 		assertThat(assembler.toResponses(List.of(), VIEWER)).isEmpty();
 
-		verifyNoInteractions(postMapper, likeMapper);
+		verifyNoInteractions(postMapper, likeMapper, commentMapper);
 	}
 
 	@Test

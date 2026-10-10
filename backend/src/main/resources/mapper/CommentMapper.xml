@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tkmedia.raisetimeline.mapper.CommentMapper">
+
+	<!-- users からは表示に要る 3 列だけを読む。email と password_hash は読まない。 -->
+	<sql id="columns">
+		c.id, c.post_id, c.user_id, c.body, c.created_at, u.username, u.display_name, u.avatar_key
+	</sql>
+
+	<!-- PostMapper.insert と同じ理由で、INSERT ... RETURNING id を <select> で実行する。 -->
+	<select id="insert" resultType="java.util.UUID" flushCache="true" useCache="false">
+		INSERT INTO comments (post_id, user_id, body, created_at)
+		VALUES (#{postId}, #{userId}, #{body}, #{createdAt})
+		RETURNING id
+	</select>
+
+	<select id="findById" resultType="com.tkmedia.raisetimeline.domain.CommentWithAuthor">
+		SELECT <include refid="columns"/>
+		FROM comments c JOIN users u ON u.id = c.user_id
+		WHERE c.id = #{id}
+	</select>
+
+	<!--
+		(post_id, id) の索引 comments_post_id_id_idx が絞り込みと id の降順の並びの両方にそのまま使える。
+		cursor が null のときは <if> で条件ごと外す（PostMapper.findAll と同じ）。
+	-->
+	<select id="findByPost" resultType="com.tkmedia.raisetimeline.domain.CommentWithAuthor">
+		SELECT <include refid="columns"/>
+		FROM comments c JOIN users u ON u.id = c.user_id
+		WHERE c.post_id = #{postId}
+		<if test="cursor != null">AND c.id &lt; #{cursor}</if>
+		ORDER BY c.id DESC
+		LIMIT #{limit}
+	</select>
+
+	<delete id="delete">
+		DELETE FROM comments WHERE id = #{id}
+	</delete>
+
+	<!-- 一覧のコメント数は、ページの投稿の id をまとめて 1 回で引く（投稿ごとに引くと N+1 になる）。 -->
+	<select id="countByPosts" resultType="com.tkmedia.raisetimeline.domain.CommentCount">
+		SELECT post_id, count(*) AS count
+		FROM comments
+		WHERE post_id IN
+		<foreach collection="postIds" item="postId" open="(" separator="," close=")">
+			#{postId}
+		</foreach>
+		GROUP BY post_id
+	</select>
+
+</mapper>

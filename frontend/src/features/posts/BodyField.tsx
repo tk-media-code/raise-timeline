@@ -9,10 +9,21 @@ type BodyFieldProps = {
   error?: string | null
   // 描かれたときに入力欄へフォーカスを置く。ダイアログの中では ModalDialog が、開いてから置く。
   focusOnMount?: boolean
+  // 読み上げ用の名前と、入力欄の例示。既定は投稿の「本文」。コメントでは別の文言を渡す。
+  label?: string
+  placeholder?: string
 }
 
-// 本文の入力欄と、残り文字数、誤りの表示。投稿フォームと編集ダイアログで共有する。
-export function BodyField({ id, value, onChange, error, focusOnMount }: BodyFieldProps) {
+// 本文の入力欄と、残り文字数、誤りの表示。投稿フォーム・編集ダイアログ・コメントフォームで共有する。
+export function BodyField({
+  id,
+  value,
+  onChange,
+  error,
+  focusOnMount,
+  label = '本文',
+  placeholder = '本文を入力',
+}: BodyFieldProps) {
   const counterId = useId()
   const errorId = useId()
   const remaining = remainingChars(value)
@@ -27,14 +38,14 @@ export function BodyField({ id, value, onChange, error, focusOnMount }: BodyFiel
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={id} className="sr-only">
-        本文
+        {label}
       </label>
       <textarea
         ref={textareaRef}
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="本文を入力"
+        placeholder={placeholder}
         rows={4}
         // ModalDialog が、開いたあとにフォーカスを置く入力欄を見つける印。
         data-autofocus={focusOnMount ? '' : undefined}

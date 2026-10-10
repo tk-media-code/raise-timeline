@@ -7,6 +7,7 @@ import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.CommentMapper;
 import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
@@ -23,7 +24,7 @@ class PostPagesTest {
 	private static final UUID AUTHOR = UUID.fromString("0199b000-0000-7000-8000-0000000000ff");
 
 	private final LikeMapper likeMapper = mock(LikeMapper.class);
-	private final PostAssembler assembler = new PostAssembler(mock(PostMapper.class), likeMapper, new InMemoryImageStorage());
+	private final PostAssembler assembler = new PostAssembler(mock(PostMapper.class), likeMapper, mock(CommentMapper.class), new InMemoryImageStorage());
 
 	/** id の降順に並んだ n 行。 */
 	private static List<PostWithAuthor> rows(int n) {

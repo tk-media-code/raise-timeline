@@ -5,6 +5,7 @@ import { getPost } from '../api/posts'
 import { NotFoundMessage } from '../components/NotFoundMessage'
 import { RetryMessage } from '../components/RetryMessage'
 import { Spinner } from '../components/Spinner'
+import { CommentSection } from '../features/comments/CommentSection'
 import { PostItem } from '../features/posts/PostItem'
 import { postKey } from '../features/posts/queryKeys'
 
@@ -20,6 +21,8 @@ export default function PostDetailPage() {
     return <RetryMessage onRetry={() => void query.refetch()} />
   }
 
+  const goHome = () => void navigate('/', { replace: true })
+
   return (
     <div className="flex flex-col">
       {/* スマホ幅は上部バーに同じ画面名が出るので、見出しは読み上げ用に残して見た目では隠す。 */}
@@ -29,8 +32,10 @@ export default function PostDetailPage() {
         timeStyle="absolute"
         linkToDetail={false}
         showLikersLink
-        onRemoved={() => void navigate('/', { replace: true })}
+        onRemoved={goHome}
       />
+      {/* key で、URL の投稿 id が変わったら節ごと作り直す（書き込みの処理は postId を持ち、入力途中の本文も別の投稿へ持ち越さない）。 */}
+      <CommentSection key={id} postId={id} onPostGone={goHome} />
     </div>
   )
 }

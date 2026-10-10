@@ -1,13 +1,19 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Link } from 'react-router'
 import { ApiError } from '../api/client'
+import type { Comment } from '../api/comments'
 import type { Post } from '../api/posts'
+import { postKey } from '../features/posts/queryKeys'
 import { renderWithProviders } from '../test/providers'
 import PostDetailPage from './PostDetailPage'
 
 const api = vi.hoisted(() => ({ getPost: vi.fn(), createPost: vi.fn(), updatePost: vi.fn(), deletePost: vi.fn() }))
 vi.mock('../api/posts', () => api)
+
+const commentsApi = vi.hoisted(() => ({ getComments: vi.fn(), createComment: vi.fn(), deleteComment: vi.fn() }))
+vi.mock('../api/comments', () => commentsApi)
 
 const useAuth = vi.hoisted(() => vi.fn())
 vi.mock('../auth/AuthProvider', () => ({ useAuth }))
@@ -27,6 +33,15 @@ function makePost(overrides: Partial<Post> = {}): Post {
   }
 }
 
+function makeComment(id: string, body: string): Comment {
+  return {
+    id,
+    author: { id: 'u1', username: 'alice', displayName: 'アリス', avatarUrl: null },
+    body,
+    createdAt: '2026-10-06T05:20:00Z',
+  }
+}
+
 function apiError(init: Partial<ConstructorParameters<typeof ApiError>[0]>): ApiError {
   return new ApiError({ status: 500, code: null, detail: '問題が起きました', errors: [], requestId: null, ...init })
 }
@@ -35,10 +50,24 @@ function renderDetail() {
   return renderWithProviders(<PostDetailPage />, { route: '/posts/p1', path: '/posts/:id' })
 }
 
+// 別の投稿の詳細へ移るためのリンクを足して描く（同じ PostDetailPage のまま URL の id だけが変わる）。
+function renderDetailWithLinkToP2() {
+  return renderWithProviders(
+    <>
+      <Link to="/posts/p2">p2 へ</Link>
+      <PostDetailPage />
+    </>,
+    { route: '/posts/p1', path: '/posts/:id' },
+  )
+}
+
 describe('PostDetailPage', () => {
   beforeEach(() => {
     api.getPost.mockReset()
     api.deletePost.mockReset()
+    commentsApi.getComments.mockReset()
+    commentsApi.createComment.mockReset()
+    commentsApi.getComments.mockResolvedValue({ items: [], nextCursor: null })
     useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u1', username: 'alice' } })
   })
 
@@ -105,5 +134,88 @@ describe('PostDetailPage', () => {
 
     expect(await screen.findByText('現在地: /')).toBeInTheDocument()
     expect(api.deletePost).toHaveBeenCalledWith('p1')
+  })
+
+  it('投稿の下に「コメント」の節があり、フォームと一覧が出る。0 件なら「まだコメントがありません」', async () => {
+    api.getPost.mockResolvedValue(makePost())
+    renderDetail()
+
+    const section = await screen.findByRole('region', { name: 'コメント' })
+    expect(within(section).getByRole('textbox', { name: 'コメント' })).toBeInTheDocument()
+    expect(within(section).getByRole('button', { name: 'コメントする' })).toBeInTheDocument()
+    expect(await within(section).findByText('まだコメントがありません')).toBeInTheDocument()
+  })
+
+  it('コメントは新しい順に並び、getComments は (p1, null) で呼ばれる', async () => {
+    api.getPost.mockResolvedValue(makePost({ commentCount: 2 }))
+    commentsApi.getComments.mockResolvedValue({
+      items: [makeComment('c2', '新しいコメント'), makeComment('c1', '古いコメント')],
+      nextCursor: null,
+    })
+    renderDetail()
+
+    const list = await screen.findByRole('list', { name: 'コメント一覧' })
+    const items = within(list).getAllByRole('listitem')
+    expect(items[0]).toHaveTextContent('新しいコメント')
+    expect(items[1]).toHaveTextContent('古いコメント')
+    expect(commentsApi.getComments).toHaveBeenCalledWith('p1', null)
+  })
+
+  it('コメントすると、一覧の先頭に自分のコメントが出て、カードのコメント数が 1 増える', async () => {
+    api.getPost.mockResolvedValue(makePost({ commentCount: 1 }))
+    commentsApi.getComments.mockResolvedValue({ items: [makeComment('c1', '先にあったコメント')], nextCursor: null })
+    commentsApi.createComment.mockResolvedValue(makeComment('c2', 'いま書いたコメント'))
+    renderDetail()
+    const user = userEvent.setup()
+    await screen.findByText('先にあったコメント')
+    expect(screen.getByRole('img', { name: 'コメント 1 件' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('textbox', { name: 'コメント' }))
+    await user.paste('いま書いたコメント')
+    await user.click(screen.getByRole('button', { name: 'コメントする' }))
+
+    expect(await screen.findByRole('img', { name: 'コメント 2 件' })).toBeInTheDocument()
+    const items = within(screen.getByRole('list', { name: 'コメント一覧' })).getAllByRole('listitem')
+    expect(items[0]).toHaveTextContent('いま書いたコメント')
+    expect(items[1]).toHaveTextContent('先にあったコメント')
+    expect(commentsApi.createComment).toHaveBeenCalledWith('p1', 'いま書いたコメント')
+  })
+
+  it('投稿詳細のコメント数は押せない表示のまま', async () => {
+    api.getPost.mockResolvedValue(makePost({ commentCount: 3 }))
+    renderDetail()
+
+    expect(await screen.findByRole('img', { name: 'コメント 3 件' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'コメント 3 件' })).not.toBeInTheDocument()
+  })
+
+  it('p1 の入力欄に書いて p2 の詳細へ移ると、入力欄が空になる', async () => {
+    api.getPost.mockImplementation((id: string) => Promise.resolve(makePost({ id })))
+    const { queryClient } = renderDetailWithLinkToP2()
+    // p2 の詳細を先に持たせておく。読み込み中の表示（節ごと消える）を挟まず、同じ節のまま id だけが変わる状況にする。
+    queryClient.setQueryData(postKey('p2'), makePost({ id: 'p2' }))
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('textbox', { name: 'コメント' }))
+    await user.paste('p1 に書きかけ')
+    expect(screen.getByRole('textbox', { name: 'コメント' })).toHaveValue('p1 に書きかけ')
+
+    await user.click(screen.getByRole('link', { name: 'p2 へ' }))
+
+    await waitFor(() => expect(commentsApi.getComments).toHaveBeenCalledWith('p2', null))
+    expect(await screen.findByRole('textbox', { name: 'コメント' })).toHaveValue('')
+  })
+
+  it('コメントの 404 でホームへ移る', async () => {
+    api.getPost.mockResolvedValue(makePost())
+    commentsApi.createComment.mockRejectedValue(apiError({ status: 404, code: 'NOT_FOUND', detail: '見つかりません' }))
+    renderDetail()
+    const user = userEvent.setup()
+    await screen.findByRole('region', { name: 'コメント' })
+
+    await user.click(screen.getByRole('textbox', { name: 'コメント' }))
+    await user.paste('消えた投稿へのコメント')
+    await user.click(screen.getByRole('button', { name: 'コメントする' }))
+
+    expect(await screen.findByText('現在地: /')).toBeInTheDocument()
   })
 })

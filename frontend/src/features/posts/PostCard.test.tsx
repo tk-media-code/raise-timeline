@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Post } from '../../api/posts'
 import { PostCard } from './PostCard'
@@ -36,6 +36,19 @@ function renderCard(props: Props = {}) {
         <Route path="/users/:username" element={<p>プロフィールの画面</p>} />
       </Routes>
     </MemoryRouter>,
+  )
+}
+
+// 詳細の画面の代わり。「戻る」を押した先が一覧なら、詳細へ移ったときに履歴を 1 つしか積んでいない。
+function DetailProbe() {
+  const navigate = useNavigate()
+  return (
+    <div>
+      <p>投稿詳細の画面</p>
+      <button type="button" onClick={() => void navigate(-1)}>
+        戻る
+      </button>
+    </div>
   )
 }
 
@@ -77,11 +90,45 @@ describe('PostCard の表示', () => {
     expect(screen.getByText('編集済み')).toBeInTheDocument()
   })
 
-  it('コメント数は、押せない表示（img）で出す', () => {
-    renderCard({ post: makePost({ commentCount: 12 }) })
+  it('linkToDetail が false のときのコメント数は、押せない表示（img）で出す', () => {
+    renderCard({ post: makePost({ commentCount: 3 }), linkToDetail: false })
 
-    expect(screen.getByRole('img', { name: 'コメント 12 件' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'コメント 3 件' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /コメント/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /コメント/ })).not.toBeInTheDocument()
+  })
+
+  it('linkToDetail のとき、コメント数は「コメント 3 件」のリンクで /posts/p1 を指す', () => {
+    renderCard({ post: makePost({ commentCount: 3 }), linkToDetail: true })
+
+    expect(screen.getByRole('link', { name: 'コメント 3 件' })).toHaveAttribute('href', '/posts/p1')
+    expect(screen.queryByRole('img', { name: /コメント/ })).not.toBeInTheDocument()
+  })
+
+  it('コメント数のリンクを押すと詳細へ移る（カードの openDetail と二重に動かず、履歴は 1 つだけ積む）', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <>
+                <p>一覧の画面</p>
+                <PostCard post={makePost({ commentCount: 3 })} isMine={false} timeStyle="relative" linkToDetail onToggleLike={() => {}} now={NOW} />
+              </>
+            }
+          />
+          <Route path="/posts/:id" element={<DetailProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await userEvent.click(screen.getByRole('link', { name: 'コメント 3 件' }))
+    expect(screen.getByText('投稿詳細の画面')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '戻る' }))
+
+    expect(screen.getByText('一覧の画面')).toBeInTheDocument()
+    expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
   })
 })
 

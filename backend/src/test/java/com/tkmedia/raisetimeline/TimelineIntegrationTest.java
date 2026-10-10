@@ -111,6 +111,21 @@ class TimelineIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("コメントが 2 件ある投稿は commentCount 2、無い投稿は 0")
+	void commentCountCountsComments() throws Exception {
+		UUID commenter = createUser("commenter");
+		UUID commented = createPosts(me, 1).get(0);
+		UUID untouched = createPosts(me, 1).get(0);
+		jdbc.update("INSERT INTO comments (post_id, user_id, body) VALUES (?, ?, ?)", commented, commenter, "一つ目");
+		jdbc.update("INSERT INTO comments (post_id, user_id, body) VALUES (?, ?, ?)", commented, me, "二つ目");
+
+		String body = json(timeline(null));
+
+		assertThat(itemField(body, commented, "commentCount")).isEqualTo(2);
+		assertThat(itemField(body, untouched, "commentCount")).isEqualTo(0);
+	}
+
+	@Test
 	@DisplayName("2 人が付けた投稿は likeCount 2。付けた人には likedByMe が true、付けていない人には false")
 	void likeCountAndLikedByMeDependOnViewer() throws Exception {
 		UUID liker1 = createUser("liker1");

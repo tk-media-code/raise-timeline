@@ -185,8 +185,7 @@ public class AuthService {
 	}
 
 	private static RuntimeException translateLoginViolation(DataIntegrityViolationException e) {
-		String message = e.getMostSpecificCause().getMessage();
-		if (message != null && message.contains(REFRESH_TOKEN_USER_FOREIGN_KEY)) {
+		if (ConstraintViolations.violates(e, REFRESH_TOKEN_USER_FOREIGN_KEY)) {
 			// 利用者 id もメールの有無も書かない。
 			log.atInfo().addKeyValue(LogFields.EVENT_ACTION, LogEvents.AUTH_LOGIN_FAILED).log("ログインに失敗した");
 			return new InvalidCredentialsException();
@@ -195,11 +194,10 @@ public class AuthService {
 	}
 
 	private static RuntimeException translate(DuplicateKeyException e) {
-		String message = e.getMostSpecificCause().getMessage();
-		if (message != null && message.contains(USERNAME_INDEX)) {
+		if (ConstraintViolations.violates(e, USERNAME_INDEX)) {
 			return new ConflictException(ErrorCode.USERNAME_TAKEN, "username");
 		}
-		if (message != null && message.contains(EMAIL_INDEX)) {
+		if (ConstraintViolations.violates(e, EMAIL_INDEX)) {
 			return new ConflictException(ErrorCode.EMAIL_TAKEN, "email");
 		}
 		return e;

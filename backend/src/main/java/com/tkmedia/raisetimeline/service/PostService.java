@@ -186,8 +186,7 @@ public class PostService {
 	 * 知らない制約は変換せず、そのまま投げて 500 にする（ERROR のログで気づけるように）。
 	 */
 	private static RuntimeException translate(DataIntegrityViolationException e) {
-		String message = e.getMostSpecificCause().getMessage();
-		if (message != null && message.contains(USER_FOREIGN_KEY)) {
+		if (ConstraintViolations.violates(e, USER_FOREIGN_KEY)) {
 			return new UnauthenticatedException();
 		}
 		return e;

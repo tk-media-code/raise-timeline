@@ -2,7 +2,7 @@ import type { InfiniteData } from '@tanstack/react-query'
 import { InfiniteQueryObserver, QueryClient, QueryObserver } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import type { Page, Post } from '../../api/posts'
-import { prependPost, removePost, replacePost, setLikedInCache } from './postCache'
+import { changeCommentCountInCache, prependPost, removePost, replacePost, setLikedInCache } from './postCache'
 import { postKey, timelineKeys, userPostsKeys } from './queryKeys'
 
 type Data = InfiniteData<Page<Post>, string | null>
@@ -274,6 +274,120 @@ describe('setLikedInCache', () => {
     await setLikedInCache(client, 'c', true)
 
     await expect.poll(() => client.getQueryData<Data>(timelineKeys.all)?.pages[0]?.items[0]?.likeCount).toBe(3)
+    expect(calls).toBe(2)
+    unsubscribe()
+  })
+})
+
+describe('changeCommentCountInCache', () => {
+  function counting(commentCount: number): Post {
+    return { ...makePost('c'), commentCount }
+  }
+
+  function withPostC(post: Post): Data {
+    return {
+      pages: [
+        { items: [makePost('a')], nextCursor: 'c2' },
+        { items: [post, makePost('d')], nextCursor: null },
+      ],
+      pageParams: [null, 'c2'],
+    }
+  }
+
+  it('タイムラインの全ページ、その人の投稿一覧、詳細の同じ投稿の commentCount を 1 増やす', async () => {
+    const client = new QueryClient()
+    client.setQueryData(timelineKeys.all, withPostC(counting(2)))
+    client.setQueryData(userPostsKeys.of('alice'), withPostC(counting(2)))
+    client.setQueryData(postKey('c'), counting(2))
+
+    await changeCommentCountInCache(client, 'c', 1)
+
+    for (const key of [timelineKeys.all, userPostsKeys.of('alice')]) {
+      expect(client.getQueryData<Data>(key)?.pages[1]?.items[0]?.commentCount).toBe(3)
+    }
+    expect(client.getQueryData<Post>(postKey('c'))?.commentCount).toBe(3)
+  })
+
+  it('-1 で 1 減り、0 未満にはならない', async () => {
+    const client = new QueryClient()
+    client.setQueryData(timelineKeys.all, withPostC(counting(3)))
+    client.setQueryData(postKey('c'), counting(0))
+
+    await changeCommentCountInCache(client, 'c', -1)
+
+    expect(client.getQueryData<Data>(timelineKeys.all)?.pages[1]?.items[0]?.commentCount).toBe(2)
+    expect(client.getQueryData<Post>(postKey('c'))?.commentCount).toBe(0)
+  })
+
+  it('ほかの投稿は変えない', async () => {
+    const client = new QueryClient()
+    client.setQueryData(timelineKeys.all, withPostC(counting(2)))
+    client.setQueryData(postKey('a'), makePost('a'))
+
+    await changeCommentCountInCache(client, 'c', 1)
+
+    const data = client.getQueryData<Data>(timelineKeys.all)
+    expect(data?.pages[0]?.items[0]).toEqual(makePost('a'))
+    expect(data?.pages[1]?.items[1]).toEqual(makePost('d'))
+    expect(client.getQueryData(postKey('a'))).toEqual(makePost('a'))
+  })
+
+  it('詳細のキャッシュが無ければ、作らない', async () => {
+    const client = new QueryClient()
+
+    await changeCommentCountInCache(client, 'c', 1)
+
+    expect(client.getQueryData(postKey('c'))).toBeUndefined()
+  })
+
+  it('一覧の次のページの読み込みの最中に変えても、そのページの到着で元に戻らない', async () => {
+    const client = new QueryClient()
+    client.setQueryData<Data>(timelineKeys.all, {
+      pages: [{ items: [counting(2)], nextCursor: 'c2' }],
+      pageParams: [null],
+    })
+    let aborted = false
+    const observer = new InfiniteQueryObserver(client, {
+      queryKey: timelineKeys.all,
+      queryFn: ({ signal }): Promise<Page<Post>> => {
+        signal.addEventListener('abort', () => {
+          aborted = true
+        })
+        return new Promise(() => {})
+      },
+      initialPageParam: null as string | null,
+      getNextPageParam: (last: Page<Post>) => last.nextCursor,
+      staleTime: Infinity,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    void observer.fetchNextPage()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await changeCommentCountInCache(client, 'c', 1)
+
+    expect(aborted).toBe(true)
+    expect(client.getQueryData<Data>(timelineKeys.all)?.pages[0]?.items[0]?.commentCount).toBe(3)
+    unsubscribe()
+  })
+
+  it('一覧の最初の読み込み中なら、読み直して最新を取る', async () => {
+    const client = new QueryClient()
+    let calls = 0
+    const observer = new InfiniteQueryObserver(client, {
+      queryKey: timelineKeys.all,
+      queryFn: (): Promise<Page<Post>> => {
+        calls += 1
+        return calls === 1 ? new Promise(() => {}) : Promise.resolve({ items: [counting(3)], nextCursor: null })
+      },
+      initialPageParam: null as string | null,
+      getNextPageParam: (last: Page<Post>) => last.nextCursor,
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await changeCommentCountInCache(client, 'c', 1)
+
+    await expect.poll(() => client.getQueryData<Data>(timelineKeys.all)?.pages[0]?.items[0]?.commentCount).toBe(3)
     expect(calls).toBe(2)
     unsubscribe()
   })
