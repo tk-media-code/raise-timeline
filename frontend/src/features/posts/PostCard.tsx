@@ -92,7 +92,8 @@ export function PostCard({
 
       <ImageGrid images={post.images} interactive />
 
-      {/* コメントはまだ押せない（Issue 8 が足す）。押せるボタンに見えないよう role="img" の表示にする。 */}
+      {/* コメントを読み書きするのは投稿詳細。一覧のカードでは詳細へのリンクにし、詳細の中では（すぐ下にコメントがあるので）
+          押せない表示にする。押せるボタンに見えないよう role="img" にする。 */}
       <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
         <button
           type="button"
@@ -115,10 +116,20 @@ export function PostCard({
             <span aria-hidden="true">{post.likeCount}</span>
           </Link>
         )}
-        {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 文字を持つ表示なので <img> にはできない */}
-        <span role="img" aria-label={`コメント ${post.commentCount} 件`} className="ml-4">
-          <span aria-hidden="true">💬 {post.commentCount}</span>
-        </span>
+        {linkToDetail ? (
+          <Link
+            to={`/posts/${post.id}`}
+            aria-label={`コメント ${post.commentCount} 件`}
+            className="ml-4 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 hover:underline"
+          >
+            <span aria-hidden="true">💬 {post.commentCount}</span>
+          </Link>
+        ) : (
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 文字を持つ表示なので <img> にはできない
+          <span role="img" aria-label={`コメント ${post.commentCount} 件`} className="ml-4">
+            <span aria-hidden="true">💬 {post.commentCount}</span>
+          </span>
+        )}
       </div>
     </article>
   )

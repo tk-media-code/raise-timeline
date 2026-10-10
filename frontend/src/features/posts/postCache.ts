@@ -15,7 +15,7 @@ type TimelineData = InfiniteData<Page<Post>, string | null>
 // データがあるクエリだけを中断する。データが無い（最初の読み込み中の）クエリを中断すると、
 // 待機中（pending）に戻って誰も取り直さず、一覧が読み込み中のまま止まる。
 // そのクエリには上書きされる土台も無いので、中断する意味もない。
-function hasData(query: { state: { data: unknown } }): boolean {
+export function hasData(query: { state: { data: unknown } }): boolean {
   return query.state.data !== undefined
 }
 
@@ -23,7 +23,7 @@ function hasData(query: { state: { data: unknown } }): boolean {
 // そのまま待つと変更が入っていないことになる（「投稿しました」と出るのに新しい投稿が無い）。読み直して、いまの状態を取る。
 // invalidateQueries だけでは足りない。データの無い取得中のクエリは、取得を捨てずに進行中の取得をそのまま待つ。
 // 先に中断（待機中に戻る）してから invalidateQueries を呼ぶと、一覧の監視がある間は取り直される。
-async function reloadFirstLoads(client: QueryClient, filters: { queryKey: readonly unknown[]; exact?: boolean }): Promise<void> {
+export async function reloadFirstLoads(client: QueryClient, filters: { queryKey: readonly unknown[]; exact?: boolean }): Promise<void> {
   const firstLoads = client
     .getQueryCache()
     .findAll({ ...filters, predicate: (query) => !hasData(query) && query.state.fetchStatus === 'fetching' })
@@ -88,6 +88,27 @@ export async function setLikedInCache(client: QueryClient, postId: string, liked
   function apply(post: Post): Post {
     if (post.id !== postId || post.likedByMe === liked) return post
     return { ...post, likedByMe: liked, likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)) }
+  }
+  await Promise.all([
+    ...LIST_ROOTS.map((queryKey) => client.cancelQueries({ queryKey, predicate: hasData })),
+    client.cancelQueries({ queryKey: postKey(postId), exact: true, predicate: hasData }),
+  ])
+  for (const queryKey of LIST_ROOTS) {
+    client.setQueriesData<TimelineData>({ queryKey }, (data) => mapItems(data, (items) => items.map(apply)))
+  }
+  client.setQueryData<Post>(postKey(postId), (current) => (current ? apply(current) : current))
+  await Promise.all([
+    ...LIST_ROOTS.map((queryKey) => reloadFirstLoads(client, { queryKey })),
+    reloadFirstLoads(client, { queryKey: postKey(postId), exact: true }),
+  ])
+}
+
+// 一覧（種類を問わず全ページ）と詳細のキャッシュの、同じ投稿の commentCount を delta（1 か -1）だけ変える。
+// setLikedInCache と違い、同じ状態を何度書いても同じ、とはならない。呼ぶのはコメントの作成・削除が成功したときの 1 回だけ。
+// 数は 0 未満にしない。
+export async function changeCommentCountInCache(client: QueryClient, postId: string, delta: 1 | -1): Promise<void> {
+  function apply(post: Post): Post {
+    return post.id === postId ? { ...post, commentCount: Math.max(0, post.commentCount + delta) } : post
   }
   await Promise.all([
     ...LIST_ROOTS.map((queryKey) => client.cancelQueries({ queryKey, predicate: hasData })),

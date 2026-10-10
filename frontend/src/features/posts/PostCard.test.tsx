@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { useEffect } from 'react'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Post } from '../../api/posts'
 import { PostCard } from './PostCard'
@@ -37,6 +38,15 @@ function renderCard(props: Props = {}) {
       </Routes>
     </MemoryRouter>,
   )
+}
+
+// 移動の回数を数えるための画面。二重に navigate すると、マウントされるのは 1 回でも履歴が 2 つ積まれる。
+function DetailProbe({ onMount }: { onMount: () => void }) {
+  const location = useLocation()
+  useEffect(() => {
+    onMount()
+  }, [location.key, onMount])
+  return <p>投稿詳細の画面</p>
 }
 
 afterEach(() => {
@@ -77,11 +87,39 @@ describe('PostCard の表示', () => {
     expect(screen.getByText('編集済み')).toBeInTheDocument()
   })
 
-  it('コメント数は、押せない表示（img）で出す', () => {
-    renderCard({ post: makePost({ commentCount: 12 }) })
+  it('linkToDetail が false のときのコメント数は、押せない表示（img）で出す', () => {
+    renderCard({ post: makePost({ commentCount: 3 }), linkToDetail: false })
 
-    expect(screen.getByRole('img', { name: 'コメント 12 件' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'コメント 3 件' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /コメント/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /コメント/ })).not.toBeInTheDocument()
+  })
+
+  it('linkToDetail のとき、コメント数は「コメント 3 件」のリンクで /posts/p1 を指す', () => {
+    renderCard({ post: makePost({ commentCount: 3 }), linkToDetail: true })
+
+    expect(screen.getByRole('link', { name: 'コメント 3 件' })).toHaveAttribute('href', '/posts/p1')
+    expect(screen.queryByRole('img', { name: /コメント/ })).not.toBeInTheDocument()
+  })
+
+  it('コメント数のリンクを押すと詳細へ移る（カードの openDetail と二重に動かない）', async () => {
+    const navigateSpy = vi.fn()
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route
+            path="/"
+            element={<PostCard post={makePost({ commentCount: 3 })} isMine={false} timeStyle="relative" linkToDetail onToggleLike={() => {}} now={NOW} />}
+          />
+          <Route path="/posts/:id" element={<DetailProbe onMount={navigateSpy} />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await userEvent.click(screen.getByRole('link', { name: 'コメント 3 件' }))
+
+    expect(screen.getByText('投稿詳細の画面')).toBeInTheDocument()
+    expect(navigateSpy).toHaveBeenCalledTimes(1)
   })
 })
 
