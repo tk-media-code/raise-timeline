@@ -63,65 +63,45 @@ export async function prependPost(client: QueryClient, post: Post): Promise<void
   await Promise.all(keys.map((queryKey) => reloadFirstLoads(client, { queryKey, exact: true })))
 }
 
-// 一覧（種類を問わず全ページ。その人の投稿一覧も含む）と詳細のキャッシュの、同じ投稿を新しい内容に置き換える。
-export async function replacePost(client: QueryClient, post: Post): Promise<void> {
+// 一覧（種類を問わず全ページ。その人の投稿一覧も含む）と詳細のキャッシュの、id が postId の投稿を apply で書き換える。
+// 中断・書き換え・最初の読み込みの読み直しの手順はここ 1 か所に置く。ほかの投稿と、キャッシュの無い詳細には触れない。
+async function updatePostEverywhere(client: QueryClient, postId: string, apply: (post: Post) => Post): Promise<void> {
+  function applyToTarget(post: Post): Post {
+    return post.id === postId ? apply(post) : post
+  }
   await Promise.all([
     ...LIST_ROOTS.map((queryKey) => client.cancelQueries({ queryKey, predicate: hasData })),
-    client.cancelQueries({ queryKey: postKey(post.id), exact: true, predicate: hasData }),
+    client.cancelQueries({ queryKey: postKey(postId), exact: true, predicate: hasData }),
   ])
   for (const queryKey of LIST_ROOTS) {
-    client.setQueriesData<TimelineData>({ queryKey }, (data) =>
-      mapItems(data, (items) => items.map((item) => (item.id === post.id ? post : item))),
-    )
+    client.setQueriesData<TimelineData>({ queryKey }, (data) => mapItems(data, (items) => items.map(applyToTarget)))
   }
-  client.setQueryData<Post>(postKey(post.id), (current) => (current ? post : current))
+  client.setQueryData<Post>(postKey(postId), (current) => (current ? applyToTarget(current) : current))
   await Promise.all([
     ...LIST_ROOTS.map((queryKey) => reloadFirstLoads(client, { queryKey })),
-    reloadFirstLoads(client, { queryKey: postKey(post.id), exact: true }),
+    reloadFirstLoads(client, { queryKey: postKey(postId), exact: true }),
   ])
+}
+
+// 一覧（種類を問わず全ページ。その人の投稿一覧も含む）と詳細のキャッシュの、同じ投稿を新しい内容に置き換える。
+export function replacePost(client: QueryClient, post: Post): Promise<void> {
+  return updatePostEverywhere(client, post.id, () => post)
 }
 
 // 一覧（種類を問わず全ページ）と詳細のキャッシュの、同じ投稿の「自分がいいねしたか」と数を書き換える。
 // 同じ状態を何度書いても結果が変わらない（既に liked なら何もしない。数は 0 未満にしない）ので、
 // 押したとき・失敗で戻すとき・要求が全部終わったときの 3 回、どの順で呼ばれても壊れない。
-export async function setLikedInCache(client: QueryClient, postId: string, liked: boolean): Promise<void> {
-  function apply(post: Post): Post {
-    if (post.id !== postId || post.likedByMe === liked) return post
-    return { ...post, likedByMe: liked, likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)) }
-  }
-  await Promise.all([
-    ...LIST_ROOTS.map((queryKey) => client.cancelQueries({ queryKey, predicate: hasData })),
-    client.cancelQueries({ queryKey: postKey(postId), exact: true, predicate: hasData }),
-  ])
-  for (const queryKey of LIST_ROOTS) {
-    client.setQueriesData<TimelineData>({ queryKey }, (data) => mapItems(data, (items) => items.map(apply)))
-  }
-  client.setQueryData<Post>(postKey(postId), (current) => (current ? apply(current) : current))
-  await Promise.all([
-    ...LIST_ROOTS.map((queryKey) => reloadFirstLoads(client, { queryKey })),
-    reloadFirstLoads(client, { queryKey: postKey(postId), exact: true }),
-  ])
+export function setLikedInCache(client: QueryClient, postId: string, liked: boolean): Promise<void> {
+  return updatePostEverywhere(client, postId, (post) =>
+    post.likedByMe === liked ? post : { ...post, likedByMe: liked, likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)) },
+  )
 }
 
 // 一覧（種類を問わず全ページ）と詳細のキャッシュの、同じ投稿の commentCount を delta（1 か -1）だけ変える。
 // setLikedInCache と違い、同じ状態を何度書いても同じ、とはならない。呼ぶのはコメントの作成・削除が成功したときの 1 回だけ。
 // 数は 0 未満にしない。
-export async function changeCommentCountInCache(client: QueryClient, postId: string, delta: 1 | -1): Promise<void> {
-  function apply(post: Post): Post {
-    return post.id === postId ? { ...post, commentCount: Math.max(0, post.commentCount + delta) } : post
-  }
-  await Promise.all([
-    ...LIST_ROOTS.map((queryKey) => client.cancelQueries({ queryKey, predicate: hasData })),
-    client.cancelQueries({ queryKey: postKey(postId), exact: true, predicate: hasData }),
-  ])
-  for (const queryKey of LIST_ROOTS) {
-    client.setQueriesData<TimelineData>({ queryKey }, (data) => mapItems(data, (items) => items.map(apply)))
-  }
-  client.setQueryData<Post>(postKey(postId), (current) => (current ? apply(current) : current))
-  await Promise.all([
-    ...LIST_ROOTS.map((queryKey) => reloadFirstLoads(client, { queryKey })),
-    reloadFirstLoads(client, { queryKey: postKey(postId), exact: true }),
-  ])
+export function changeCommentCountInCache(client: QueryClient, postId: string, delta: 1 | -1): Promise<void> {
+  return updatePostEverywhere(client, postId, (post) => ({ ...post, commentCount: Math.max(0, post.commentCount + delta) }))
 }
 
 // すべての一覧から投稿を除き、詳細のキャッシュを捨てる。

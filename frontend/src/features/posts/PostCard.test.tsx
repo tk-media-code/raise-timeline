@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useEffect } from 'react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Post } from '../../api/posts'
 import { PostCard } from './PostCard'
@@ -40,13 +39,17 @@ function renderCard(props: Props = {}) {
   )
 }
 
-// 移動の回数を数えるための画面。二重に navigate すると、マウントされるのは 1 回でも履歴が 2 つ積まれる。
-function DetailProbe({ onMount }: { onMount: () => void }) {
-  const location = useLocation()
-  useEffect(() => {
-    onMount()
-  }, [location.key, onMount])
-  return <p>投稿詳細の画面</p>
+// 詳細の画面の代わり。「戻る」を押した先が一覧なら、詳細へ移ったときに履歴を 1 つしか積んでいない。
+function DetailProbe() {
+  const navigate = useNavigate()
+  return (
+    <div>
+      <p>投稿詳細の画面</p>
+      <button type="button" onClick={() => void navigate(-1)}>
+        戻る
+      </button>
+    </div>
+  )
 }
 
 afterEach(() => {
@@ -102,24 +105,30 @@ describe('PostCard の表示', () => {
     expect(screen.queryByRole('img', { name: /コメント/ })).not.toBeInTheDocument()
   })
 
-  it('コメント数のリンクを押すと詳細へ移る（カードの openDetail と二重に動かない）', async () => {
-    const navigateSpy = vi.fn()
+  it('コメント数のリンクを押すと詳細へ移る（カードの openDetail と二重に動かず、履歴は 1 つだけ積む）', async () => {
     render(
       <MemoryRouter initialEntries={['/']}>
         <Routes>
           <Route
             path="/"
-            element={<PostCard post={makePost({ commentCount: 3 })} isMine={false} timeStyle="relative" linkToDetail onToggleLike={() => {}} now={NOW} />}
+            element={
+              <>
+                <p>一覧の画面</p>
+                <PostCard post={makePost({ commentCount: 3 })} isMine={false} timeStyle="relative" linkToDetail onToggleLike={() => {}} now={NOW} />
+              </>
+            }
           />
-          <Route path="/posts/:id" element={<DetailProbe onMount={navigateSpy} />} />
+          <Route path="/posts/:id" element={<DetailProbe />} />
         </Routes>
       </MemoryRouter>,
     )
 
     await userEvent.click(screen.getByRole('link', { name: 'コメント 3 件' }))
-
     expect(screen.getByText('投稿詳細の画面')).toBeInTheDocument()
-    expect(navigateSpy).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: '戻る' }))
+
+    expect(screen.getByText('一覧の画面')).toBeInTheDocument()
+    expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
   })
 })
 
