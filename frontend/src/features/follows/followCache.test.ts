@@ -154,6 +154,47 @@ describe('setFollowingInCache', () => {
     unsubscribe()
   })
 
+  it('値が同じでも、プロフィールの読み直しの最中に書くと、その読み直しは中断され、古い値が届いても true・6 のまま', async () => {
+    const client = new QueryClient()
+    client.setQueryData(userKey('alice'), makeDetail())
+    await setFollowingInCache(client, alice, true)
+    let aborted = false
+    let release: (detail: UserDetail) => void = () => {}
+    const observer = new QueryObserver(client, {
+      queryKey: userKey('alice'),
+      // 押す前に読み始めた GET。まだ返らず、あとで古い値（false・5）で返る。
+      queryFn: ({ signal }): Promise<UserDetail> => {
+        signal.addEventListener('abort', () => {
+          aborted = true
+        })
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      },
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    await setFollowingInCache(client, alice, true)
+    release(makeDetail({ isFollowing: false, followersCount: 5 }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(aborted).toBe(true)
+    expect(client.getQueryData<UserDetail>(userKey('alice'))).toMatchObject({ isFollowing: true, followersCount: 6 })
+    unsubscribe()
+  })
+
+  it('プロフィールに「無効」の印が付いていれば（読み直しが待っている）、印を外さず、値も書き換えない', async () => {
+    const client = new QueryClient()
+    client.setQueryData(userKey('alice'), makeDetail())
+    await client.invalidateQueries({ queryKey: userKey('alice'), exact: true })
+
+    await setFollowingInCache(client, alice, true)
+
+    expect(client.getQueryState(userKey('alice'))?.isInvalidated).toBe(true)
+    expect(client.getQueryData<UserDetail>(userKey('alice'))).toMatchObject({ isFollowing: false, followersCount: 5 })
+  })
+
   it('一覧の最初の読み込み中なら、読み直して最新を取る', async () => {
     const client = new QueryClient()
     let calls = 0

@@ -28,7 +28,9 @@ export function FollowButton({ user }: { user: FollowTarget }) {
       }}
       onMouseLeave={settle}
       onBlur={settle}
-      className={`group min-h-11 min-w-11 shrink-0 rounded-full px-4 font-bold focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 ${
+      // 幅の下限（104px）は「フォロー中」と「解除」で幅が変わらないようにする（プロトタイプの .follow-btn と同じ）。
+      // 右端に置くので、幅が縮むとボタンの左端がポインタの下から外れ、ホバーが切れて「フォロー中」に戻り、ちらつく。
+      className={`group min-h-11 min-w-26 shrink-0 rounded-full px-4 font-bold focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 ${
         following
           ? `border border-gray-400 bg-white text-black ${justToggled ? '' : 'hover:border-red-300 hover:text-red-600'}`
           : 'bg-sky-600 text-white hover:bg-sky-700'

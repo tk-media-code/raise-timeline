@@ -114,6 +114,15 @@ describe('FollowButton', () => {
     await waitFor(() => expect(api.unfollowUser).toHaveBeenCalledWith('alice'))
   })
 
+  it('幅の下限を固定し（min-w-26 = 104px）、「フォロー中」と「解除」で幅が変わらないようにする', () => {
+    const { unmount } = renderButton(makeDetail({ isFollowing: true }))
+    expect(screen.getByRole('button')).toHaveClass('min-w-26')
+    unmount()
+
+    renderButton()
+    expect(screen.getByRole('button')).toHaveClass('min-w-26')
+  })
+
   it('自分（useAuth の利用者と同じ id）には何も出さない', () => {
     useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'a', username: 'alice' } })
     renderButton()

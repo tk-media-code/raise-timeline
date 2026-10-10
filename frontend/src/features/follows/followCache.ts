@@ -29,16 +29,15 @@ function mapCards(data: CardsData | undefined, fn: (items: UserCard[]) => UserCa
 // ほかの人と、キャッシュの無いプロフィールには触れない。
 export async function setFollowingInCache(client: QueryClient, target: FollowTarget, following: boolean): Promise<void> {
   const profileKey = userKey(target.username)
-  // プロフィールは、値が変わるときだけ中断・書き込みをする。
-  // 同じ値を書くだけでも setQueryData は「無効」の印を外す。404 の失敗で読み直しの印を付けた（forgetMissingUser）あと、
-  // 要求が全部終わったときの書き直し（変更なし）が印を消したり、読み直しを中断したりすると、「見つかりません」の画面にならない。
-  const profileChanges = () => {
-    const current = client.getQueryData<UserDetail>(profileKey)
-    return current !== undefined && current.isFollowing !== following
-  }
+  // プロフィールの「無効」の印が付いているときは触らない。404 の失敗で forgetMissingUser が付けた印で、読み直しが
+  // 待っているか進行中。ここで中断すると読み直しが止まり、setQueryData は同じ値でも印を外すので、
+  // 「見つかりません」の画面にならない。印の無いプロフィールは postCache.ts と同じ規則（データのあるものは中断してから書く）。
+  // 値が同じでも中断は省かない。表示中のプロフィールが読み直しの最中だと、押す前に読み始めた古い値が書いたあとに届いて
+  // 「フォロー」「フォロワー n」に戻る。
+  const profileSettled = () => client.getQueryState(profileKey)?.isInvalidated !== true
   await Promise.all([
     ...LIST_ROOTS.map((queryKey) => client.cancelQueries({ queryKey, predicate: hasData })),
-    profileChanges() ? client.cancelQueries({ queryKey: profileKey, exact: true, predicate: hasData }) : undefined,
+    profileSettled() ? client.cancelQueries({ queryKey: profileKey, exact: true, predicate: hasData }) : undefined,
   ])
   for (const queryKey of LIST_ROOTS) {
     client.setQueriesData<CardsData>({ queryKey }, (data) =>
@@ -47,9 +46,11 @@ export async function setFollowingInCache(client: QueryClient, target: FollowTar
       ),
     )
   }
-  if (profileChanges()) {
+  if (profileSettled()) {
     client.setQueryData<UserDetail>(profileKey, (current) =>
-      current && { ...current, isFollowing: following, followersCount: Math.max(0, current.followersCount + (following ? 1 : -1)) },
+      !current || current.isFollowing === following
+        ? current
+        : { ...current, isFollowing: following, followersCount: Math.max(0, current.followersCount + (following ? 1 : -1)) },
     )
   }
   await Promise.all([
