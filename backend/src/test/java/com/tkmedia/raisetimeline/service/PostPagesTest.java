@@ -7,6 +7,7 @@ import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -21,7 +22,8 @@ class PostPagesTest {
 	private static final OffsetDateTime NOW = OffsetDateTime.of(2026, 10, 9, 1, 2, 3, 0, ZoneOffset.UTC);
 	private static final UUID AUTHOR = UUID.fromString("0199b000-0000-7000-8000-0000000000ff");
 
-	private final PostAssembler assembler = new PostAssembler(mock(PostMapper.class), new InMemoryImageStorage());
+	private final LikeMapper likeMapper = mock(LikeMapper.class);
+	private final PostAssembler assembler = new PostAssembler(mock(PostMapper.class), likeMapper, new InMemoryImageStorage());
 
 	/** id の降順に並んだ n 行。 */
 	private static List<PostWithAuthor> rows(int n) {
@@ -36,7 +38,7 @@ class PostPagesTest {
 	@Test
 	@DisplayName("limit 以下の行数なら、全部を返し、nextCursor は null")
 	void pageWithoutExtraRow() {
-		PageResponse<PostResponse> page = PostPages.of(rows(20), 20, assembler);
+		PageResponse<PostResponse> page = PostPages.of(rows(20), 20, assembler, AUTHOR);
 
 		assertThat(page.items()).hasSize(20);
 		assertThat(page.nextCursor()).isNull();
@@ -47,7 +49,7 @@ class PostPagesTest {
 	void pageWithExtraRow() {
 		List<PostWithAuthor> rows = rows(21);
 
-		PageResponse<PostResponse> page = PostPages.of(rows, 20, assembler);
+		PageResponse<PostResponse> page = PostPages.of(rows, 20, assembler, AUTHOR);
 
 		assertThat(page.items()).hasSize(20);
 		assertThat(page.items().get(19).id()).isEqualTo(rows.get(19).id());

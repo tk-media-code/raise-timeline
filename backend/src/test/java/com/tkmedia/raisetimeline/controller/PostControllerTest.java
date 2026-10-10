@@ -214,18 +214,20 @@ class PostControllerTest {
 	@Test
 	@DisplayName("GET は投稿を 200 で返す")
 	void getReturns200() throws Exception {
-		when(postService.get(POST_ID)).thenReturn(response("本文"));
+		when(postService.get(USER_ID, POST_ID)).thenReturn(response("本文"));
 
 		mockMvc.perform(get("/api/posts/" + POST_ID).with(me()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.id").value(POST_ID.toString()))
 				.andExpect(jsonPath("$.body").value("本文"));
+
+		verify(postService).get(USER_ID, POST_ID);
 	}
 
 	@Test
 	@DisplayName("GET は無い投稿で 404 NOT_FOUND")
 	void getMissingReturns404() throws Exception {
-		when(postService.get(POST_ID)).thenThrow(new NotFoundException());
+		when(postService.get(USER_ID, POST_ID)).thenThrow(new NotFoundException());
 
 		mockMvc.perform(get("/api/posts/" + POST_ID).with(me()))
 				.andExpect(status().isNotFound())

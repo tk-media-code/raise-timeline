@@ -21,9 +21,9 @@ public class UserPostsService {
 	}
 
 	/** 利用者がいなければ（規則に合わない名前も）{@link com.tkmedia.raisetimeline.error.NotFoundException}。 */
-	public PageResponse<PostResponse> postsOf(String username, UUID cursor, int limit) {
+	public PageResponse<PostResponse> postsOf(UUID viewer, String username, UUID cursor, int limit) {
 		UUID userId = userService.requireByUsername(username).id();
-		return PostPages.of(postMapper.findByUser(userId, cursor, limit + 1), limit, assembler);
+		return PostPages.of(postMapper.findByUser(userId, cursor, limit + 1), limit, assembler, viewer);
 	}
 
 }

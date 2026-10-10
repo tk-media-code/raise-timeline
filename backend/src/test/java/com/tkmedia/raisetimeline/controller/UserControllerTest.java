@@ -181,12 +181,14 @@ class UserControllerTest {
 		UUID next = UUID.fromString("0199b000-0000-7000-8000-0000000000a0");
 		PostResponse post = new PostResponse(postId, new UserSummary(USER_ID, "taro_1", "太郎", null), "本文",
 				List.of(), 0, 0, false, false, OffsetDateTime.parse("2026-10-09T00:00:00Z"));
-		when(userPostsService.postsOf("taro_1", next, 20)).thenReturn(new PageResponse<>(List.of(post), next));
+		when(userPostsService.postsOf(USER_ID, "taro_1", next, 20)).thenReturn(new PageResponse<>(List.of(post), next));
 
 		mockMvc.perform(get("/api/users/taro_1/posts").param("cursor", next.toString()).with(me()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items[0].id").value(postId.toString()))
 				.andExpect(jsonPath("$.nextCursor").value(next.toString()));
+
+		verify(userPostsService).postsOf(USER_ID, "taro_1", next, 20);
 	}
 
 	@ParameterizedTest(name = "{0}")

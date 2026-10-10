@@ -4,6 +4,8 @@ import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.service.TimelineService;
 import java.util.UUID;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,9 +24,10 @@ public class TimelineController {
 	 * {@code limit} の範囲は {@link PageLimits#check} で確かめる。
 	 */
 	@GetMapping("/api/timeline/all")
-	public PageResponse<PostResponse> all(@RequestParam(required = false) UUID cursor,
+	public PageResponse<PostResponse> all(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam(required = false) UUID cursor,
 			@RequestParam(defaultValue = PageLimits.DEFAULT_VALUE) int limit) {
-		return timelineService.all(cursor, PageLimits.check(limit));
+		return timelineService.all(CurrentUser.idOf(jwt), cursor, PageLimits.check(limit));
 	}
 
 }

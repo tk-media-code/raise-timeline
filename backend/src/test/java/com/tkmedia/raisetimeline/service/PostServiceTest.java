@@ -27,6 +27,7 @@ import com.tkmedia.raisetimeline.image.ImageCleaner;
 import com.tkmedia.raisetimeline.image.ImageUploadRules;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
 import com.tkmedia.raisetimeline.image.TestImages;
+import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.sql.SQLException;
 import java.time.Clock;
@@ -55,11 +56,12 @@ class PostServiceTest {
 	private static final OffsetDateTime NOW = OffsetDateTime.ofInstant(NOW_INSTANT, ZoneOffset.UTC);
 
 	private final PostMapper postMapper = mock(PostMapper.class);
+	private final LikeMapper likeMapper = mock(LikeMapper.class);
 	private final InMemoryImageStorage storage = new InMemoryImageStorage();
 	private final PostService service = serviceWith(storage);
 
 	private PostService serviceWith(ImageStorage imageStorage) {
-		return new PostService(postMapper, new PostAssembler(postMapper, imageStorage), imageStorage,
+		return new PostService(postMapper, new PostAssembler(postMapper, likeMapper, imageStorage), imageStorage,
 				new ImageCleaner(imageStorage), TransactionOperations.withoutTransaction(),
 				Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
 	}
@@ -122,7 +124,7 @@ class PostServiceTest {
 	void getMissing() {
 		when(postMapper.findById(POST_ID)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.get(POST_ID)).isInstanceOf(NotFoundException.class);
+		assertThatThrownBy(() -> service.get(ME, POST_ID)).isInstanceOf(NotFoundException.class);
 	}
 
 	@Test
@@ -130,7 +132,7 @@ class PostServiceTest {
 	void getReturnsPost() {
 		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(OTHER, "他人の投稿")));
 
-		assertThat(service.get(POST_ID).body()).isEqualTo("他人の投稿");
+		assertThat(service.get(ME, POST_ID).body()).isEqualTo("他人の投稿");
 	}
 
 	@Test
@@ -366,7 +368,7 @@ class PostServiceTest {
 	@DisplayName("投稿の行と画像の行は、同じ 1 回のトランザクションの中で入れる（外では入れない）")
 	void createInsertsPostAndImageRowsInsideOneTransaction() {
 		RecordingTransactions transactions = new RecordingTransactions();
-		PostService recording = new PostService(postMapper, new PostAssembler(postMapper, storage), storage,
+		PostService recording = new PostService(postMapper, new PostAssembler(postMapper, likeMapper, storage), storage,
 				new ImageCleaner(storage), transactions, Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
 		// 呼ばれた瞬間にトランザクションの中だったかを記録する。範囲を外すと false が残って落ちる。
 		List<Boolean> insertCalls = new ArrayList<>();

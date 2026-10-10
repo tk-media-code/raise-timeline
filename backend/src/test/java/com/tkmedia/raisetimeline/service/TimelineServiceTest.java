@@ -9,6 +9,7 @@ import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -21,10 +22,12 @@ import org.junit.jupiter.api.Test;
 class TimelineServiceTest {
 
 	private static final OffsetDateTime NOW = OffsetDateTime.of(2026, 10, 9, 1, 2, 3, 0, ZoneOffset.UTC);
+	private static final UUID VIEWER = UUID.fromString("0199b000-0000-7000-8000-000000000001");
 	private static final UUID CURSOR = UUID.fromString("0199b000-0000-7000-8000-0000000000ff");
 
 	private final PostMapper postMapper = mock(PostMapper.class);
-	private final TimelineService service = new TimelineService(postMapper, new PostAssembler(postMapper, new InMemoryImageStorage()));
+	private final LikeMapper likeMapper = mock(LikeMapper.class);
+	private final TimelineService service = new TimelineService(postMapper, new PostAssembler(postMapper, likeMapper, new InMemoryImageStorage()));
 
 	/** id の降順に並んだ n 行。 */
 	private static List<PostWithAuthor> rows(int n) {
@@ -41,7 +44,7 @@ class TimelineServiceTest {
 	void fetchesOneMoreThanLimit() {
 		when(postMapper.findAll(CURSOR, 21)).thenReturn(List.of());
 
-		service.all(CURSOR, 20);
+		service.all(VIEWER, CURSOR, 20);
 
 		verify(postMapper).findAll(CURSOR, 21);
 	}
@@ -51,7 +54,7 @@ class TimelineServiceTest {
 	void emptyHasNoNextCursor() {
 		when(postMapper.findAll(null, 21)).thenReturn(List.of());
 
-		PageResponse<PostResponse> page = service.all(null, 20);
+		PageResponse<PostResponse> page = service.all(VIEWER, null, 20);
 
 		assertThat(page.items()).isEmpty();
 		assertThat(page.nextCursor()).isNull();
@@ -62,7 +65,7 @@ class TimelineServiceTest {
 	void exactlyLimitHasNoNextCursor() {
 		when(postMapper.findAll(null, 21)).thenReturn(rows(20));
 
-		PageResponse<PostResponse> page = service.all(null, 20);
+		PageResponse<PostResponse> page = service.all(VIEWER, null, 20);
 
 		assertThat(page.items()).hasSize(20);
 		assertThat(page.nextCursor()).isNull();
@@ -74,7 +77,7 @@ class TimelineServiceTest {
 		List<PostWithAuthor> rows = rows(21);
 		when(postMapper.findAll(null, 21)).thenReturn(rows);
 
-		PageResponse<PostResponse> page = service.all(null, 20);
+		PageResponse<PostResponse> page = service.all(VIEWER, null, 20);
 
 		assertThat(page.items()).hasSize(20);
 		assertThat(page.items().get(19).id()).isEqualTo(rows.get(19).id());

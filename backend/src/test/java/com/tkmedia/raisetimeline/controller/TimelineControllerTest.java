@@ -72,35 +72,35 @@ class TimelineControllerTest {
 	@Test
 	@DisplayName("クエリが無ければ、先頭から 20 件を取る")
 	void defaultsToFirstPageOf20() throws Exception {
-		when(timelineService.all(null, 20)).thenReturn(emptyPage());
+		when(timelineService.all(USER_ID, null, 20)).thenReturn(emptyPage());
 
 		mockMvc.perform(get("/api/timeline/all").with(me()))
 				.andExpect(status().isOk());
 
-		verify(timelineService).all(null, 20);
+		verify(timelineService).all(USER_ID, null, 20);
 	}
 
 	@Test
 	@DisplayName("limit が 50 なら受け付ける")
 	void limit50IsAccepted() throws Exception {
-		when(timelineService.all(null, 50)).thenReturn(emptyPage());
+		when(timelineService.all(USER_ID, null, 50)).thenReturn(emptyPage());
 
 		mockMvc.perform(get("/api/timeline/all").param("limit", "50").with(me()))
 				.andExpect(status().isOk());
 
-		verify(timelineService).all(null, 50);
+		verify(timelineService).all(USER_ID, null, 50);
 	}
 
 	@Test
 	@DisplayName("cursor はサービスにそのまま渡る")
 	void cursorIsPassedThrough() throws Exception {
 		UUID cursor = UUID.fromString("0199b000-0000-7000-8000-0000000000a1");
-		when(timelineService.all(cursor, 20)).thenReturn(emptyPage());
+		when(timelineService.all(USER_ID, cursor, 20)).thenReturn(emptyPage());
 
 		mockMvc.perform(get("/api/timeline/all").param("cursor", cursor.toString()).with(me()))
 				.andExpect(status().isOk());
 
-		verify(timelineService).all(cursor, 20);
+		verify(timelineService).all(USER_ID, cursor, 20);
 	}
 
 	@ParameterizedTest(name = "limit={0}")
@@ -127,7 +127,7 @@ class TimelineControllerTest {
 	@Test
 	@DisplayName("続きが無いとき、nextCursor は鍵ごと省かれず null として出る")
 	void nullCursorIsSerialized() throws Exception {
-		when(timelineService.all(null, 20)).thenReturn(emptyPage());
+		when(timelineService.all(USER_ID, null, 20)).thenReturn(emptyPage());
 
 		mockMvc.perform(get("/api/timeline/all").with(me()))
 				.andExpect(jsonPath("$.nextCursor").hasJsonPath())

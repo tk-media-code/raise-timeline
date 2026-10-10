@@ -79,7 +79,11 @@ class TimelineIntegrationTest {
 	}
 
 	private MvcResult timeline(String cursor) throws Exception {
-		var request = get("/api/timeline/all").with(jwt().jwt(j -> j.subject(me.toString())));
+		return timelineAs(me, cursor);
+	}
+
+	private MvcResult timelineAs(UUID viewer, String cursor) throws Exception {
+		var request = get("/api/timeline/all").with(jwt().jwt(j -> j.subject(viewer.toString())));
 		if (cursor != null) {
 			request = request.param("cursor", cursor);
 		}
@@ -96,8 +100,36 @@ class TimelineIntegrationTest {
 		return JsonPath.read(json(result), "$.items[*].id");
 	}
 
+	/** 一覧の中の、指定した投稿の項目を読む（フィルターは一致した要素の配列を返す）。 */
+	private static Object itemField(String json, UUID postId, String field) {
+		List<Object> values = JsonPath.read(json, "$.items[?(@.id=='" + postId + "')]." + field);
+		return values.get(0);
+	}
+
 	private static String nextCursorOf(MvcResult result) throws Exception {
 		return JsonPath.read(json(result), "$.nextCursor");
+	}
+
+	@Test
+	@DisplayName("2 人が付けた投稿は likeCount 2。付けた人には likedByMe が true、付けていない人には false")
+	void likeCountAndLikedByMeDependOnViewer() throws Exception {
+		UUID liker1 = createUser("liker1");
+		UUID liker2 = createUser("liker2");
+		UUID other = createUser("other");
+		UUID liked = createPosts(me, 1).get(0);
+		UUID untouched = createPosts(me, 1).get(0);
+		jdbc.update("INSERT INTO likes (post_id, user_id) VALUES (?, ?)", liked, liker1);
+		jdbc.update("INSERT INTO likes (post_id, user_id) VALUES (?, ?)", liked, liker2);
+
+		String asLiker = json(timelineAs(liker1, null));
+		String asOther = json(timelineAs(other, null));
+
+		assertThat(itemField(asLiker, liked, "likeCount")).isEqualTo(2);
+		assertThat(itemField(asLiker, liked, "likedByMe")).isEqualTo(true);
+		assertThat(itemField(asOther, liked, "likeCount")).isEqualTo(2);
+		assertThat(itemField(asOther, liked, "likedByMe")).isEqualTo(false);
+		assertThat(itemField(asLiker, untouched, "likeCount")).isEqualTo(0);
+		assertThat(itemField(asLiker, untouched, "likedByMe")).isEqualTo(false);
 	}
 
 	@Test

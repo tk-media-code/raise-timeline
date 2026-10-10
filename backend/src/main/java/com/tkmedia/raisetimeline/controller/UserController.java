@@ -99,10 +99,10 @@ public class UserController {
 	 * {@code limit} の範囲は {@link PageLimits#check} で確かめる（{@link TimelineController} と同じ）。
 	 */
 	@GetMapping("/api/users/{username}/posts")
-	public PageResponse<PostResponse> posts(@PathVariable String username,
+	public PageResponse<PostResponse> posts(@AuthenticationPrincipal Jwt jwt, @PathVariable String username,
 			@RequestParam(required = false) UUID cursor,
 			@RequestParam(defaultValue = PageLimits.DEFAULT_VALUE) int limit) {
-		return userPostsService.postsOf(username, cursor, PageLimits.check(limit));
+		return userPostsService.postsOf(CurrentUser.idOf(jwt), username, cursor, PageLimits.check(limit));
 	}
 
 }
