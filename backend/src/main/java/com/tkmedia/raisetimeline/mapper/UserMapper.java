@@ -31,8 +31,11 @@ public interface UserMapper {
 	/** 行があるか。アクセストークンを受けるたびに引くので、列を読まず主キーの有無だけを確かめる。 */
 	boolean existsById(UUID id);
 
-	/** 表示名・自己紹介・更新日時を変え、変えた行数を返す。無い id では 0。ほかの列は触らない。 */
-	int updateProfile(@Param("id") UUID id, @Param("displayName") String displayName, @Param("bio") String bio,
+	/**
+	 * 表示名・自己紹介・更新日時を変え、更新後の行を返す。無い id では空。ほかの列は触らない。
+	 * 更新後の行は同じ文の {@code RETURNING} が返す（更新してから読み直すと、その間に行が消えたとき更新と読み取りの結果がずれる）。
+	 */
+	Optional<User> updateProfile(@Param("id") UUID id, @Param("displayName") String displayName, @Param("bio") String bio,
 			@Param("updatedAt") OffsetDateTime updatedAt);
 
 	/**

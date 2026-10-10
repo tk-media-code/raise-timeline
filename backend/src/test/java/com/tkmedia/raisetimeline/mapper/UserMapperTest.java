@@ -137,32 +137,31 @@ class UserMapperTest {
 	}
 
 	@Test
-	@DisplayName("表示名・自己紹介・更新日時だけを変えて 1 を返し、無い id では 0 を返す")
-	void updateProfileChangesNameBioAndUpdatedAt() {
+	@DisplayName("updateProfile は更新後の行を返し、表示名・自己紹介・更新日時だけを変える")
+	void updateProfileReturnsUpdatedRow() {
 		String s = suffix();
 		UUID id = userMapper.insert(newUser("user_" + s, "user_" + s + "@example.com"));
 		User before = userMapper.findById(id).orElseThrow();
 		OffsetDateTime later = OffsetDateTime.of(2026, 10, 10, 9, 0, 0, 0, ZoneOffset.UTC);
 
-		int updated = userMapper.updateProfile(id, "新しい名前", "よろしく\n😀", later);
+		User returned = userMapper.updateProfile(id, "新しい名前", "よろしく\n😀", later).orElseThrow();
 
-		assertThat(updated).isEqualTo(1);
-		User after = userMapper.findById(id).orElseThrow();
-		assertThat(after.displayName()).isEqualTo("新しい名前");
-		assertThat(after.bio()).isEqualTo("よろしく\n😀");
-		assertThat(after.updatedAt().toInstant()).isEqualTo(later.toInstant());
-		assertThat(after.username()).isEqualTo(before.username());
-		assertThat(after.email()).isEqualTo(before.email());
-		assertThat(after.passwordHash()).isEqualTo(before.passwordHash());
-		assertThat(after.createdAt().toInstant()).isEqualTo(before.createdAt().toInstant());
+		assertThat(returned.id()).isEqualTo(id);
+		assertThat(returned.displayName()).isEqualTo("新しい名前");
+		assertThat(returned.bio()).isEqualTo("よろしく\n😀");
+		assertThat(returned.updatedAt().toInstant()).isEqualTo(later.toInstant());
+		assertThat(returned.username()).isEqualTo(before.username());
+		assertThat(returned.email()).isEqualTo(before.email());
+		assertThat(returned.avatarKey()).isEqualTo(before.avatarKey());
+		assertThat(returned.passwordHash()).isEqualTo(before.passwordHash());
+		assertThat(returned.createdAt().toInstant()).isEqualTo(before.createdAt().toInstant());
+		assertThat(userMapper.findById(id).orElseThrow()).isEqualTo(returned);
 	}
 
 	@Test
-	@DisplayName("無い id のプロフィールを更新すると 0 が返る")
-	void updateProfileOfMissingUserReturnsZero() {
-		int updated = userMapper.updateProfile(UUID.randomUUID(), "名前", "", OffsetDateTime.now(ZoneOffset.UTC));
-
-		assertThat(updated).isZero();
+	@DisplayName("updateProfile は知らない id で空を返す")
+	void updateProfileOfMissingUserReturnsEmpty() {
+		assertThat(userMapper.updateProfile(UUID.randomUUID(), "名前", "", OffsetDateTime.now(ZoneOffset.UTC))).isEmpty();
 	}
 
 	@Test

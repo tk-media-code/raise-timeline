@@ -27,21 +27,26 @@ public class UserService {
 		this.clock = clock;
 	}
 
-	/** ログイン中の本人の情報。利用者がいなければ {@link NotFoundException}。 */
+	/**
+	 * ログイン中の本人の情報。利用者がいなければ {@link UnauthenticatedException}（401）。
+	 *
+	 * <p>認証を通ったあとに本人の行が消えたとき（退会と同時の操作）に当たる。「本人の行がもう無ければ 401」という
+	 * ほかの API の決まりにそろえ、404 にはしない。
+	 */
 	public Me getMe(UUID userId) {
-		return userMapper.findById(userId).map(this::toMe).orElseThrow(NotFoundException::new);
+		return userMapper.findById(userId).map(this::toMe).orElseThrow(UnauthenticatedException::new);
 	}
 
 	/**
 	 * 本人の表示名と自己紹介を更新し、更新後の {@link Me} を返す。{@code updated_at} は {@link Clock} の時刻を渡す。
 	 *
-	 * <p>更新が 0 行なのは、トークンの有効期間中に本人の行が消えたとき。投稿の作成（外部キー違反）と同じく 401 にする。
+	 * <p>更新と読み取りは {@code UPDATE ... RETURNING} の 1 文で済ませる。行が無い（認証を通ったあとに退会された）ときは
+	 * 空が返るので、投稿の作成（外部キー違反）と同じく 401 にする。
 	 */
 	public Me updateProfile(UUID me, UpdateProfileRequest request) {
-		if (userMapper.updateProfile(me, request.displayName(), request.bio(), OffsetDateTime.now(clock)) == 0) {
-			throw new UnauthenticatedException();
-		}
-		return getMe(me);
+		return userMapper.updateProfile(me, request.displayName(), request.bio(), OffsetDateTime.now(clock))
+				.map(this::toMe)
+				.orElseThrow(UnauthenticatedException::new);
 	}
 
 	/**

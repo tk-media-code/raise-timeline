@@ -26,6 +26,7 @@ import com.tkmedia.raisetimeline.dto.UserSummary;
 import com.tkmedia.raisetimeline.error.ApiExceptionHandler;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
+import com.tkmedia.raisetimeline.error.UnauthenticatedException;
 import com.tkmedia.raisetimeline.dto.AvatarResponse;
 import com.tkmedia.raisetimeline.service.AvatarService;
 import com.tkmedia.raisetimeline.service.UserPostsService;
@@ -103,13 +104,13 @@ class UserControllerTest {
 	}
 
 	@Test
-	@DisplayName("利用者がいなければ 404 の Problem Details になる")
-	void meOfMissingUserReturns404() throws Exception {
-		when(userService.getMe(USER_ID)).thenThrow(new NotFoundException());
+	@DisplayName("本人の行が無ければ 401 UNAUTHENTICATED の Problem Details になる")
+	void meOfMissingUserReturns401() throws Exception {
+		when(userService.getMe(USER_ID)).thenThrow(new UnauthenticatedException());
 
 		mockMvc.perform(get("/api/users/me").with(jwt().jwt(j -> j.subject(USER_ID.toString()))))
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.code").value("NOT_FOUND"));
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 	}
 
 	@ParameterizedTest(name = "{0}")
