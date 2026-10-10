@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router'
 import { RedirectIfAuthenticated } from './auth/RedirectIfAuthenticated'
 import { RequireAuth } from './auth/RequireAuth'
 import { AppLayout } from './components/layout/AppLayout'
+import FollowListPage from './pages/FollowListPage'
 import HomePage from './pages/HomePage'
 import LikersPage from './pages/LikersPage'
 import LoginPage from './pages/LoginPage'
@@ -24,6 +25,8 @@ export default function App() {
           <Route path="/posts/:id" element={<PostDetailPage />} />
           <Route path="/posts/:id/likes" element={<LikersPage />} />
           <Route path="/users/:username" element={<ProfilePage />} />
+          <Route path="/users/:username/followers" element={<FollowListPage kind="followers" />} />
+          <Route path="/users/:username/following" element={<FollowListPage kind="following" />} />
           <Route path="/settings/profile" element={<ProfileEditPage />} />
         </Route>
       </Route>

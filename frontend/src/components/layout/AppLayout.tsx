@@ -22,6 +22,9 @@ function tabClass({ isActive }: { isActive: boolean }): string {
 function screenName(pathname: string): string {
   if (pathname === '/') return 'ホーム'
   if (pathname.startsWith('/search')) return '検索'
+  // /users/ の判定より前に置く（プロフィールの下の画面）。
+  if (/^\/users\/[^/]+\/followers$/.test(pathname)) return 'フォロワー'
+  if (/^\/users\/[^/]+\/following$/.test(pathname)) return 'フォロー中'
   if (pathname.startsWith('/users/')) return 'プロフィール'
   if (pathname === '/settings/profile') return 'プロフィール編集'
   if (/^\/posts\/[^/]+\/likes$/.test(pathname)) return 'いいねした人'

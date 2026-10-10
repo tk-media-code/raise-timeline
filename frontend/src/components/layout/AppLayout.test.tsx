@@ -38,6 +38,9 @@ function renderLayout(route = '/') {
           <Route path="/" element={<p>ホームの中身</p>} />
           <Route path="/posts/:id" element={<p>投稿詳細の中身</p>} />
           <Route path="/posts/:id/likes" element={<p>いいねした人の中身</p>} />
+          <Route path="/users/:username" element={<p>プロフィールの中身</p>} />
+          <Route path="/users/:username/followers" element={<p>フォロワーの中身</p>} />
+          <Route path="/users/:username/following" element={<p>フォロー中の中身</p>} />
           <Route path="/settings/profile" element={<p>プロフィール編集の中身</p>} />
         </Route>
       </Routes>
@@ -166,6 +169,19 @@ describe('AppLayout', () => {
     renderLayout('/posts/x/likes')
 
     expect(within(screen.getByRole('banner')).getByText('いいねした人')).toBeInTheDocument()
+  })
+
+  it('/users/alice/followers の上部バーは「フォロワー」、/users/alice/following は「フォロー中」、/users/alice は「プロフィール」のまま', () => {
+    const { unmount } = renderLayout('/users/alice/followers')
+    expect(within(screen.getByRole('banner')).getByText('フォロワー')).toBeInTheDocument()
+    unmount()
+
+    const second = renderLayout('/users/alice/following')
+    expect(within(screen.getByRole('banner')).getByText('フォロー中')).toBeInTheDocument()
+    second.unmount()
+
+    renderLayout('/users/alice')
+    expect(within(screen.getByRole('banner')).getByText('プロフィール')).toBeInTheDocument()
   })
 
   it('/settings/profile では上部バーの画面名が「プロフィール編集」', () => {
