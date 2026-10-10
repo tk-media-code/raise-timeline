@@ -183,7 +183,7 @@ flowchart TD
 | ログイン中の利用者 | コントローラは `@AuthenticationPrincipal` で `sub` を受け取る。サービス層には利用者 id を引数で渡す |
 | テスト | `spring-boot-starter-security-test`（`@WithMockUser` と `jwt()` の RequestPostProcessor）を test の依存に足す |
 | 同時の登録 | 同じユーザー名やメールアドレスが同時に来たら、一意制約の違反を制約名で見分けて 409 に変換する |
-| 退会した利用者のトークン | アクセストークンは退会後も最長 1 時間は署名が有効なので、認証のたびに `users` に利用者が存在するかを主キーで確かめ、無ければ 401 `UNAUTHENTICATED` にする（`OAuth2TokenValidator<Jwt>` で `sub` の存在を見る）。1 要求につき主キーの検索が 1 回増えるが、この規模では問題にしない |
+| 退会した利用者のトークン | アクセストークンは退会後も最長 1 時間は署名が有効なので、認証のたびに `users` に利用者が存在するかを主キーで確かめ、無ければ 401 `UNAUTHENTICATED` にする（`OAuth2TokenValidator<Jwt>`（`UserExistsValidator`）で `sub` の存在を見る）。1 要求につき主キーの検索が 1 回増えるが、この規模では問題にしない。次の 3 点を決めている。(1) 存在確認は、`createDefaultWithValidators` の既定の検証（署名・期限・発行者）がすべて通ったときだけ走らせ、失敗があればその結果をそのまま返す。`DelegatingOAuth2TokenValidator` は全部の検証を回すので、検証をそのまま並べると、期限切れや発行者違いのトークンでも DB に問い合わせてしまう。(2) 存在確認で DB が例外を投げたら、401 に変えず 500 にする（`RequestLogFilter` が `INTERNAL_ERROR` にする）。401 にすると、画面は更新を試み、それも失敗してログアウトさせるので、DB の障害で全員がログアウトされてしまう。(3) `sub` が UUID として読めないトークンは、DB に問い合わせずに `invalid_token` で失敗させる。署名が正しい以上まず起きないが、`sub` を読む処理の例外を 500 にしないため |
 
 ## 7. フロントの認証状態
 
