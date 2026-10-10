@@ -1,5 +1,6 @@
 package com.tkmedia.raisetimeline.service;
 
+import com.tkmedia.raisetimeline.domain.CommentCount;
 import com.tkmedia.raisetimeline.domain.LikeCount;
 import com.tkmedia.raisetimeline.domain.PostImage;
 import com.tkmedia.raisetimeline.domain.PostWithAuthor;
@@ -7,6 +8,7 @@ import com.tkmedia.raisetimeline.dto.PostImageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.dto.UserSummary;
 import com.tkmedia.raisetimeline.image.ImageStorage;
+import com.tkmedia.raisetimeline.mapper.CommentMapper;
 import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.util.ArrayList;
@@ -24,20 +26,22 @@ import org.springframework.stereotype.Component;
  * <p>画像は、渡された投稿すべての分を 1 回の問い合わせで引いて投稿ごとに振り分ける（投稿ごとに引くと N+1 になる）。
  * URL は DB に持たず、キーから {@link ImageStorage#urlOf} で作る（保存先の設定が変わっても DB を直さずに済む）。
  *
- * <p>いいねの数と「見ている人が付けたか」も、画像と同じく渡された投稿すべての分を 1 回ずつの問い合わせで引く。
- * 1 ページの問い合わせは、本体・画像・いいね数・自分のいいねの 4 本で、投稿の件数によらない。
- * コメントは Issue 8 まで、数に 0 を入れる。
+ * <p>いいねの数・「見ている人が付けたか」・コメントの数も、画像と同じく渡された投稿すべての分を 1 回ずつの問い合わせで引く。
+ * 1 ページの問い合わせは、本体・画像・いいね数・自分のいいね・コメント数の 5 本で、投稿の件数によらない。
  */
 @Component
 public class PostAssembler {
 
 	private final PostMapper postMapper;
 	private final LikeMapper likeMapper;
+	private final CommentMapper commentMapper;
 	private final ImageStorage imageStorage;
 
-	public PostAssembler(PostMapper postMapper, LikeMapper likeMapper, ImageStorage imageStorage) {
+	public PostAssembler(PostMapper postMapper, LikeMapper likeMapper, CommentMapper commentMapper,
+			ImageStorage imageStorage) {
 		this.postMapper = postMapper;
 		this.likeMapper = likeMapper;
+		this.commentMapper = commentMapper;
 		this.imageStorage = imageStorage;
 	}
 
@@ -56,10 +60,14 @@ public class PostAssembler {
 		// いいねが 1 件も無い投稿は countByPosts に現れないので、無ければ 0 と読む。
 		Map<UUID, Long> likeCounts = likeMapper.countByPosts(postIds).stream()
 				.collect(Collectors.toMap(LikeCount::postId, LikeCount::count));
+		// コメントが 1 件も無い投稿も同じく、無ければ 0 と読む。
+		Map<UUID, Long> commentCounts = commentMapper.countByPosts(postIds).stream()
+				.collect(Collectors.toMap(CommentCount::postId, CommentCount::count));
 		Set<UUID> likedByViewer = Set.copyOf(likeMapper.findLikedPostIds(viewer, postIds));
 		return rows.stream()
 				.map(row -> assemble(row, imagesByPost.getOrDefault(row.id(), List.of()),
-						likeCounts.getOrDefault(row.id(), 0L), likedByViewer.contains(row.id())))
+						likeCounts.getOrDefault(row.id(), 0L), commentCounts.getOrDefault(row.id(), 0L),
+						likedByViewer.contains(row.id())))
 				.toList();
 	}
 
@@ -79,12 +87,12 @@ public class PostAssembler {
 	}
 
 	private PostResponse assemble(PostWithAuthor row, List<PostImageResponse> images, long likeCount,
-			boolean likedByMe) {
+			long commentCount, boolean likedByMe) {
 		// アイコンを設定していない人は avatarKey が null。そのときは URL も null にする。
 		String avatarUrl = row.avatarKey() == null ? null : imageStorage.urlOf(row.avatarKey());
 		UserSummary author = new UserSummary(row.userId(), row.username(), row.displayName(), avatarUrl);
 		boolean edited = !row.updatedAt().isEqual(row.createdAt());
-		return new PostResponse(row.id(), author, row.body(), images, likeCount, 0, likedByMe, edited,
+		return new PostResponse(row.id(), author, row.body(), images, likeCount, commentCount, likedByMe, edited,
 				row.createdAt());
 	}
 

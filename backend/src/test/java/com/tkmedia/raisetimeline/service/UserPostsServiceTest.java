@@ -13,6 +13,7 @@ import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.CommentMapper;
 import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
@@ -33,7 +34,7 @@ class UserPostsServiceTest {
 	private final PostMapper postMapper = mock(PostMapper.class);
 	private final LikeMapper likeMapper = mock(LikeMapper.class);
 	private final UserPostsService service = new UserPostsService(userService, postMapper,
-			new PostAssembler(postMapper, likeMapper, new InMemoryImageStorage()));
+			new PostAssembler(postMapper, likeMapper, mock(CommentMapper.class), new InMemoryImageStorage()));
 
 	private static List<PostWithAuthor> rows(int n) {
 		List<PostWithAuthor> rows = new ArrayList<>();

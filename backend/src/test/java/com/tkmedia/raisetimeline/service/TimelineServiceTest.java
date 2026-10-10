@@ -9,6 +9,7 @@ import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.CommentMapper;
 import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.time.OffsetDateTime;
@@ -27,7 +28,7 @@ class TimelineServiceTest {
 
 	private final PostMapper postMapper = mock(PostMapper.class);
 	private final LikeMapper likeMapper = mock(LikeMapper.class);
-	private final TimelineService service = new TimelineService(postMapper, new PostAssembler(postMapper, likeMapper, new InMemoryImageStorage()));
+	private final TimelineService service = new TimelineService(postMapper, new PostAssembler(postMapper, likeMapper, mock(CommentMapper.class), new InMemoryImageStorage()));
 
 	/** id の降順に並んだ n 行。 */
 	private static List<PostWithAuthor> rows(int n) {
