@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.tkmedia.raisetimeline.domain.FollowStats;
 import com.tkmedia.raisetimeline.domain.User;
 import com.tkmedia.raisetimeline.dto.Me;
 import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
@@ -16,6 +17,7 @@ import com.tkmedia.raisetimeline.dto.UserDetail;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.UnauthenticatedException;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.FollowMapper;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
 import java.time.Clock;
 import java.time.Instant;
@@ -36,7 +38,9 @@ class UserServiceTest {
 	private final UserMapper userMapper = mock(UserMapper.class);
 	private static final Instant NOW = Instant.parse("2026-10-09T10:00:00Z");
 
-	private final UserService service = new UserService(userMapper, new InMemoryImageStorage(),
+	private final FollowMapper followMapper = mock(FollowMapper.class);
+
+	private final UserService service = new UserService(userMapper, followMapper, new InMemoryImageStorage(),
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
 	@Test
@@ -51,6 +55,7 @@ class UserServiceTest {
 	@DisplayName("getMe は保存された利用者を Me にして返す")
 	void getMeReturnsStoredUser() {
 		when(userMapper.findById(USER_ID)).thenReturn(Optional.of(user()));
+		when(followMapper.stats(USER_ID, USER_ID)).thenReturn(new FollowStats(0, 0, false));
 
 		Me me = service.getMe(USER_ID);
 
@@ -61,12 +66,14 @@ class UserServiceTest {
 	}
 
 	@Test
-	@DisplayName("toMe はフォロー数 0・isFollowing false・isMe true の暫定値を入れ、アイコンが無ければ avatarUrl は null")
-	void toMeUsesInterimValues() {
+	@DisplayName("toMe は stats の数を入れ、isFollowing は false、isMe は true。アイコンが無ければ avatarUrl は null")
+	void toMeUsesStats() {
+		when(followMapper.stats(USER_ID, USER_ID)).thenReturn(new FollowStats(7, 3, false));
+
 		Me me = service.toMe(user());
 
-		assertThat(me.followersCount()).isZero();
-		assertThat(me.followingCount()).isZero();
+		assertThat(me.followersCount()).isEqualTo(7);
+		assertThat(me.followingCount()).isEqualTo(3);
 		assertThat(me.isFollowing()).isFalse();
 		assertThat(me.avatarUrl()).isNull();
 		assertThat(me.isMe()).isTrue();
@@ -75,9 +82,10 @@ class UserServiceTest {
 	}
 
 	@Test
-	@DisplayName("本人のプロフィールは isMe true。フォロー状態・数は暫定値で、アイコンが無ければ avatarUrl は null")
+	@DisplayName("本人のプロフィールは isMe true。フォロー状態は false で、アイコンが無ければ avatarUrl は null")
 	void profileOfSelf() {
 		when(userMapper.findByUsername("alice")).thenReturn(Optional.of(user()));
+		when(followMapper.stats(USER_ID, USER_ID)).thenReturn(new FollowStats(0, 0, false));
 
 		UserDetail detail = service.getProfile("alice", USER_ID);
 
@@ -91,11 +99,28 @@ class UserServiceTest {
 	}
 
 	@Test
+	@DisplayName("toDetail は stats(相手の id, me) の followersCount・followingCount・isFollowing を入れる")
+	void toDetailUsesStats() {
+		UUID viewer = UUID.fromString("0199b000-0000-7000-8000-000000000002");
+		when(followMapper.stats(USER_ID, viewer)).thenReturn(new FollowStats(12, 4, true));
+
+		UserDetail detail = service.toDetail(user(), viewer);
+
+		assertThat(detail.followersCount()).isEqualTo(12);
+		assertThat(detail.followingCount()).isEqualTo(4);
+		assertThat(detail.isFollowing()).isTrue();
+		assertThat(detail.isMe()).isFalse();
+	}
+
+	@Test
 	@DisplayName("他人のプロフィールは isMe false")
 	void profileOfOther() {
 		when(userMapper.findByUsername("alice")).thenReturn(Optional.of(user()));
 
-		UserDetail detail = service.getProfile("alice", UUID.fromString("0199b000-0000-7000-8000-000000000002"));
+		UUID viewer = UUID.fromString("0199b000-0000-7000-8000-000000000002");
+		when(followMapper.stats(USER_ID, viewer)).thenReturn(new FollowStats(0, 0, false));
+
+		UserDetail detail = service.getProfile("alice", viewer);
 
 		assertThat(detail.isMe()).isFalse();
 		assertThat(detail.username()).isEqualTo("alice");
@@ -134,6 +159,7 @@ class UserServiceTest {
 		User updated = new User(USER_ID, "alice", "新しい名前", "alice@example.com", "$2a$10$hash", "新しい自己紹介", null,
 				CREATED_AT, now);
 		when(userMapper.updateProfile(USER_ID, "新しい名前", "新しい自己紹介", now)).thenReturn(Optional.of(updated));
+		when(followMapper.stats(USER_ID, USER_ID)).thenReturn(new FollowStats(0, 0, false));
 
 		Me me = service.updateProfile(USER_ID, new UpdateProfileRequest("新しい名前", "新しい自己紹介"));
 
@@ -161,6 +187,7 @@ class UserServiceTest {
 	void avatarUrlIsBuiltFromKey() {
 		User withAvatar = new User(USER_ID, "alice", "アリス", "alice@example.com", "$2a$10$hash", "",
 				"avatars/" + USER_ID + "/a.png", CREATED_AT, CREATED_AT);
+		when(followMapper.stats(USER_ID, USER_ID)).thenReturn(new FollowStats(0, 0, false));
 
 		assertThat(service.toMe(withAvatar).avatarUrl())
 				.isEqualTo("https://images.test/avatars/" + USER_ID + "/a.png");

@@ -103,9 +103,9 @@ class UserControllerTest {
 	}
 
 	@Test
-	@DisplayName("Bearer の sub の利用者の情報を 200 で返す。フォロー数は暫定の 0")
+	@DisplayName("Bearer の sub の利用者の情報を 200 で返す。サービスが返したフォロワー数が出る")
 	void meReturnsMe() throws Exception {
-		when(userService.getMe(USER_ID)).thenReturn(new Me(USER_ID, "taro_1", "太郎", null, "", false, 0, 0,
+		when(userService.getMe(USER_ID)).thenReturn(new Me(USER_ID, "taro_1", "太郎", null, "", false, 3, 0,
 				OffsetDateTime.parse("2026-10-01T00:00:00Z"), true, "taro@example.com"));
 
 		mockMvc.perform(get("/api/users/me").with(jwt().jwt(j -> j.subject(USER_ID.toString()))))
@@ -113,7 +113,7 @@ class UserControllerTest {
 				.andExpect(jsonPath("$.id").value(USER_ID.toString()))
 				.andExpect(jsonPath("$.email").value("taro@example.com"))
 				.andExpect(jsonPath("$.isMe").value(true))
-				.andExpect(jsonPath("$.followersCount").value(0));
+				.andExpect(jsonPath("$.followersCount").value(3));
 	}
 
 	@Test

@@ -54,11 +54,6 @@ class FollowMapperTest {
 				"hash", "自己紹介" + s, avatarKey, NOW, NOW));
 	}
 
-	private int followRows() {
-		Integer count = jdbc.queryForObject("SELECT count(*) FROM follows", Integer.class);
-		return count == null ? 0 : count;
-	}
-
 	private int followRowsOf(UUID user) {
 		Integer count = jdbc.queryForObject("SELECT count(*) FROM follows WHERE follower_id = ? OR followee_id = ?",
 				Integer.class, user, user);
@@ -103,7 +98,7 @@ class FollowMapperTest {
 
 		assertThat(followMapper.delete(a, b)).isEqualTo(1);
 		assertThat(followMapper.delete(a, b)).isZero();
-		assertThat(followRows()).isZero();
+		assertThat(followRowsOf(a)).isZero();
 	}
 
 	@Test
@@ -113,7 +108,7 @@ class FollowMapperTest {
 
 		assertThatThrownBy(() -> followMapper.insert(a, a))
 				.isInstanceOf(DataIntegrityViolationException.class)
-				.satisfies(e -> assertThat(constraintOf(e)).contains("check constraint"));
+				.satisfies(e -> assertThat(constraintOf(e)).contains("follows_check"));
 	}
 
 	@Test
@@ -174,17 +169,21 @@ class FollowMapperTest {
 		followMapper.insert(a, b);
 		followMapper.insert(a, c);
 		followMapper.insert(a, d);
+		// viewer が C だけをフォローしている（isFollowing は viewer から見た向き）
+		followMapper.insert(viewer, c);
 		// 別の人のフォロー中（follower_id の絞り込みが無いと、新しい順で先頭に混ざる）
 		followMapper.insert(e, a);
 
 		List<UserCardRow> firstPage = followMapper.findFollowing(a, viewer, null, 2);
 
-		assertThat(firstPage).extracting(UserCardRow::userId).containsExactly(d, c);
+		assertThat(firstPage).extracting(UserCardRow::userId, UserCardRow::isFollowing)
+				.containsExactly(tuple(d, false), tuple(c, true));
 		String followId = jdbc.queryForObject("SELECT id::text FROM follows WHERE follower_id = ? AND followee_id = ?",
 				String.class, a, c);
 		assertThat(firstPage.get(1).cursorId()).hasToString(followId);
 		List<UserCardRow> secondPage = followMapper.findFollowing(a, viewer, firstPage.get(1).cursorId(), 2);
-		assertThat(secondPage).extracting(UserCardRow::userId).containsExactly(b);
+		assertThat(secondPage).extracting(UserCardRow::userId, UserCardRow::isFollowing)
+				.containsExactly(tuple(b, false));
 	}
 
 	@Test
@@ -269,7 +268,7 @@ class FollowMapperTest {
 		jdbc.update("DELETE FROM users WHERE id = ?", withdrawn);
 
 		assertThat(followRowsOf(withdrawn)).isZero();
-		assertThat(followRows()).isEqualTo(1);
+		assertThat(followRowsOf(third)).isEqualTo(1);
 	}
 
 }
