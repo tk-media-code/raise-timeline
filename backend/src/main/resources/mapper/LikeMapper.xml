@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tkmedia.raisetimeline.mapper.LikeMapper">
+
+	<!--
+		すでに付けているときは何も入れず 0 を返す。同時に 2 回付けても一意制約が 1 行に保つ。
+		投稿か利用者が無いときの外部キー違反は握りつぶさない（ON CONFLICT は一意制約の衝突だけを対象にする）。
+	-->
+	<insert id="insert">
+		INSERT INTO likes (post_id, user_id)
+		VALUES (#{postId}, #{userId})
+		ON CONFLICT (post_id, user_id) DO NOTHING
+	</insert>
+
+	<delete id="delete">
+		DELETE FROM likes WHERE post_id = #{postId} AND user_id = #{userId}
+	</delete>
+
+	<!-- 一覧のいいね数は、ページの投稿の id をまとめて 1 回で引く（投稿ごとに引くと N+1 になる）。 -->
+	<select id="countByPosts" resultType="com.tkmedia.raisetimeline.domain.LikeCount">
+		SELECT post_id, count(*) AS count
+		FROM likes
+		WHERE post_id IN
+		<foreach collection="postIds" item="postId" open="(" separator="," close=")">
+			#{postId}
+		</foreach>
+		GROUP BY post_id
+	</select>
+
+	<select id="findLikedPostIds" resultType="java.util.UUID">
+		SELECT post_id
+		FROM likes
+		WHERE user_id = #{userId} AND post_id IN
+		<foreach collection="postIds" item="postId" open="(" separator="," close=")">
+			#{postId}
+		</foreach>
+	</select>
+
+	<!--
+		users からは表示に要る 4 列だけを読む。email と password_hash は読まない。
+		(post_id, id) の索引 likes_post_id_id_idx が絞り込みと id の降順の並びの両方にそのまま使える。
+		cursor が null のときは <if> で条件ごと外す（PostMapper.findAll と同じ）。
+	-->
+	<select id="findLikers" resultType="com.tkmedia.raisetimeline.domain.Liker">
+		SELECT l.id AS like_id, u.id AS user_id, u.username, u.display_name, u.avatar_key, u.bio
+		FROM likes l JOIN users u ON u.id = l.user_id
+		WHERE l.post_id = #{postId}
+		<if test="cursor != null">AND l.id &lt; #{cursor}</if>
+		ORDER BY l.id DESC
+		LIMIT #{limit}
+	</select>
+
+</mapper>
