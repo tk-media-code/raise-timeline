@@ -42,7 +42,7 @@ function deferred<T>() {
 }
 
 function Probe() {
-  const { status, user, signedOut, signIn, signOut, updateUser, updateAvatarUrl } = useAuth()
+  const { status, user, signedOut, signIn, signOut, signOutLocally, updateUser, updateAvatarUrl } = useAuth()
   return (
     <div>
       <p data-testid="status">{status}</p>
@@ -50,6 +50,7 @@ function Probe() {
       <p data-testid="user">{user?.username ?? 'none'}</p>
       <button onClick={() => signIn(session)}>サインイン</button>
       <button onClick={() => void signOut()}>サインアウト</button>
+      <button onClick={() => signOutLocally()}>端末だけサインアウト</button>
       <button onClick={() => updateUser({ ...me, displayName: '新しい名前' })}>同じ人を更新</button>
       <button onClick={() => updateUser({ ...me, id: '2', displayName: '別の人' })}>別の人で更新</button>
       <button onClick={() => updateAvatarUrl(me.id, 'https://example.com/new.png')}>同じ人のアイコン</button>
@@ -174,6 +175,35 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('user')).toHaveTextContent('none')
     expect(getAccessToken()).toBeNull()
     expect(queryClient.getQueryData(['timeline'])).toBeUndefined()
+  })
+
+  it('signOutLocally はログアウト API を呼ばずに、トークンと利用者とキャッシュを捨て、signedOut の anonymous になる', async () => {
+    refreshSession.mockResolvedValue(session)
+    setAccessToken('token-1')
+    setSessionUserId('1')
+    queryClient.setQueryData(['timeline'], ['post'])
+    renderProvider()
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+
+    await userEvent.click(screen.getByRole('button', { name: '端末だけサインアウト' }))
+
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'))
+    expect(logout).not.toHaveBeenCalled()
+    expect(screen.getByTestId('user')).toHaveTextContent('none')
+    expect(screen.getByTestId('signed-out')).toHaveTextContent('true')
+    expect(getAccessToken()).toBeNull()
+    expect(getSessionUserId()).toBeNull()
+    expect(queryClient.getQueryData(['timeline'])).toBeUndefined()
+  })
+
+  it('signOutLocally は他のタブへ auth-changed を送る', async () => {
+    refreshSession.mockResolvedValue(session)
+    renderProvider()
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authenticated'))
+
+    await userEvent.click(screen.getByRole('button', { name: '端末だけサインアウト' }))
+
+    await waitFor(() => expect(receivedByOtherTab).toEqual([{ type: 'auth-changed' }]))
   })
 
   it('signOut の後だけ signedOut が true になり、signIn で false に戻る。起動時の失敗では false のまま', async () => {

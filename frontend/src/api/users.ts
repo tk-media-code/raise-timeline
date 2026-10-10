@@ -30,3 +30,9 @@ export function updateAvatar(file: File): Promise<{ avatarUrl: string }> {
   form.append('file', file)
   return apiFetch<{ avatarUrl: string }>('/api/users/me/avatar', { method: 'PUT', body: form })
 }
+
+// 退会。パスワードの再入力を本文で送る。成功は 204（本文なし）。
+// withAuthLock では包まない: 401 のあとの更新が同じ鍵を取るので、入れ子になって止まる。
+export function withdraw(password: string): Promise<void> {
+  return apiFetch<void>('/api/users/me', { method: 'DELETE', body: { password } })
+}
