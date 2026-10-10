@@ -61,9 +61,13 @@
 
 	<!--
 		自分の投稿と、自分がフォローしている人の投稿を、findAll と同じ列・並び・cursor の扱いで返す。
-		使う索引は 2 つ。副問い合わせは follows_follower_id_id_idx (follower_id, id) で follower_id の行だけを引き、
-		その followee_id の投稿を posts_user_id_id_idx (user_id, id) で引く。(user_id, id) は id の降順の並びにも
-		そのまま使える。cursor が null のときは <if> で条件ごと外す（findAll と同じ理由）。
+		実行計画は、主キー posts_pkey を逆向きにたどって新しい順に読み、1 行ごとに「自分の投稿か、書いた人が
+		自分のフォロー先か」で絞り、limit 件たまったところで止める。フォロー先の引きには follows (follower_id, id)
+		の索引を使う。OR の下の IN (副問い合わせ) は semi-join にならず絞り込みのまま残るので、posts (user_id, id)
+		の索引は使われない（この索引で id の降順になるのは user_id が 1 人のとき、つまり findByUser）。
+		自分とフォロー先がしばらく投稿していないと、ページが埋まるまでに多くの投稿を読むことになる。
+		このアプリの規模（数十〜数百人、docs/requirements.md）では問題にならない。利用者が増えたら問い合わせの形を見直す。
+		cursor が null のときは <if> で条件ごと外す（findAll と同じ理由）。
 	-->
 	<select id="findFollowing" resultType="com.tkmedia.raisetimeline.domain.PostWithAuthor">
 		SELECT <include refid="columns"/>
