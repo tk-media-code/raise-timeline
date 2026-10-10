@@ -7,6 +7,10 @@ type ModalDialogName = { labelledBy: string; label?: never } | { label: string; 
 type ModalDialogProps = ModalDialogName & {
   open: boolean
   onCancel: () => void
+  // ブラウザが利用者の操作とは別に、すでに閉じてしまったときだけ呼ぶ（下の onClose）。渡さなければ onCancel を呼ぶ。
+  // onCancel は「閉じない」と答えられる（Esc のとき preventDefault 済み）が、こちらは取り消せない。
+  // onCancel で閉じるのを断る呼び出し側（送信中は閉じさせない等）が、親の open だけは合わせられるようにする。
+  onBrowserClose?: () => void
   // 渡すと、既定の白い枠のクラスの代わりに使う（画面いっぱいの暗いビューアなど、枠の見た目が違うとき）。
   className?: string
   children: ReactNode
@@ -16,7 +20,7 @@ const DEFAULT_CLASS_NAME = 'm-auto w-[min(92vw,32rem)] rounded-lg bg-white p-4 t
 
 // <dialog> の枠。ConfirmDialog と同じく、開閉の正は props の open で、showModal() / close() はそれに合わせるだけにする。
 // 中身は開いている間だけ描く。閉じるたびに入力欄が新しくなり、隠れた入力欄が読み上げや検索に残らない。
-export function ModalDialog({ open, labelledBy, label, onCancel, className, children }: ModalDialogProps) {
+export function ModalDialog({ open, labelledBy, label, onCancel, onBrowserClose, className, children }: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
 
@@ -53,7 +57,7 @@ export function ModalDialog({ open, labelledBy, label, onCancel, className, chil
       // 親の open が true のままだと、親の状態と画面が食い違い、以後開き直せなくなる。親がまだ開いていると思っていれば閉じさせる。
       // 親の指示で閉じた場合は、この時点で open が false なので何もしない。
       onClose={() => {
-        if (open) onCancel()
+        if (open) (onBrowserClose ?? onCancel)()
       }}
       className={className ?? DEFAULT_CLASS_NAME}
     >

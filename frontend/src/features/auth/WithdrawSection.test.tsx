@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '../../test/providers'
@@ -50,5 +50,22 @@ describe('WithdrawSection', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '退会する' })).toHaveFocus()
+  })
+
+  it('送信中にブラウザに強制的に閉じられても、もう一度「退会する」で開き直せる', async () => {
+    api.withdraw.mockReturnValue(new Promise(() => {}))
+    renderWithProviders(<WithdrawSection />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '退会する' }))
+    await user.type(screen.getByLabelText('パスワード'), 'correct-horse-1')
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '退会する' }))
+    const dialog = screen.getByRole('dialog')
+
+    dialog.removeAttribute('open')
+    fireEvent(dialog, new Event('close'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '退会する' }))
+
+    expect(screen.getByRole('dialog', { name: '本当に退会しますか？' })).toBeInTheDocument()
   })
 })

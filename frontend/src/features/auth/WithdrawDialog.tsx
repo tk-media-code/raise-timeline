@@ -2,7 +2,9 @@ import { useId, useRef, useState, type FormEvent } from 'react'
 import { splitFieldErrors } from '../../api/client'
 import { ModalDialog } from '../../components/ModalDialog'
 import { TextField } from '../../components/TextField'
+import { useToast } from '../../components/Toast'
 import { failureMessage, isApiError } from '../posts/mutations'
+import { useIsMounted } from '../posts/useIsMounted'
 import { useWithdraw } from './useWithdraw'
 import { WITHDRAW_WARNING } from './withdrawText'
 
@@ -18,19 +20,30 @@ export function WithdrawDialog({ open, onClose }: WithdrawDialogProps) {
   const titleId = useId()
   const withdraw = useWithdraw()
   // 送信中は閉じさせない。閉じても処理は続き、見えないところで退会が済んでしまう。
-  // Esc と、ブラウザが自分で閉じたとき（ModalDialog の onClose）も同じ onCancel を通るので、ここで止める。
-  // 背景の押下では閉じない（ほかのダイアログと同じ）。
+  // Esc（取り消せる cancel イベント）と「取り消し」はここで止める。背景の押下では閉じない（ほかのダイアログと同じ）。
   const cancel = () => {
     if (!withdraw.isPending) onClose()
   }
   return (
-    <ModalDialog open={open} labelledBy={titleId} onCancel={cancel}>
+    // ブラウザがすでに閉じてしまったとき（Esc の連打、Android の戻る操作）は止められない。止めると <dialog> だけ閉じて
+    // 親の open が true のまま残り、開き直せなくなる。親を閉じ、要求は続ける（mutation はここが持つので、閉じても
+    // 成功の後始末は走る。失敗は WithdrawForm が通知で伝える）。
+    <ModalDialog open={open} labelledBy={titleId} onCancel={cancel} onBrowserClose={onClose}>
       <h2 id={titleId} className="mb-2 text-lg font-bold">
         本当に退会しますか？
       </h2>
       <WithdrawForm pending={withdraw.isPending} mutateAsync={withdraw.mutateAsync} onCancel={cancel} />
     </ModalDialog>
   )
+}
+
+// 欄に結ばない文言。401 INVALID_PASSWORD はサーバーの固定の文言（パスワードが違います）をそのまま使う。
+function rejectionMessage(error: unknown): string {
+  if (isApiError(error, 401)) return error.detail
+  // 429 は nginx が返すので本文が Problem Details ではなく、既定の文言は「通信に失敗しました」になる。
+  if (isApiError(error, 429)) return 'しばらく待ってから再試行してください'
+  if (isApiError(error, 422)) return error.errors[0]?.message ?? failureMessage(error)
+  return failureMessage(error)
 }
 
 // ダイアログが開いている間だけ描かれるので、開くたびに入力も誤りも空から始まる。
@@ -49,6 +62,8 @@ function WithdrawForm({
   const [formError, setFormError] = useState<string | null>(null)
   // isPending の反映は少し遅れるので、素早い 2 回目の押下は ref で止める。
   const submitting = useRef(false)
+  const toast = useToast()
+  const mounted = useIsMounted()
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -74,19 +89,21 @@ function WithdrawForm({
 
   // 入力は消さない。直して、もう一度送れるように。
   function report(error: unknown) {
-    if (isApiError(error, 401) && error.code === 'INVALID_PASSWORD') {
-      setPasswordError(error.detail)
-    } else if (isApiError(error, 401)) {
-      // UNAUTHENTICATED（更新も失敗）。本人がもういない。AuthProvider が未ログインにして、画面がログインへ移すので、何も出さない。
-    } else if (isApiError(error, 422)) {
+    // UNAUTHENTICATED（更新も失敗）。本人がもういない。AuthProvider が未ログインにして、画面がログインへ移すので、何も出さない。
+    if (isApiError(error, 401) && error.code !== 'INVALID_PASSWORD') return
+    // 送信中にブラウザに閉じられた（ダイアログごとこのフォームが消えた）ときは、誤りを見せる欄が無いので通知で伝える。
+    if (!mounted.current) {
+      toast.show(rejectionMessage(error), 'error')
+      return
+    }
+    if (isApiError(error, 422)) {
       const { fieldErrors, formMessage } = splitFieldErrors(error, isField)
       setPasswordError(fieldErrors.password ?? null)
       setFormError(formMessage)
-    } else if (isApiError(error, 429)) {
-      // 429 は nginx が返すので本文が Problem Details ではなく、既定の文言は「通信に失敗しました」になる。
-      setFormError('しばらく待ってから再試行してください')
+    } else if (isApiError(error, 401)) {
+      setPasswordError(rejectionMessage(error))
     } else {
-      setFormError(failureMessage(error))
+      setFormError(rejectionMessage(error))
     }
   }
 

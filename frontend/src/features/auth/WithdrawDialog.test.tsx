@@ -188,6 +188,98 @@ describe('WithdrawDialog', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  // ブラウザが利用者の操作とは別に閉じる（Esc を重ねたときの強制的な close、Android の戻る操作）。取り消せない。
+  function forceClose() {
+    const dialog = screen.getByRole('dialog')
+    dialog.removeAttribute('open')
+    fireEvent(dialog, new Event('close'))
+  }
+
+  it('送信中にブラウザがダイアログを閉じても（close イベント）、onClose が呼ばれ、要求は続く', async () => {
+    const pending = deferred<undefined>()
+    api.withdraw.mockReturnValue(pending.promise)
+    const { user } = openDialog()
+    await user.type(passwordInput(), 'correct-horse-1')
+    await user.click(submitButton())
+
+    forceClose()
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(api.withdraw).toHaveBeenCalledTimes(1)
+    // 親が閉じた（open=false）あとも、成功すれば後始末は走る。
+    pending.resolve(undefined)
+    await waitFor(() => expect(signOutLocally).toHaveBeenCalledTimes(1))
+  })
+
+  it('送信中に閉じられたあとで成功すると、ダイアログが描かれていなくても通知と signOutLocally が行われる', async () => {
+    const pending = deferred<undefined>()
+    api.withdraw.mockReturnValue(pending.promise)
+    function Harness() {
+      const [open, setOpen] = useState(true)
+      return <WithdrawDialog open={open} onClose={() => setOpen(false)} />
+    }
+    const user = userEvent.setup()
+    renderWithProviders(<Harness />)
+    await user.type(passwordInput(), 'correct-horse-1')
+    await user.click(submitButton())
+    forceClose()
+    expect(screen.queryByLabelText('パスワード')).not.toBeInTheDocument()
+
+    pending.resolve(undefined)
+
+    await waitFor(() => expect(signOutLocally).toHaveBeenCalledTimes(1))
+    expect(within(screen.getByRole('status', { name: '通知' })).getByText('退会しました')).toBeInTheDocument()
+  })
+
+  describe('送信中に閉じられたあとで失敗したとき（入力欄が無いので通知で伝える）', () => {
+    function Harness() {
+      const [open, setOpen] = useState(true)
+      return <WithdrawDialog open={open} onClose={() => setOpen(false)} />
+    }
+
+    async function failAfterClose(error: ApiError | null) {
+      const pending = deferred<undefined>()
+      api.withdraw.mockReturnValue(pending.promise)
+      const user = userEvent.setup()
+      renderWithProviders(<Harness />)
+      await user.type(passwordInput(), 'correct-horse-1')
+      await user.click(submitButton())
+      forceClose()
+      // 親が閉じたので、中身（入力欄）は描かれない。
+      expect(screen.queryByLabelText('パスワード')).not.toBeInTheDocument()
+      pending.reject(error)
+    }
+
+    it('401 INVALID_PASSWORD は「パスワードが違います」', async () => {
+      await failAfterClose(apiError({ status: 401, code: 'INVALID_PASSWORD', detail: 'パスワードが違います' }))
+
+      expect(await screen.findByText('パスワードが違います')).toBeInTheDocument()
+      expect(signOutLocally).not.toHaveBeenCalled()
+    })
+
+    it('429 は「しばらく待ってから再試行してください」', async () => {
+      await failAfterClose(apiError({ status: 429, detail: '通信に失敗しました' }))
+
+      expect(await screen.findByText('しばらく待ってから再試行してください')).toBeInTheDocument()
+      expect(screen.queryByText('通信に失敗しました')).not.toBeInTheDocument()
+    })
+
+    it('500 は失敗の文言（ID 付き）', async () => {
+      await failAfterClose(apiError({ status: 500, detail: '問題が起きました', requestId: 'req-1' }))
+
+      expect(await screen.findByText('問題が起きました（ID: req-1）')).toBeInTheDocument()
+    })
+
+    it('401 UNAUTHENTICATED は何も出さない', async () => {
+      await failAfterClose(apiError({ status: 401, code: 'UNAUTHENTICATED', detail: 'ログインが必要です' }))
+
+      await waitFor(() => expect(api.withdraw).toHaveBeenCalledTimes(1))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(screen.queryByText('ログインが必要です')).not.toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
   it('素早く 2 回押しても withdraw は 1 回', async () => {
     api.withdraw.mockReturnValue(new Promise(() => {}))
     const { user } = openDialog()
