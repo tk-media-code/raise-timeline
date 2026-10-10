@@ -72,9 +72,11 @@ function stubTimelineFetch() {
         ? { items: [], nextCursor: null }
         : url === `/api/posts/${detailPost.id}`
           ? detailPost
-          : url === '/api/users/me'
-            ? me
-            : null
+          : url === `/api/posts/${detailPost.id}/likes`
+            ? { items: [{ id: '2', username: 'bob', displayName: 'Bob', avatarUrl: null, bio: '', isFollowing: false }], nextCursor: null }
+            : url === '/api/users/me'
+              ? me
+              : null
       return Promise.resolve(
         body === null
           ? new Response(null, { status: 404 })
@@ -152,6 +154,16 @@ describe('App のルート', () => {
     expect(screen.getAllByRole('main')).toHaveLength(1)
     expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: '投稿' })).toBeInTheDocument()
     expect(screen.getByText('2026/10/06 14:12')).toBeInTheDocument()
+  })
+
+  it('ログイン済みで /posts/<id>/likes を開くと、レイアウトの中に「いいねした人」が描かれる', async () => {
+    apiRefresh.mockResolvedValue(session)
+    renderAt(`/posts/${detailPost.id}/likes`)
+
+    expect(await screen.findByRole('link', { name: 'Bob @bob' })).toBeInTheDocument()
+    expect(screen.getByRole('banner', { name: '上部バー' })).toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'いいねした人' })).toBeInTheDocument()
   })
 
   it('ログイン済みで /settings/profile を開くと、レイアウトの中にプロフィール編集が描かれる', async () => {

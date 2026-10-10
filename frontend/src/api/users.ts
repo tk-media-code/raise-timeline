@@ -1,9 +1,11 @@
 import type { Me } from './auth'
 import { apiFetch } from './client'
-import type { Page, Post } from './posts'
+import type { Page, Post, UserSummary } from './posts'
 
 // 他人にも見せる形。メールアドレスは本人（Me）にしか返らない。
 export type UserDetail = Omit<Me, 'email'>
+// 一覧の 1 行に出す形。isFollowing は Issue 9（フォロー）まで常に false。
+export type UserCard = UserSummary & { bio: string; isFollowing: boolean }
 export type ProfileInput = { displayName: string; bio: string }
 
 export function getUser(username: string): Promise<UserDetail> {

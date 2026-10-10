@@ -37,6 +37,7 @@ function renderLayout(route = '/') {
         <Route element={<AppLayout />}>
           <Route path="/" element={<p>ホームの中身</p>} />
           <Route path="/posts/:id" element={<p>投稿詳細の中身</p>} />
+          <Route path="/posts/:id/likes" element={<p>いいねした人の中身</p>} />
           <Route path="/settings/profile" element={<p>プロフィール編集の中身</p>} />
         </Route>
       </Routes>
@@ -159,6 +160,12 @@ describe('AppLayout', () => {
     renderLayout('/posts/x')
 
     expect(within(screen.getByRole('banner')).getByText('投稿')).toBeInTheDocument()
+  })
+
+  it('/posts/x/likes では上部バーの画面名が「いいねした人」', () => {
+    renderLayout('/posts/x/likes')
+
+    expect(within(screen.getByRole('banner')).getByText('いいねした人')).toBeInTheDocument()
   })
 
   it('/settings/profile では上部バーの画面名が「プロフィール編集」', () => {

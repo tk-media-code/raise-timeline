@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { likePost, unlikePost } from './likes'
+import { getLikers, likePost, unlikePost } from './likes'
 
 describe('いいねの API', () => {
   const fetchMock = vi.fn()
@@ -25,5 +25,16 @@ describe('いいねの API', () => {
     const [deletePath, deleteInit] = fetchMock.mock.calls[1] as [string, RequestInit]
     expect(deletePath).toBe('/api/posts/p%2F1/like')
     expect(deleteInit.method).toBe('DELETE')
+  })
+
+  it('getLikers は /api/posts/p1/likes を呼び、cursor があれば ?cursor= を付ける', async () => {
+    const page = { items: [], nextCursor: null }
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify(page), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+
+    await expect(getLikers('p1', null)).resolves.toEqual(page)
+    await getLikers('p1', 'c/1')
+
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/posts/p1/likes')
+    expect((fetchMock.mock.calls[1] as [string])[0]).toBe('/api/posts/p1/likes?cursor=c%2F1')
   })
 })
