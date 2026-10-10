@@ -101,7 +101,11 @@ export function useToggleLike(post: Post, onRemoved?: () => void): () => void {
       syncsOf(client).delete(postId)
       // 要求の間に一覧が読み直されて古い状態が入っていても、保存済みの状態に直す。
       await setLikedInCache(client, postId, sync.confirmed)
-      client.removeQueries({ queryKey: likersKeys.of(postId), exact: true })
+      // 開いていない一覧はデータを空に戻し（次に開いたとき、古い一覧を一瞬見せない）、開いている一覧は 1 ページ目から読み直す。
+      // 詳細ではハートの隣に数のリンクがあり、送信中に「いいねした人」を開ける。removeQueries だと表示中の画面に伝わらず、
+      // 取得済みの（自分がいない）一覧を出したまま止まる。
+      // 読み直しは待たない。待つと、同じ投稿の次の要求が読み直しの終わりまで動かない。
+      void client.resetQueries({ queryKey: likersKeys.of(postId), exact: true })
     },
   })
 

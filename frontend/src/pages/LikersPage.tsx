@@ -10,7 +10,7 @@ export default function LikersPage() {
   const { id = '' } = useParams()
   const query = useLikers(id)
 
-  // 一覧が 1 件も無いまま 404 で失敗したときだけ「見つかりません」にする。
+  // まだ一覧を読み込めていないまま 404・400 になったときだけ「見つかりません」にする。
   // 表示中の一覧の読み直しが失敗しても、見えている一覧は消さない。
   if (query.isError && !query.data && isNotFound(query.error)) return <NotFoundMessage />
 

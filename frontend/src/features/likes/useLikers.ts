@@ -5,7 +5,7 @@ import type { UserCard } from '../../api/users'
 import { likersKeys } from './queryKeys'
 
 // その投稿にいいねした人の一覧。キーは likersKeys.of(postId) のまま使う
-// （いいねの付け外しが終わると、同じキーを exact で捨てる）。
+// （いいねの付け外しが終わると、同じキーを exact で resetQueries する。開いていない一覧は空に戻り、開いている一覧は読み直される）。
 export function useLikers(postId: string) {
   return useInfiniteQuery<
     Page<UserCard>,

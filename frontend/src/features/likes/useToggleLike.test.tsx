@@ -8,9 +8,10 @@ import { createQueryClient } from '../../lib/queryClient'
 import { TestProviders } from '../../test/providers'
 import { postKey, timelineKeys } from '../posts/queryKeys'
 import { likersKeys } from './queryKeys'
+import { useLikers } from './useLikers'
 import { useToggleLike } from './useToggleLike'
 
-const api = vi.hoisted(() => ({ likePost: vi.fn(), unlikePost: vi.fn() }))
+const api = vi.hoisted(() => ({ likePost: vi.fn(), unlikePost: vi.fn(), getLikers: vi.fn() }))
 vi.mock('../../api/likes', () => api)
 
 type Data = InfiniteData<Page<Post>, string | null>
@@ -105,6 +106,7 @@ describe('useToggleLike', () => {
   beforeEach(() => {
     api.likePost.mockReset()
     api.unlikePost.mockReset()
+    api.getLikers.mockReset()
   })
 
   it('押すと、要求の完了を待たずに一覧と詳細が likedByMe true・likeCount 3 になり、likePost が 1 回呼ばれる', async () => {
@@ -245,7 +247,7 @@ describe('useToggleLike', () => {
     await expectShown(true, 3)
   })
 
-  it('要求が全部終わると、その投稿の likersKeys.of のキャッシュが消える。ほかの投稿のは残る', async () => {
+  it('要求が全部終わると、開いていない一覧（その投稿の likersKeys.of）はデータが空に戻る。ほかの投稿のは残る', async () => {
     const likes = holdCalls(api.likePost)
     const { result } = setup()
     client.setQueryData(likersKeys.of('p1'), { pages: [], pageParams: [] })
@@ -258,6 +260,29 @@ describe('useToggleLike', () => {
 
     await waitFor(() => expect(client.getQueryData(likersKeys.of('p1'))).toBeUndefined())
     expect(client.getQueryData(likersKeys.of('p2'))).toBeDefined()
+  })
+
+  // 投稿詳細ではハートの隣に数のリンクがあり、送信中に「いいねした人」を開ける。
+  // 取得済みの（自分がいない）一覧を出したまま止まらないよう、開いている一覧は 1 ページ目から読み直す。
+  it('要求が全部終わると、表示中の一覧（オブザーバあり）は読み直される（getLikers がもう一度呼ばれる）', async () => {
+    const likes = holdCalls(api.likePost)
+    api.getLikers.mockResolvedValue({ items: [], nextCursor: null })
+    const { result } = setup()
+    function likersWrapper({ children }: { children: ReactNode }) {
+      return <TestProviders queryClient={client}>{children}</TestProviders>
+    }
+    const likers = renderHook(() => useLikers('p1'), { wrapper: likersWrapper })
+    await waitFor(() => expect(likers.result.current.isSuccess).toBe(true))
+    expect(api.getLikers).toHaveBeenCalledTimes(1)
+
+    press(result.current)
+    await waitFor(() => expect(api.likePost).toHaveBeenCalledTimes(1))
+    expect(api.getLikers).toHaveBeenCalledTimes(1)
+    await settle(likes, 0)
+
+    await waitFor(() => expect(api.getLikers).toHaveBeenCalledTimes(2))
+    expect(api.getLikers).toHaveBeenLastCalledWith('p1', null)
+    await waitFor(() => expect(likers.result.current.isSuccess).toBe(true))
   })
 
   // アプリの QueryClient は 1 つで、ログアウトやセッション切れで clear() される。MutationCache が空になり、

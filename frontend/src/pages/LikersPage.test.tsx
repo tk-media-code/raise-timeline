@@ -1,8 +1,9 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import type { UserCard } from '../api/users'
+import { installFakeIntersectionObserver } from '../test/intersectionObserver'
 import { renderWithProviders } from '../test/providers'
 import LikersPage from './LikersPage'
 
@@ -62,6 +63,40 @@ describe('LikersPage', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: '見つかりません' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'ホームへ戻る' })).toHaveAttribute('href', '/')
+  })
+
+  it('400（id の形が壊れている）でも「見つかりません」の表示', async () => {
+    api.getLikers.mockRejectedValue(apiError({ status: 400, code: 'BAD_REQUEST', detail: '不正な要求です' }))
+    renderLikers()
+
+    expect(await screen.findByRole('heading', { level: 1, name: '見つかりません' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'ホームへ戻る' })).toHaveAttribute('href', '/')
+  })
+
+  describe('一覧が見えているあとで読み込みが 404 になったとき', () => {
+    let observer: ReturnType<typeof installFakeIntersectionObserver>
+
+    beforeEach(() => {
+      observer = installFakeIntersectionObserver()
+    })
+
+    afterEach(() => {
+      observer.uninstall()
+    })
+
+    it('見えている一覧は消さず、「再試行」を出し、「見つかりません」は出さない', async () => {
+      api.getLikers.mockResolvedValueOnce({ items: [makeUser()], nextCursor: 'c1' })
+      api.getLikers.mockRejectedValueOnce(apiError({ status: 404, code: 'NOT_FOUND', detail: '対象がありません' }))
+      renderLikers()
+      await screen.findByRole('link', { name: 'アリス @alice' })
+
+      observer.intersect()
+
+      expect(await screen.findByRole('button', { name: '再試行' })).toBeInTheDocument()
+      expect(api.getLikers).toHaveBeenCalledWith('p1', 'c1')
+      expect(screen.getByRole('link', { name: 'アリス @alice' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: '見つかりません' })).not.toBeInTheDocument()
+    })
   })
 
   it('500 なら再試行の表示が出て、「再試行」で読み直すと一覧が出る', async () => {
