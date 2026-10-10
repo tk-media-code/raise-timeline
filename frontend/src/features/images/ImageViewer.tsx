@@ -16,8 +16,9 @@ type ImageViewerProps = {
 // 高さの dvh は、モバイルでアドレスバーの出入りに追従させるために使う。
 const DIALOG_CLASS = 'fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none overflow-hidden bg-black/90 p-0 text-white backdrop:bg-transparent'
 
+// 白い丸は白っぽい画像に重なると縁が消えるので、薄い影と枠で縁を残す。
 const BUTTON_CLASS =
-  'absolute flex size-12 items-center justify-center rounded-full bg-white text-3xl leading-none text-black hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
+  'absolute flex size-12 items-center justify-center rounded-full bg-white text-3xl leading-none text-black shadow-md ring-1 ring-black/20 hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
 
 // 画像を大きく見るビューア。背景か × か Esc で閉じ、複数枚は左右のボタンと矢印キーで移る。
 // 中身は開いている間だけ描かれるので、開くたびに startIndex から始まる。
@@ -60,12 +61,15 @@ function ViewerBody({ images, startIndex, onClose }: Omit<ImageViewerProps, 'ope
   return (
     <>
       {/* 背景（画像とボタン以外）を押すと閉じる。マウス向けの近道で、キーボードと読み上げには「閉じる」ボタンと Esc がある。 */}
+      {/* 左右の余白は ‹ › の置き場。sm（640px）以上では両側を 64px ずつ空けて、ボタンが画像に重ならないようにする。 */}
+      {/* sm 未満では余白を無くして画像を画面の幅いっぱいに出し、‹ › は画像の上に重ねる（余白を残すと 360px で画像が約 232px になる）。 */}
+      {/* 上下は × の場所なので、どちらの幅でも空ける。狭い画面では横の背景が無くなるが、上下の背景と × と Esc で閉じられる。 */}
       {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         onClick={(event) => {
           if (event.target === event.currentTarget) onClose()
         }}
-        className="flex h-full w-full items-center justify-center px-16 py-14"
+        className="flex h-full w-full items-center justify-center px-0 py-14 sm:px-16"
       >
         <img
           src={image.url}
