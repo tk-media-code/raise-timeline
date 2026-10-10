@@ -131,6 +131,15 @@ class WithdrawalIntegrationTest {
 		assertThat(statusOf(result)).isEqualTo(204);
 	}
 
+	/** コメントを書く。 */
+	private void comment(Account account, String postId) throws Exception {
+		MvcResult result = mockMvc.perform(post("/api/posts/{id}/comments", postId)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + account.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"body\":\"コメント\"}".getBytes(StandardCharsets.UTF_8))).andReturn();
+		assertThat(statusOf(result)).isEqualTo(201);
+	}
+
 	private void putAvatar(Account account) throws Exception {
 		var request = multipart(HttpMethod.PUT, "/api/users/me/avatar")
 				.file(new MockMultipartFile("file", "icon.png", "image/png", TestImages.png()))
@@ -333,6 +342,26 @@ class WithdrawalIntegrationTest {
 		MvcResult postB = getPost(b, postOfB);
 		assertThat(statusOf(postB)).isEqualTo(200);
 		assertThat((Integer) JsonPath.read(json(postB), "$.likeCount")).isZero();
+	}
+
+	@Test
+	@DisplayName("退会すると、本人のコメントと、本人の投稿へのコメントが消え、他人の投稿の commentCount が減る")
+	void withdrawalRemovesCommentsWrittenAndReceived() throws Exception {
+		Account a = newAccount();
+		Account b = newAccount();
+		String postOfA = createTextPost(a);
+		String postOfB = createTextPost(b);
+		comment(a, postOfB);
+		comment(b, postOfA);
+		assertThat((Integer) JsonPath.read(json(getPost(b, postOfB)), "$.commentCount")).isEqualTo(1);
+
+		assertThat(statusOf(withdraw(a, PASSWORD))).isEqualTo(204);
+
+		assertThat(count("SELECT count(*) FROM comments WHERE user_id = ?::uuid", a.userId())).isZero();
+		assertThat(count("SELECT count(*) FROM comments WHERE post_id = ?::uuid", postOfA)).isZero();
+		MvcResult postB = getPost(b, postOfB);
+		assertThat(statusOf(postB)).isEqualTo(200);
+		assertThat((Integer) JsonPath.read(json(postB), "$.commentCount")).isZero();
 	}
 
 }
