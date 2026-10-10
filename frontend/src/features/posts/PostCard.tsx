@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState, type MouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import type { Post } from '../../api/posts'
-import { Avatar } from '../../components/Avatar'
+import { shouldSkipCardNavigation } from '../../components/cardClick'
 import { ImageGrid } from '../images/ImageGrid'
+import { UserLink } from '../users/UserLink'
 import { formatAbsoluteTime, formatRelativeTime } from './formatTime'
 import { PostBody } from './PostBody'
 
@@ -44,12 +45,7 @@ export function PostCard({
   // リンク、ボタン、メニューの枠（data-no-detail）、文字の選択の最中は、カードの移動より本来の操作を優先する。
   function openDetail(event: MouseEvent<HTMLElement>) {
     if (!linkToDetail) return
-    const target = event.target
-    if (target instanceof Element) {
-      const interactive = target.closest('a, button, [data-no-detail]')
-      if (interactive && event.currentTarget.contains(interactive)) return
-    }
-    if (window.getSelection()?.toString()) return
+    if (shouldSkipCardNavigation(event)) return
     void navigate(`/posts/${post.id}`)
   }
 
@@ -61,19 +57,7 @@ export function PostCard({
       className={`border-b border-gray-200 px-4 py-3 ${linkToDetail ? 'cursor-pointer hover:bg-gray-50' : ''}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <Link
-          to={`/users/${author.username}`}
-          className="flex min-h-11 min-w-11 items-center gap-2 text-black hover:underline"
-        >
-          <Avatar userId={author.id} displayName={author.displayName} avatarUrl={author.avatarUrl} />
-          {/* 折り返すのは名前の部分だけ。リンク全体を折り返すと、長い表示名でアイコンだけが 1 行目に残る。 */}
-          <span className="flex min-w-0 flex-wrap gap-x-2">
-            <span className="font-bold [overflow-wrap:anywhere]">{author.displayName}</span>
-            {/* 読み上げの名前が「アリス@alice」とくっつかないよう、空白を 1 つ置く（flex の中なので見た目には出ない）。 */}
-            {' '}
-            <span className="text-sm text-gray-600 [overflow-wrap:anywhere]">@{author.username}</span>
-          </span>
-        </Link>
+        <UserLink user={author} />
         {isMine && <PostMenu onEdit={onEdit} onDelete={onDelete} />}
       </div>
 

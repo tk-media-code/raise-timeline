@@ -1,14 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import { Link } from 'react-router'
 import type { Comment } from '../../api/comments'
 import { useAuth } from '../../auth/AuthProvider'
-import { Avatar } from '../../components/Avatar'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { useToast } from '../../components/Toast'
 import { formatAbsoluteTime, formatRelativeTime } from '../posts/formatTime'
 import { failureMessage, isApiError } from '../posts/mutations'
 import { PostBody } from '../posts/PostBody'
+import { UserLink } from '../users/UserLink'
 import { forgetMissingComment } from './commentCache'
 import { useDeleteComment } from './mutations'
 
@@ -49,19 +48,7 @@ export function CommentItem({ comment, postId, now }: CommentItemProps) {
   return (
     <article className="border-b border-gray-200 px-4 py-3">
       <div className="flex items-start justify-between gap-2">
-        <Link
-          to={`/users/${author.username}`}
-          className="flex min-h-11 min-w-11 items-center gap-2 text-black hover:underline"
-        >
-          <Avatar userId={author.id} displayName={author.displayName} avatarUrl={author.avatarUrl} />
-          {/* 折り返すのは名前の部分だけ。リンク全体を折り返すと、長い表示名でアイコンだけが 1 行目に残る。 */}
-          <span className="flex min-w-0 flex-wrap gap-x-2">
-            <span className="font-bold [overflow-wrap:anywhere]">{author.displayName}</span>
-            {/* 読み上げの名前が「アリス@alice」とくっつかないよう、空白を 1 つ置く（flex の中なので見た目には出ない）。 */}
-            {' '}
-            <span className="text-sm text-gray-600 [overflow-wrap:anywhere]">@{author.username}</span>
-          </span>
-        </Link>
+        <UserLink user={author} />
         {isMine && (
           <button
             type="button"
