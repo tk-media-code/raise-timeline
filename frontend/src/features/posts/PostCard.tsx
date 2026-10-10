@@ -14,13 +14,28 @@ type PostCardProps = {
   linkToDetail: boolean
   onEdit?: () => void
   onDelete?: () => void
+  // いいねボタンを押したとき。付け外しの判断と通信は呼び出し側が受け持つ。
+  onToggleLike: () => void
+  // true なら、ハート（付け外し）と数（「いいねした人」へのリンク）を分ける。投稿詳細で使う。
+  // false なら、ハートと数で 1 つのボタンにする。
+  showLikersLink?: boolean
   now?: Date
 }
 
 const MENU_ITEM_CLASS = 'flex min-h-11 w-full items-center rounded-md px-3 text-left text-black hover:bg-gray-100'
 
 // 投稿 1 件の表示。操作（編集・削除）は呼び出し側に任せ、ここでは認証も通信も扱わない。
-export function PostCard({ post, isMine, timeStyle, linkToDetail, onEdit, onDelete, now }: PostCardProps) {
+export function PostCard({
+  post,
+  isMine,
+  timeStyle,
+  linkToDetail,
+  onEdit,
+  onDelete,
+  onToggleLike,
+  showLikersLink = false,
+  now,
+}: PostCardProps) {
   const navigate = useNavigate()
   const { author } = post
   const timeText =
@@ -77,14 +92,31 @@ export function PostCard({ post, isMine, timeStyle, linkToDetail, onEdit, onDele
 
       <ImageGrid images={post.images} interactive />
 
-      {/* いいねとコメントはまだ押せない。押せるボタンに見えないよう role="img" の表示にする（操作は後の Issue が足す）。 */}
-      <div className="mt-2 flex gap-6 text-sm text-gray-600">
+      {/* コメントはまだ押せない（Issue 8 が足す）。押せるボタンに見えないよう role="img" の表示にする。 */}
+      <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+        <button
+          type="button"
+          aria-pressed={post.likedByMe}
+          aria-label={`いいね ${post.likeCount} 件`}
+          onClick={onToggleLike}
+          className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md px-2 hover:bg-gray-100"
+        >
+          <span aria-hidden="true" className={post.likedByMe ? 'text-pink-600' : undefined}>
+            {post.likedByMe ? '♥' : '♡'}
+          </span>
+          {!showLikersLink && <span aria-hidden="true">{post.likeCount}</span>}
+        </button>
+        {showLikersLink && (
+          <Link
+            to={`/posts/${post.id}/likes`}
+            aria-label={`いいねした人を見る（${post.likeCount} 件）`}
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 hover:underline"
+          >
+            <span aria-hidden="true">{post.likeCount}</span>
+          </Link>
+        )}
         {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 文字を持つ表示なので <img> にはできない */}
-        <span role="img" aria-label={`いいね ${post.likeCount} 件`}>
-          <span aria-hidden="true">♡ {post.likeCount}</span>
-        </span>
-        {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 同上 */}
-        <span role="img" aria-label={`コメント ${post.commentCount} 件`}>
+        <span role="img" aria-label={`コメント ${post.commentCount} 件`} className="ml-4">
           <span aria-hidden="true">💬 {post.commentCount}</span>
         </span>
       </div>

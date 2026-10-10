@@ -4,6 +4,7 @@ import type { Post } from '../../api/posts'
 import { useAuth } from '../../auth/AuthProvider'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { useToast } from '../../components/Toast'
+import { useToggleLike } from '../likes/useToggleLike'
 import { EditPostDialog } from './EditPostDialog'
 import { failureMessage, forgetMissingPost, isApiError, useDeletePost } from './mutations'
 import { PostCard } from './PostCard'
@@ -14,14 +15,17 @@ type PostItemProps = {
   linkToDetail: boolean
   // 投稿が画面から無くなったとき（削除できた、または 404）。詳細画面ならここで一覧へ戻す。
   onRemoved?: () => void
+  // 投稿詳細で true。いいねの数を「いいねした人」へのリンクにする。
+  showLikersLink?: boolean
 }
 
-// 投稿カードに、編集と削除の操作をつないだもの。自分の投稿かどうかはログイン中の利用者から決める。
-export function PostItem({ post, timeStyle, linkToDetail, onRemoved }: PostItemProps) {
+// 投稿カードに、編集・削除・いいねの操作をつないだもの。自分の投稿かどうかはログイン中の利用者から決める。
+export function PostItem({ post, timeStyle, linkToDetail, onRemoved, showLikersLink }: PostItemProps) {
   const { user } = useAuth()
   const client = useQueryClient()
   const toast = useToast()
   const remove = useDeletePost()
+  const toggleLike = useToggleLike(post, onRemoved)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const deleting = useRef(false)
@@ -55,6 +59,8 @@ export function PostItem({ post, timeStyle, linkToDetail, onRemoved }: PostItemP
         linkToDetail={linkToDetail}
         onEdit={() => setEditing(true)}
         onDelete={() => setConfirming(true)}
+        onToggleLike={toggleLike}
+        showLikersLink={showLikersLink}
       />
       {isMine && (
         <>

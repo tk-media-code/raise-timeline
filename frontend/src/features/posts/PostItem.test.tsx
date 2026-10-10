@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +12,9 @@ import { postKey, timelineKeys } from './queryKeys'
 
 const api = vi.hoisted(() => ({ createPost: vi.fn(), updatePost: vi.fn(), deletePost: vi.fn() }))
 vi.mock('../../api/posts', () => api)
+
+const likesApi = vi.hoisted(() => ({ likePost: vi.fn(), unlikePost: vi.fn() }))
+vi.mock('../../api/likes', () => likesApi)
 
 const useAuth = vi.hoisted(() => vi.fn())
 vi.mock('../../auth/AuthProvider', () => ({ useAuth }))
@@ -62,6 +66,8 @@ describe('PostItem', () => {
   beforeEach(() => {
     api.deletePost.mockReset()
     api.updatePost.mockReset()
+    likesApi.likePost.mockReset()
+    likesApi.unlikePost.mockReset()
     useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u1', username: 'alice' } })
   })
 
@@ -192,5 +198,26 @@ describe('PostItem', () => {
 
     expect(screen.queryByRole('button', { name: 'この投稿の操作' })).not.toBeInTheDocument()
     expect(screen.getByText('元の本文')).toBeInTheDocument()
+  })
+
+  it('いいねを押すと likePost が呼ばれ、ボタンが aria-pressed true の「いいね 1 件」になる', async () => {
+    likesApi.likePost.mockResolvedValue(undefined)
+    const queryClient = createQueryClient()
+    const post = makePost()
+    queryClient.setQueryData(postKey(post.id), post)
+    // 実際の画面と同じく、投稿はキャッシュから読む（いいねはキャッシュを書き換えて画面に出る）。
+    function FromCache() {
+      const { data } = useQuery({ queryKey: postKey(post.id), queryFn: () => post, staleTime: Infinity })
+      return data ? <PostItem post={data} timeStyle="absolute" linkToDetail={false} /> : null
+    }
+    renderWithProviders(<FromCache />, { queryClient })
+    const user = userEvent.setup()
+    expect(screen.getByRole('button', { name: 'いいね 0 件' })).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(screen.getByRole('button', { name: 'いいね 0 件' }))
+
+    expect(await screen.findByRole('button', { name: 'いいね 1 件' })).toHaveAttribute('aria-pressed', 'true')
+    await vi.waitFor(() => expect(likesApi.likePost).toHaveBeenCalledWith('p1'))
+    expect(likesApi.unlikePost).not.toHaveBeenCalled()
   })
 })

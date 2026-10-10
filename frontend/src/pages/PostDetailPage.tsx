@@ -28,6 +28,7 @@ export default function PostDetailPage() {
         post={query.data}
         timeStyle="absolute"
         linkToDetail={false}
+        showLikersLink
         onRemoved={() => void navigate('/', { replace: true })}
       />
     </div>
