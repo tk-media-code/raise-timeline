@@ -60,6 +60,21 @@
 	</select>
 
 	<!--
+		自分の投稿と、自分がフォローしている人の投稿を、findAll と同じ列・並び・cursor の扱いで返す。
+		使う索引は 2 つ。副問い合わせは follows_follower_id_id_idx (follower_id, id) で follower_id の行だけを引き、
+		その followee_id の投稿を posts_user_id_id_idx (user_id, id) で引く。(user_id, id) は id の降順の並びにも
+		そのまま使える。cursor が null のときは <if> で条件ごと外す（findAll と同じ理由）。
+	-->
+	<select id="findFollowing" resultType="com.tkmedia.raisetimeline.domain.PostWithAuthor">
+		SELECT <include refid="columns"/>
+		FROM posts p JOIN users u ON u.id = p.user_id
+		WHERE (p.user_id = #{viewer} OR p.user_id IN (SELECT followee_id FROM follows WHERE follower_id = #{viewer}))
+		<if test="cursor != null">AND p.id &lt; #{cursor}</if>
+		ORDER BY p.id DESC
+		LIMIT #{limit}
+	</select>
+
+	<!--
 		position は keys の並びの番号をそのまま使う（index は 0 から）。#{} だけで組み立て、値は全部バインドする。
 		INSERT なので返す値は要らない。
 	-->

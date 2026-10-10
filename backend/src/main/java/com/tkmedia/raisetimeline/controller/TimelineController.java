@@ -30,4 +30,12 @@ public class TimelineController {
 		return timelineService.all(CurrentUser.idOf(jwt), cursor, PageLimits.check(limit));
 	}
 
+	/** {@code cursor} と {@code limit} の扱いは {@link #all} と同じ。 */
+	@GetMapping("/api/timeline/following")
+	public PageResponse<PostResponse> following(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam(required = false) UUID cursor,
+			@RequestParam(defaultValue = PageLimits.DEFAULT_VALUE) int limit) {
+		return timelineService.following(CurrentUser.idOf(jwt), cursor, PageLimits.check(limit));
+	}
+
 }

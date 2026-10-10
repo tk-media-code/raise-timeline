@@ -1,6 +1,8 @@
 package com.tkmedia.raisetimeline.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -82,6 +84,20 @@ class TimelineServiceTest {
 
 		assertThat(page.items()).hasSize(20);
 		assertThat(page.items().get(19).id()).isEqualTo(rows.get(19).id());
+		assertThat(page.nextCursor()).isEqualTo(rows.get(19).id());
+	}
+
+	@Test
+	@DisplayName("following は findFollowing(viewer, cursor, limit + 1) を読み、assembler に viewer を渡す")
+	void followingReadsFindFollowingWithViewer() {
+		List<PostWithAuthor> rows = rows(21);
+		when(postMapper.findFollowing(VIEWER, CURSOR, 21)).thenReturn(rows);
+
+		PageResponse<PostResponse> page = service.following(VIEWER, CURSOR, 20);
+
+		verify(postMapper).findFollowing(VIEWER, CURSOR, 21);
+		verify(likeMapper).findLikedPostIds(eq(VIEWER), any());
+		assertThat(page.items()).hasSize(20);
 		assertThat(page.nextCursor()).isEqualTo(rows.get(19).id());
 	}
 

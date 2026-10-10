@@ -42,6 +42,9 @@ class PostMapperTest {
 	private PostMapper postMapper;
 
 	@Autowired
+	private FollowMapper followMapper;
+
+	@Autowired
 	private JdbcTemplate jdbc;
 
 	private String lastUsername;
@@ -365,6 +368,54 @@ class PostMapperTest {
 		createPost(bob, "b1");
 
 		assertThat(postMapper.findByUser(alice, null, 10)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("findFollowing は自分とフォロー相手の投稿だけを新しい順に返し、フォローしていない人と自分をフォローしているだけの人の投稿は返さない")
+	void findFollowingReturnsOnlyMineAndFolloweesNewestFirst() {
+		UUID me = createUser();
+		UUID followee = createUser();
+		UUID stranger = createUser();
+		UUID follower = createUser();
+		followMapper.insert(me, followee);
+		followMapper.insert(follower, me);
+		UUID m1 = createPost(me, "m1");
+		createPost(stranger, "s1");
+		UUID f1 = createPost(followee, "f1");
+		createPost(follower, "w1");
+		UUID m2 = createPost(me, "m2");
+
+		List<PostWithAuthor> posts = postMapper.findFollowing(me, null, 10);
+
+		assertThat(posts).extracting(PostWithAuthor::id).containsExactly(m2, f1, m1);
+	}
+
+	@Test
+	@DisplayName("findFollowing は、カーソルより古いものを limit 件だけ返す")
+	void findFollowingHonorsCursorAndLimit() {
+		UUID me = createUser();
+		UUID followee = createUser();
+		followMapper.insert(me, followee);
+		UUID p1 = createPost(me, "1");
+		UUID p2 = createPost(followee, "2");
+		UUID p3 = createPost(me, "3");
+		UUID p4 = createPost(followee, "4");
+		UUID p5 = createPost(me, "5");
+
+		assertThat(postMapper.findFollowing(me, null, 2)).extracting(PostWithAuthor::id).containsExactly(p5, p4);
+		assertThat(postMapper.findFollowing(me, p4, 2)).extracting(PostWithAuthor::id).containsExactly(p3, p2);
+		assertThat(postMapper.findFollowing(me, p2, 2)).extracting(PostWithAuthor::id).containsExactly(p1);
+	}
+
+	@Test
+	@DisplayName("findFollowing は、誰もフォローしていなければ自分の投稿だけを返す")
+	void findFollowingWithoutFolloweesReturnsOwnPosts() {
+		UUID me = createUser();
+		UUID other = createUser();
+		UUID mine = createPost(me, "mine");
+		createPost(other, "theirs");
+
+		assertThat(postMapper.findFollowing(me, null, 10)).extracting(PostWithAuthor::id).containsExactly(mine);
 	}
 
 }
