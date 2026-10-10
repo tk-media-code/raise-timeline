@@ -20,7 +20,7 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
   const [bodyError, setBodyError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [images, setImages] = useState<SelectedImage[]>([])
-  // 選んだ時点の検査の文言と、サーバーの断りの文言。画像の欄の下に出す。
+  // 選んだ時点の検査の文言と、サーバーの断りの文言。画像の一覧の下に出す。
   const [imageError, setImageError] = useState<string | null>(null)
   const create = useCreatePost()
   const toast = useToast()
@@ -54,7 +54,7 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
       await create.mutateAsync({ body, images: images.map((image) => image.file) })
     } catch (error) {
       const validation = toValidationFailure(error)
-      // 413 / 415 は画像の欄の下。422 の images の誤りも同じ場所に出す。
+      // 413 / 415 は画像の一覧の下。422 の images の誤りも同じ場所に出す。
       const imageMessage = validation?.imagesMessage ?? imageRejectionMessage(error, POST_IMAGE_MAX_BYTES)
       if ((validation || imageMessage) && mounted.current) {
         // 本文も画像も残す。直して、あるいはそのまま、もう一度送れるように。
@@ -91,16 +91,15 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
         </p>
       )}
       <BodyField id={`${id}-body`} value={body} onChange={change} error={bodyError} focusOnMount={autoFocus} />
-      <div className="flex items-start justify-between gap-3">
-        <ImagePicker
-          images={images}
-          onChange={(next, message) => {
-            setImages(next)
-            setImageError(message)
-          }}
-          error={imageError}
-          disabled={create.isPending}
-        />
+      <ImagePicker
+        images={images}
+        onChange={(next, message) => {
+          setImages(next)
+          setImageError(message)
+        }}
+        error={imageError}
+        disabled={create.isPending}
+      >
         <button
           type="submit"
           disabled={!canSubmit}
@@ -108,7 +107,7 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
         >
           投稿する
         </button>
-      </div>
+      </ImagePicker>
     </form>
   )
 }

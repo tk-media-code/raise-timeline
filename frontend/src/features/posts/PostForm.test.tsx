@@ -220,6 +220,25 @@ describe('PostForm', () => {
       revoke.mockRestore()
     })
 
+    it('画像の一覧と誤りの文言は、「画像を追加」と「投稿する」の行より前にある', async () => {
+      renderWithProviders(<PostForm id="test-form" />)
+      const user = setupUser()
+
+      await pickImages(user, makeImage(), makeImage('a.svg', 'image/svg+xml'))
+
+      const preview = screen.getByRole('img', { name: '選んだ画像 1' })
+      const alert = screen.getByRole('alert')
+      const add = screen.getByRole('button', { name: '画像を追加' })
+      const submit = screen.getByRole('button', { name: '投稿する' })
+      const follows = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+      expect(follows(screen.getByRole('textbox', { name: '本文' }), preview)).toBe(true)
+      expect(follows(preview, alert)).toBe(true)
+      expect(follows(alert, add)).toBe(true)
+      expect(follows(add, submit)).toBe(true)
+      // 誤りの文言は「画像を追加」の説明として読み上げられる。
+      expect(add).toHaveAccessibleDescription(IMAGE_TYPE_MESSAGE)
+    })
+
     it('同じファイルを続けて選んでも、もう一度足せる（選び終えたら入力を空にする）', async () => {
       renderWithProviders(<PostForm id="test-form" />)
       const user = setupUser()
