@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.config.LoggingConfig;
 import com.tkmedia.raisetimeline.config.SecurityConfig;
 import com.tkmedia.raisetimeline.controller.HealthCheckController;
@@ -55,6 +56,10 @@ import org.springframework.web.bind.annotation.RestController;
 		SecurityConfig.class })
 @ExtendWith(OutputCaptureExtension.class)
 class RequestLogFilterTest {
+
+	// jwtDecoder が存在確認に使う。本物のトークンを送るテストは existsById を true にスタブする。
+	@MockitoBean
+	private UserMapper userMapper;
 
 	private static final Instant T0 = Instant.parse("2026-10-07T00:00:00Z");
 	private static final String HEX_32 = "^[0-9a-f]{32}$";

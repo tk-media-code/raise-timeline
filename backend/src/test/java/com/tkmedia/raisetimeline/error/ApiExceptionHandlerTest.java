@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.config.ClockConfig;
 import com.tkmedia.raisetimeline.config.LoggingConfig;
 import com.tkmedia.raisetimeline.config.SecurityConfig;
@@ -46,6 +47,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageNotWritableException;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -60,6 +62,10 @@ import org.springframework.web.multipart.MultipartException;
 		ProblemDetailWriter.class, SecurityConfig.class })
 @ExtendWith(OutputCaptureExtension.class)
 class ApiExceptionHandlerTest {
+
+	// jwtDecoder が存在確認に使う。本物のトークンを送るテストは existsById を true にスタブする。
+	@MockitoBean
+	private UserMapper userMapper;
 
 	private static final String PROBLEM_JSON = "application/problem+json";
 	private static final String INTERNAL_DETAIL = "問題が起きました。時間をおいて再試行してください";

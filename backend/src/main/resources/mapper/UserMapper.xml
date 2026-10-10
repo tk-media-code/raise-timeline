@@ -39,6 +39,10 @@
 		SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower(#{email}))
 	</select>
 
+	<select id="existsById" resultType="boolean">
+		SELECT EXISTS (SELECT 1 FROM users WHERE id = #{id})
+	</select>
+
 	<update id="updateProfile">
 		UPDATE users SET display_name = #{displayName}, bio = #{bio}, updated_at = #{updatedAt} WHERE id = #{id}
 	</update>

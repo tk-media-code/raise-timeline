@@ -247,7 +247,7 @@ class ProfileIntegrationTest {
 	@DisplayName("アクセストークンが有効なまま本人の行が消えていたら、PATCH は 401 UNAUTHENTICATED になる")
 	void patchWithDeletedUserIsUnauthenticated() throws Exception {
 		Account alice = newAccount("alice");
-		// アクセストークンは署名しか見ないので、行を消したあとも有効期間中は通る。
+		// 認証のフィルタが、署名と期限のほかに利用者の行があるかも確かめる。行を消すと、有効期間の中でも PATCH の手前で 401 になる。
 		jdbc.update("DELETE FROM users WHERE id = ?::uuid", alice.userId());
 
 		MvcResult result = patchMe(alice, "{\"displayName\":\"アリス\",\"bio\":\"\"}");

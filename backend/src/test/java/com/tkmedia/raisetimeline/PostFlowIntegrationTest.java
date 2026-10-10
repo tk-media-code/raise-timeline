@@ -210,6 +210,7 @@ class PostFlowIntegrationTest {
 	@DisplayName("利用者が消えた後の、まだ有効なトークンでの投稿は 401 UNAUTHENTICATED で、行は増えない")
 	void deletedUserCannotPost() throws Exception {
 		Account gone = newAccount("gone");
+		// 認証のフィルタが利用者の行を確かめるので、投稿のサービスの手前で 401 になる。
 		jdbc.update("DELETE FROM users WHERE id = ?::uuid", gone.userId());
 
 		MvcResult result = createPost(gone, "消えた人の投稿");

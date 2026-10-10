@@ -2,12 +2,17 @@ package com.tkmedia.raisetimeline.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
 import com.tkmedia.raisetimeline.logging.LogLines;
 import com.tkmedia.raisetimeline.service.TokenService;
@@ -17,6 +22,7 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +35,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,6 +48,10 @@ import org.springframework.web.bind.annotation.RestController;
 		"auth.issuer=raise-timeline" })
 @ExtendWith(OutputCaptureExtension.class)
 class JwtAuthenticationTest {
+
+	// jwtDecoder が存在確認に使う。本物のトークンを送るテストは existsById を true にスタブする。
+	@MockitoBean
+	private UserMapper userMapper;
 
 	private static final String PROBLEM_JSON = "application/problem+json";
 	private static final UUID USER_ID = UUID.fromString("0199b000-0000-7000-8000-000000000001");
@@ -56,6 +67,11 @@ class JwtAuthenticationTest {
 
 	@Autowired
 	private AuthProperties properties;
+
+	@BeforeEach
+	void usersExist() {
+		when(userMapper.existsById(any())).thenReturn(true);
+	}
 
 	@Test
 	@DisplayName("TokenService が発行した Bearer トークンで認証でき、sub から利用者 id を取れる")
@@ -103,6 +119,44 @@ class JwtAuthenticationTest {
 				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 
 		assertNoWarnOrError(output);
+	}
+
+	@Test
+	@DisplayName("署名の正しいトークンでも、利用者がいなければ 401 UNAUTHENTICATED で、コントローラは呼ばれない")
+	void validSignatureButDeletedUserReturns401Problem() throws Exception {
+		when(userMapper.existsById(USER_ID)).thenReturn(false);
+
+		// whoami は呼ばれると sub をそのまま返す。呼ばれていれば 200 になるので、401 であることがコントローラに
+		// 届いていない証拠になる。
+		mockMvc.perform(get("/api/t/whoami").header("Authorization", "Bearer " + tokenService.issueAccessToken(USER_ID)))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string("Content-Type", startsWith(PROBLEM_JSON)))
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+	}
+
+	@Test
+	@DisplayName("期限切れのトークンでは、存在確認の問い合わせをしない")
+	void expiredBearerDoesNotQueryUser() throws Exception {
+		Clock twoHoursAgo = Clock.offset(Clock.systemUTC(), Duration.ofHours(-2));
+		String expired = new TokenService(encoder, properties, twoHoursAgo).issueAccessToken(USER_ID);
+
+		mockMvc.perform(get("/api/t/whoami").header("Authorization", "Bearer " + expired))
+				.andExpect(status().isUnauthorized());
+
+		verify(userMapper, never()).existsById(any());
+	}
+
+	@Test
+	@DisplayName("発行者の違うトークンでも、存在確認の問い合わせをしない")
+	void otherIssuerBearerDoesNotQueryUser() throws Exception {
+		AuthProperties other = new AuthProperties(properties.jwtSecret(), properties.accessTokenTtl(),
+				properties.refreshTokenTtl(), properties.cookieName(), properties.cookieSecure(), "other-issuer");
+		String token = new TokenService(encoder, other, Clock.systemUTC()).issueAccessToken(USER_ID);
+
+		mockMvc.perform(get("/api/t/whoami").header("Authorization", "Bearer " + token))
+				.andExpect(status().isUnauthorized());
+
+		verify(userMapper, never()).existsById(any());
 	}
 
 	@Test

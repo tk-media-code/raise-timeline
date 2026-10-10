@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.config.ClockConfig;
 import com.tkmedia.raisetimeline.config.LoggingConfig;
 import com.tkmedia.raisetimeline.config.SecurityConfig;
@@ -38,6 +39,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 		"auth.jwt-secret=dGVzdC1vbmx5LWp3dC1zZWNyZXQtMzItYnl0ZXMtbG9uZyE=",
 		"auth.issuer=raise-timeline" })
 class TimelineControllerTest {
+
+	// jwtDecoder が存在確認に使う。本物のトークンを送るテストは existsById を true にスタブする。
+	@MockitoBean
+	private UserMapper userMapper;
 
 	private static final UUID USER_ID = UUID.fromString("0199b000-0000-7000-8000-000000000001");
 

@@ -70,6 +70,16 @@ class UserMapperTest {
 	}
 
 	@Test
+	@DisplayName("existsById は登録済みの id で true、知らない id で false")
+	void existsByIdReflectsRow() {
+		String s = suffix();
+		UUID id = userMapper.insert(newUser("user_" + s, "user_" + s + "@example.com"));
+
+		assertThat(userMapper.existsById(id)).isTrue();
+		assertThat(userMapper.existsById(UUID.randomUUID())).isFalse();
+	}
+
+	@Test
 	@DisplayName("メールアドレスは大文字小文字を区別せずに引ける")
 	void findByEmailIgnoresCase() {
 		String s = suffix();

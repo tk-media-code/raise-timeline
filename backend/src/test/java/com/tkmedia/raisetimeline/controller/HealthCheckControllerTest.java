@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.config.ClockConfig;
 import com.tkmedia.raisetimeline.config.SecurityConfig;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
@@ -30,6 +31,10 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({ SecurityConfig.class, ClockConfig.class, ProblemDetailWriter.class })
 @ExtendWith(OutputCaptureExtension.class)
 class HealthCheckControllerTest {
+
+	// jwtDecoder が存在確認に使う。本物のトークンを送るテストは existsById を true にスタブする。
+	@MockitoBean
+	private UserMapper userMapper;
 
 	@Autowired
 	private MockMvc mockMvc;
