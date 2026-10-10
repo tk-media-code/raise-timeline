@@ -60,15 +60,12 @@ public class LikeService {
 	/**
 	 * いいねした人を、付けた順の新しい方から返す。{@code limit} より 1 行多く読み、あふれた分は返さずに
 	 * {@code nextCursor}（返す最後の行の {@code likes.id}）で続きがあることだけを知らせる。
-	 * 打ち切りの形は {@link PostPages} と同じ（項目の型とカーソルの列が違うので、ここに書いている）。
+	 * 打ち切り方は {@link Pages}。
 	 */
 	public PageResponse<UserCard> likers(UUID postId, UUID cursor, int limit) {
 		requirePost(postId);
 		List<Liker> rows = likeMapper.findLikers(postId, cursor, limit + 1);
-		boolean hasMore = rows.size() > limit;
-		List<Liker> page = hasMore ? rows.subList(0, limit) : rows;
-		UUID nextCursor = hasMore ? page.get(limit - 1).likeId() : null;
-		return new PageResponse<>(page.stream().map(this::toCard).toList(), nextCursor);
+		return Pages.of(rows, limit, Liker::likeId, page -> page.stream().map(this::toCard).toList());
 	}
 
 	private void requirePost(UUID postId) {
@@ -78,7 +75,7 @@ public class LikeService {
 	}
 
 	private UserCard toCard(Liker liker) {
-		String avatarUrl = liker.avatarKey() == null ? null : imageStorage.urlOf(liker.avatarKey());
+		String avatarUrl = AvatarUrls.of(imageStorage, liker.avatarKey());
 		// isFollowing はフォローの機能ができるまで false 固定。
 		return new UserCard(liker.userId(), liker.username(), liker.displayName(), avatarUrl, liker.bio(), false);
 	}

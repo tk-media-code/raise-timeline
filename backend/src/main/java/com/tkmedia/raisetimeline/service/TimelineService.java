@@ -1,5 +1,6 @@
 package com.tkmedia.raisetimeline.service;
 
+import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
@@ -24,9 +25,10 @@ public class TimelineService {
 		this.assembler = assembler;
 	}
 
-	/** ページの打ち切り方（{@code limit} より 1 行多く読む理由）は {@link PostPages}。 */
+	/** ページの打ち切り方（{@code limit} より 1 行多く読む理由）は {@link Pages}。 */
 	public PageResponse<PostResponse> all(UUID viewer, UUID cursor, int limit) {
-		return PostPages.of(postMapper.findAll(cursor, limit + 1), limit, assembler, viewer);
+		return Pages.of(postMapper.findAll(cursor, limit + 1), limit, PostWithAuthor::id,
+				page -> assembler.toResponses(page, viewer));
 	}
 
 }

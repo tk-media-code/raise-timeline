@@ -56,7 +56,7 @@ class UserPostsServiceTest {
 	}
 
 	@Test
-	@DisplayName("limit より 1 行多く引き、PostPages で整えた結果を返す")
+	@DisplayName("limit より 1 行多く引き、Pages で整えた結果を返す")
 	void postsOfUserReadsOneMoreRow() {
 		User user = new User(USER_ID, "alice", "アリス", "alice@example.com", "hash", "", null, NOW, NOW);
 		when(userService.requireByUsername("alice")).thenReturn(user);

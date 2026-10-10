@@ -88,8 +88,7 @@ public class PostAssembler {
 
 	private PostResponse assemble(PostWithAuthor row, List<PostImageResponse> images, long likeCount,
 			long commentCount, boolean likedByMe) {
-		// アイコンを設定していない人は avatarKey が null。そのときは URL も null にする。
-		String avatarUrl = row.avatarKey() == null ? null : imageStorage.urlOf(row.avatarKey());
+		String avatarUrl = AvatarUrls.of(imageStorage, row.avatarKey());
 		UserSummary author = new UserSummary(row.userId(), row.username(), row.displayName(), avatarUrl);
 		boolean edited = !row.updatedAt().isEqual(row.createdAt());
 		return new PostResponse(row.id(), author, row.body(), images, likeCount, commentCount, likedByMe, edited,

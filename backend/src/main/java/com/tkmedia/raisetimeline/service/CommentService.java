@@ -72,17 +72,14 @@ public class CommentService {
 	/**
 	 * コメントを、書いた順の新しい方から返す。{@code limit} より 1 行多く読み、あふれた分は返さずに
 	 * {@code nextCursor}（返す最後の行の {@code comments.id}）で続きがあることだけを知らせる。
-	 * 打ち切りの形は {@link LikeService#likers} と同じ（共通化は別の Issue で行う）。
+	 * 打ち切り方は {@link Pages}。
 	 */
 	public PageResponse<CommentResponse> list(UUID postId, UUID cursor, int limit) {
 		if (!postMapper.existsById(postId)) {
 			throw new NotFoundException();
 		}
 		List<CommentWithAuthor> rows = commentMapper.findByPost(postId, cursor, limit + 1);
-		boolean hasMore = rows.size() > limit;
-		List<CommentWithAuthor> page = hasMore ? rows.subList(0, limit) : rows;
-		UUID nextCursor = hasMore ? page.get(limit - 1).id() : null;
-		return new PageResponse<>(page.stream().map(this::toResponse).toList(), nextCursor);
+		return Pages.of(rows, limit, CommentWithAuthor::id, page -> page.stream().map(this::toResponse).toList());
 	}
 
 	/** 無ければ 404、他人のコメントなら 403。 */
@@ -101,7 +98,7 @@ public class CommentService {
 	}
 
 	private CommentResponse toResponse(CommentWithAuthor row) {
-		String avatarUrl = row.avatarKey() == null ? null : imageStorage.urlOf(row.avatarKey());
+		String avatarUrl = AvatarUrls.of(imageStorage, row.avatarKey());
 		return new CommentResponse(row.id(),
 				new UserSummary(row.userId(), row.username(), row.displayName(), avatarUrl),
 				row.body(), row.createdAt());

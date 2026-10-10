@@ -1,12 +1,13 @@
 package com.tkmedia.raisetimeline.service;
 
+import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.PostResponse;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
-/** プロフィール画面の、その人の投稿一覧。並びとカーソルはタイムラインと同じ（{@link PostPages}）。 */
+/** プロフィール画面の、その人の投稿一覧。並びとカーソルはタイムラインと同じ（{@link Pages}）。 */
 @Service
 public class UserPostsService {
 
@@ -23,7 +24,8 @@ public class UserPostsService {
 	/** 利用者がいなければ（規則に合わない名前も）{@link com.tkmedia.raisetimeline.error.NotFoundException}。 */
 	public PageResponse<PostResponse> postsOf(UUID viewer, String username, UUID cursor, int limit) {
 		UUID userId = userService.requireByUsername(username).id();
-		return PostPages.of(postMapper.findByUser(userId, cursor, limit + 1), limit, assembler, viewer);
+		return Pages.of(postMapper.findByUser(userId, cursor, limit + 1), limit, PostWithAuthor::id,
+				page -> assembler.toResponses(page, viewer));
 	}
 
 }

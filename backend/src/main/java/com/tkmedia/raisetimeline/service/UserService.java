@@ -56,8 +56,8 @@ public class UserService {
 	 * （数は 0、{@code isFollowing} は false）。{@code avatarUrl} は保存先のキーから作る。
 	 */
 	public Me toMe(User user) {
-		return new Me(user.id(), user.username(), user.displayName(), avatarUrlOf(user), user.bio(), false, 0, 0,
-				user.createdAt(), true, user.email());
+		return new Me(user.id(), user.username(), user.displayName(), AvatarUrls.of(imageStorage, user.avatarKey()),
+				user.bio(), false, 0, 0, user.createdAt(), true, user.email());
 	}
 
 	/**
@@ -85,13 +85,9 @@ public class UserService {
 	 * （数は 0、{@code isFollowing} は false）。{@code avatarUrl} は保存先のキーから作る。
 	 */
 	public UserDetail toDetail(User user, UUID me) {
-		return new UserDetail(user.id(), user.username(), user.displayName(), avatarUrlOf(user), user.bio(), false, 0, 0,
-				user.createdAt(), user.id().equals(me));
-	}
-
-	/** アイコンを設定していない人は avatarKey が null。そのときは URL も null にする。 */
-	private String avatarUrlOf(User user) {
-		return user.avatarKey() == null ? null : imageStorage.urlOf(user.avatarKey());
+		return new UserDetail(user.id(), user.username(), user.displayName(),
+				AvatarUrls.of(imageStorage, user.avatarKey()), user.bio(), false, 0, 0, user.createdAt(),
+				user.id().equals(me));
 	}
 
 }
