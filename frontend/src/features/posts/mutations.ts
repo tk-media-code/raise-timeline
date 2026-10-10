@@ -10,7 +10,7 @@ import { timelineKeys, userPostsKeys } from './queryKeys'
 export function useCreatePost() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (body: string) => createPost(body),
+    mutationFn: ({ body, images }: { body: string; images: File[] }) => createPost(body, images),
     onSuccess: (post) => prependPost(client, post),
   })
 }
@@ -42,15 +42,22 @@ export function isApiError(error: unknown, status: number): error is ApiError {
   return error instanceof ApiError && error.status === status
 }
 
-// 422 の見せ方。body の誤りは入力欄の下、それ以外はフォームの上部に出す。
-export type ValidationFailure = { bodyMessage: string | null; formMessage: string | null }
+// 422 の見せ方。body の誤りは本文の下、images の誤りは画像の欄の下、それ以外はフォームの上部に出す。
+export type ValidationFailure = {
+  bodyMessage: string | null
+  imagesMessage: string | null
+  formMessage: string | null
+}
 
 export function toValidationFailure(error: unknown): ValidationFailure | null {
   if (!isApiError(error, 422)) return null
-  const bodyError = error.errors.find((item) => item.field === 'body')
-  return bodyError
-    ? { bodyMessage: bodyError.message, formMessage: null }
-    : { bodyMessage: null, formMessage: error.detail }
+  const bodyMessage = error.errors.find((item) => item.field === 'body')?.message ?? null
+  const imagesMessage = error.errors.find((item) => item.field === 'images')?.message ?? null
+  return {
+    bodyMessage,
+    imagesMessage,
+    formMessage: bodyMessage === null && imagesMessage === null ? error.detail : null,
+  }
 }
 
 // 404: 投稿はもう無い。この端末の一覧に残っていると、押すたびに同じ失敗をするので除く。

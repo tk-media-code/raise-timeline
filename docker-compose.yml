@@ -41,6 +41,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:-bG9jYWwtZGV2LW9ubHktand0LXNlY3JldC0zMi1ieXRlcyE=}
       # ローカルは http://localhost で HTTPS ではないので、Secure 付きの Cookie がブラウザに捨てられる。ローカル専用で false にする。
       AUTH_COOKIE_SECURE: "false"
+      # 画像の保存先（S3）。リポジトリ直下の .env に書くと渡る。空のままなら画像の操作だけが 503 になり、ほかは動く。
+      # アクセスキーは AWS SDK が環境変数から読む。コードや properties には書かない。
+      AWS_REGION: ${AWS_REGION:-ap-northeast-1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       # テスト（RaiseTimelineApplicationTests）が繋ぐ DB。開発用の DB にテストのデータを混ぜないよう、名前に _test を付けた別の DB にする。
       DB_URL_TEST: jdbc:postgresql://db:5432/${POSTGRES_DB:-raise_timeline}_test
     depends_on:

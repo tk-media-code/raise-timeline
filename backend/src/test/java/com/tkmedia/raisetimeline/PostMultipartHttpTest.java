@@ -3,6 +3,9 @@ package com.tkmedia.raisetimeline;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
+import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.image.InMemoryImageStorageConfig;
+import com.tkmedia.raisetimeline.image.TestImages;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -13,11 +16,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -30,6 +35,7 @@ import org.springframework.test.context.ActiveProfiles;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@Import(InMemoryImageStorageConfig.class)
 class PostMultipartHttpTest {
 
 	private static final String PASSWORD = "Passw0rd!secret";
@@ -41,11 +47,20 @@ class PostMultipartHttpTest {
 	@Autowired
 	private JdbcTemplate jdbc;
 
+	@Autowired
+	private InMemoryImageStorage storage;
+
 	private final HttpClient client = HttpClient.newHttpClient();
 	private final List<String> usernames = new ArrayList<>();
 
+	@BeforeEach
+	void resetStorage() {
+		storage.clear();
+	}
+
 	@AfterEach
 	void cleanUp() {
+		storage.clear();
 		for (String username : usernames) {
 			jdbc.update("DELETE FROM users WHERE lower(username) = lower(?)", username);
 		}
@@ -77,6 +92,29 @@ class PostMultipartHttpTest {
 		out.writeBytes(text.getBytes(StandardCharsets.UTF_8));
 		out.writeBytes(("\r\n--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.US_ASCII));
 		return out.toByteArray();
+	}
+
+	/** 本文の部品に、画像（images）の部品を 1 つ足した multipart。画像の申告は、ブラウザと同じ形にする。 */
+	private static byte[] multipartBodyWithImage(String text, byte[] image) {
+		// multipartBody が閉じ境界で終わっているので、その手前までを使う。
+		byte[] withoutClosing = multipartBody(text);
+		int closing = ("--" + BOUNDARY + "--\r\n").length();
+		ByteArrayOutputStream result = new ByteArrayOutputStream();
+		result.write(withoutClosing, 0, withoutClosing.length - closing);
+		result.writeBytes(("--" + BOUNDARY + "\r\nContent-Disposition: form-data; name=\"images\"; "
+				+ "filename=\"photo.png\"\r\nContent-Type: image/png\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+		result.writeBytes(image);
+		result.writeBytes(("\r\n--" + BOUNDARY + "--\r\n").getBytes(StandardCharsets.US_ASCII));
+		return result.toByteArray();
+	}
+
+	private HttpResponse<String> createPostWithImage(String token, String text, byte[] image) throws Exception {
+		HttpRequest request = HttpRequest.newBuilder(uri("/api/posts"))
+				.header("Content-Type", "multipart/form-data; boundary=" + BOUNDARY)
+				.header("Authorization", "Bearer " + token)
+				.POST(HttpRequest.BodyPublishers.ofByteArray(multipartBodyWithImage(text, image)))
+				.build();
+		return client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 	}
 
 	private HttpResponse<String> createPost(String token, String text) throws Exception {
@@ -115,6 +153,31 @@ class PostMultipartHttpTest {
 		String body = JsonPath.read(fetched.body(), "$.body");
 		assertThat(body).doesNotContain("\r");
 		assertThat(body.chars().filter(c -> c == '\n').count()).isEqualTo(10);
+	}
+
+	@Test
+	@DisplayName("ちょうど 5,242,880 バイトの PNG は 201 で、保存先に入る")
+	void imageOfExactlyFiveMegabytesIsAccepted() throws Exception {
+		String token = register();
+
+		HttpResponse<String> response = createPostWithImage(token, "5 MB ちょうど", TestImages.pngOfSize(5_242_880));
+
+		assertThat(response.statusCode()).isEqualTo(201);
+		assertThat((String) JsonPath.read(response.body(), "$.images[0].url")).startsWith("https://images.test/posts/");
+		assertThat(storage.objects()).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("5,242,881 バイトの PNG は 413 で、本文の code は FILE_TOO_LARGE。何も保存されない")
+	void imageOverFiveMegabytesIsRejected() throws Exception {
+		String token = register();
+
+		HttpResponse<String> response = createPostWithImage(token, "5 MB 超え", TestImages.pngOfSize(5_242_881));
+
+		assertThat(response.statusCode()).isEqualTo(413);
+		assertThat((String) JsonPath.read(response.body(), "$.code")).isEqualTo("FILE_TOO_LARGE");
+		assertThat((String) JsonPath.read(response.body(), "$.detail")).isEqualTo("画像が大きすぎます");
+		assertThat(storage.objects()).isEmpty();
 	}
 
 }

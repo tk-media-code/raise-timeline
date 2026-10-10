@@ -116,7 +116,7 @@ describe('次のページを読み込んでいる最中の操作の成功', () =
     api.createPost.mockResolvedValue(makePost('new', '新しい本文'))
     const { result } = renderHook(() => useCreatePost(), { wrapper })
 
-    await act(() => result.current.mutateAsync('新しい本文'))
+    await act(() => result.current.mutateAsync({ body: '新しい本文', images: [] }))
     await releaseLatePage()
 
     expect(allItems().map((post) => post.id)[0]).toBe('new')
@@ -141,7 +141,7 @@ describe('最初の読み込みの最中の操作の成功', () => {
       wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
     })
 
-    await act(() => result.current.mutateAsync('本文'))
+    await act(() => result.current.mutateAsync({ body: '本文', images: [] }))
     expect(observer.getCurrentResult().isFetching).toBe(true)
     await act(async () => {
       release({ items: [makePost('a')], nextCursor: null })

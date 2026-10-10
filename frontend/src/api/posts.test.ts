@@ -29,10 +29,12 @@ describe('投稿の API', () => {
     vi.unstubAllGlobals()
   })
 
-  it('createPost は POST /api/posts に、body の部品だけを持つ FormData を送る', async () => {
+  it('createPost は POST /api/posts に、body の部品と、画像の数だけの images の部品（送った順）を持つ FormData を送る', async () => {
     fetchMock.mockResolvedValueOnce(ok(post, 201))
+    const first = new File(['1'], 'first.png', { type: 'image/png' })
+    const second = new File(['2'], 'second.jpg', { type: 'image/jpeg' })
 
-    const result = await createPost('こんにちは')
+    const result = await createPost('こんにちは', [first, second])
 
     expect(result).toEqual(post)
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
@@ -41,9 +43,19 @@ describe('投稿の API', () => {
     expect(init.body).toBeInstanceOf(FormData)
     const form = init.body as FormData
     expect(form.getAll('body')).toEqual(['こんにちは'])
-    expect(form.getAll('images')).toHaveLength(0)
-    expect(Array.from(form.keys())).toEqual(['body'])
+    expect((form.getAll('images') as File[]).map((file) => file.name)).toEqual(['first.png', 'second.jpg'])
+    expect(Array.from(form.keys())).toEqual(['body', 'images', 'images'])
     expect(new Headers(init.headers).get('Content-Type')).toBeNull()
+  })
+
+  it('createPost は画像が無ければ images の部品を付けない', async () => {
+    fetchMock.mockResolvedValueOnce(ok(post, 201))
+
+    await createPost('', [])
+
+    const form = (fetchMock.mock.calls[0] as [string, RequestInit])[1].body as FormData
+    expect(Array.from(form.keys())).toEqual(['body'])
+    expect(form.getAll('body')).toEqual([''])
   })
 
   it("getTimelineAll(null) は cursor を付けない。'abc' なら ?cursor=abc を付ける", async () => {

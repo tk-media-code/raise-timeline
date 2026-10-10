@@ -19,6 +19,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.tkmedia.raisetimeline.domain.Post;
+import com.tkmedia.raisetimeline.domain.PostImage;
 import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.domain.User;
 
@@ -137,6 +138,69 @@ class PostMapperTest {
 		assertThat(postMapper.findById(id)).isEmpty();
 		assertThat(imageCount(id)).isZero();
 		assertThat(postMapper.delete(id)).isZero();
+	}
+
+	@Test
+	@DisplayName("insertImages で 3 件入れると、findImages が position 0 から 2 の順で返る")
+	void insertImagesKeepsOrder() {
+		UUID id = createPost(createUser(), "画像");
+
+		postMapper.insertImages(id, List.of("posts/a.jpg", "posts/b.png", "posts/c.webp"));
+
+		List<PostImage> images = postMapper.findImages(List.of(id));
+		assertThat(images).extracting(PostImage::objectKey).containsExactly("posts/a.jpg", "posts/b.png", "posts/c.webp");
+		assertThat(images).extracting(PostImage::position).containsExactly(0, 1, 2);
+		assertThat(images).extracting(PostImage::postId).containsOnly(id);
+		assertThat(images).extracting(PostImage::id).doesNotContainNull();
+	}
+
+	@Test
+	@DisplayName("2 つの投稿の画像は、投稿ごとに position の順で返る")
+	void findImagesForSeveralPosts() {
+		UUID userId = createUser();
+		UUID first = createPost(userId, "1");
+		UUID second = createPost(userId, "2");
+		postMapper.insertImages(second, List.of("posts/s0.jpg", "posts/s1.jpg"));
+		postMapper.insertImages(first, List.of("posts/f0.jpg", "posts/f1.jpg", "posts/f2.jpg"));
+
+		List<PostImage> images = postMapper.findImages(List.of(first, second));
+
+		assertThat(images).extracting(PostImage::objectKey)
+				.containsExactly("posts/f0.jpg", "posts/f1.jpg", "posts/f2.jpg", "posts/s0.jpg", "posts/s1.jpg");
+		assertThat(images).filteredOn(i -> i.postId().equals(second)).extracting(PostImage::position)
+				.containsExactly(0, 1);
+	}
+
+	@Test
+	@DisplayName("画像の無い投稿だけを渡すと、findImages は空を返す")
+	void findImagesOfPostWithoutImages() {
+		UUID id = createPost(createUser(), "画像なし");
+
+		assertThat(postMapper.findImages(List.of(id))).isEmpty();
+	}
+
+	@Test
+	@DisplayName("findImageKeys は position の順にキーだけを返し、画像の無い投稿では空")
+	void findImageKeysInOrder() {
+		UUID userId = createUser();
+		UUID id = createPost(userId, "画像");
+		UUID none = createPost(userId, "なし");
+		postMapper.insertImages(id, List.of("posts/a.jpg", "posts/b.jpg"));
+
+		assertThat(postMapper.findImageKeys(id)).containsExactly("posts/a.jpg", "posts/b.jpg");
+		assertThat(postMapper.findImageKeys(none)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("投稿を消すと insertImages で入れた画像の行も消える")
+	void deleteRemovesInsertedImages() {
+		UUID id = createPost(createUser(), "消す");
+		postMapper.insertImages(id, List.of("posts/a.jpg", "posts/b.jpg"));
+
+		postMapper.delete(id);
+
+		assertThat(imageCount(id)).isZero();
+		assertThat(postMapper.findImages(List.of(id))).isEmpty();
 	}
 
 	@Test

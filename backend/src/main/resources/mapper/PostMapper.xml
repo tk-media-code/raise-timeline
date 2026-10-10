@@ -55,4 +55,31 @@
 		LIMIT #{limit}
 	</select>
 
+	<!--
+		position は keys の並びの番号をそのまま使う（index は 0 から）。#{} だけで組み立て、値は全部バインドする。
+		INSERT なので返す値は要らない。
+	-->
+	<insert id="insertImages">
+		INSERT INTO post_images (post_id, object_key, position)
+		VALUES
+		<foreach collection="keys" item="key" index="i" separator=",">
+			(#{postId}, #{key}, #{i})
+		</foreach>
+	</insert>
+
+	<!-- 一覧の画像は、ページの投稿の id をまとめて 1 回で引く（投稿ごとに引くと N+1 になる）。 -->
+	<select id="findImages" resultType="com.tkmedia.raisetimeline.domain.PostImage">
+		SELECT id, post_id, object_key, position
+		FROM post_images
+		WHERE post_id IN
+		<foreach collection="postIds" item="postId" open="(" separator="," close=")">
+			#{postId}
+		</foreach>
+		ORDER BY post_id, position
+	</select>
+
+	<select id="findImageKeys" resultType="java.lang.String">
+		SELECT object_key FROM post_images WHERE post_id = #{postId} ORDER BY position
+	</select>
+
 </mapper>

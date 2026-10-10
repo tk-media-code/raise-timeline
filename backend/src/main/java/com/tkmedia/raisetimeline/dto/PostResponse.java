@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 投稿 1 件の応答。{@code likeCount}・{@code commentCount}・{@code likedByMe}・{@code images} は、
- * それぞれを作る後の Issue（画像 5、いいね 7、コメント 8）まで暫定値を入れる。
+ * 投稿 1 件の応答。{@code likeCount}・{@code commentCount}・{@code likedByMe} は、
+ * それぞれを作る後の Issue（いいね 7、コメント 8）まで暫定値を入れる。{@code images} は表示の順で、無ければ空。
  */
 public record PostResponse(
 		UUID id,

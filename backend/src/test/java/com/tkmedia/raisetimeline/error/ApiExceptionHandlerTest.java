@@ -301,11 +301,13 @@ class ApiExceptionHandlerTest {
 	}
 
 	@Test
-	@DisplayName("アップロードの大きさ超過（MultipartException の派生）は専用の処理が優先され、今は 400 の BAD_REQUEST のまま")
-	void maxUploadSizeStillGoesThroughParentHandler(CapturedOutput output) throws Exception {
+	@DisplayName("アップロードの大きさ超過（MaxUploadSizeExceededException）は 413 の FILE_TOO_LARGE になり、detail は「画像が大きすぎます」")
+	void maxUploadSizeReturns413(CapturedOutput output) throws Exception {
 		mockMvc.perform(get("/api/t/multipart-too-large").with(jwt()))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+				.andExpect(status().isContentTooLarge())
+				.andExpect(jsonPath("$.code").value("FILE_TOO_LARGE"))
+				.andExpect(jsonPath("$.status").value(413))
+				.andExpect(jsonPath("$.detail").value("画像が大きすぎます"));
 
 		assertNoWarnOrError(output);
 	}

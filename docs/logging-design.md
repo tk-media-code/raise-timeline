@@ -58,7 +58,7 @@
 | `user.withdrew` | INFO | 無し（`user.id` は MDC にある） | 退会 |
 | `post.deleted` | INFO | 投稿 id（`app.post.id`） | 投稿の削除 |
 | `comment.deleted` | INFO | コメント id（`app.comment.id`） | コメントの削除 |
-| `image.delete_failed` | WARN | 消せなかった S3 のキー | S3 の削除失敗。応答は成功のまま（[error-handling-design.md](error-handling-design.md)） |
+| `image.delete_failed` | WARN | 消せなかった S3 のキー（`app.image.keys`）。原因の例外付き | S3 の削除失敗。応答は変えない（投稿の削除のあと、アイコンの古いキーなら成功のまま。投稿の作成やアイコンの 401・DB の失敗の後始末なら、元の失敗の応答のまま）（[error-handling-design.md](error-handling-design.md)） |
 | `health.db_unreachable` | WARN | 例外 | `GET /api/health` で DB に届かず 503 を返した。今の `HealthCheckController` の WARN に名前を付けるもの |
 
 機能別文書に書かれている「WARN で残す」「INFO で残す」は、この表が正本で、文書からはここを参照する。
@@ -98,7 +98,7 @@ Spring Boot が自動で付ける項目と、このプロジェクトが足す�
 MDC は「要求の間ずっと付く値」を置く仕組み。要求の最初に値を置き、要求の最後に消すと、その間にどこで書いたログにも自動で載る。
 MyBatis が出す SQL のログにも利用者 id が付くので、ローカルでは「この人のこの操作で流れた SQL」を requestId でまとめて追える（SQL は DEBUG なので、本番には出ない）。
 
-MDC はスレッドごとの値なので、別のスレッドで走らせる処理（画像の並行アップロード）には引き継がれない。その中ではログを書かないか、`TaskDecorator` で MDC を写す。どちらにするかは画像の Issue で決める。
+MDC はスレッドごとの値なので、別のスレッドで走らせる処理には引き継がれない。そこでログを書くなら、`TaskDecorator` で MDC を写す必要がある。画像のアップロードは、1 枚ずつ順に、要求を処理しているスレッドの中で行う（[image-storage-design.md](image-storage-design.md) の 4 章）ので、別のスレッドを使わず、この問題は起きない。別のスレッドで走らせる処理を足すときは、同じ確認をする。
 
 `client.ip` は `HttpServletRequest#getRemoteAddr()` の値。本番は nginx が利用者の IP を `X-Forwarded-For` に入れて渡し、Spring Boot は
 `server.forward-headers-strategy=native`（Tomcat の RemoteIpValve。私設アドレスからの `X-Forwarded-For` だけを信用する）で復元する。

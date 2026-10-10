@@ -1,16 +1,22 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 
-type ModalDialogProps = {
+// ダイアログの名前は、見出しの id（labelledBy）か直接の文字（label）のどちらか一方で付ける。
+// 見出しの無いダイアログ（画像ビューア）が名前を持てるようにするため。両方・どちらも無い、は型で弾く。
+type ModalDialogName = { labelledBy: string; label?: never } | { label: string; labelledBy?: never }
+
+type ModalDialogProps = ModalDialogName & {
   open: boolean
-  // 見出しの id。ダイアログの名前になる。
-  labelledBy: string
   onCancel: () => void
+  // 渡すと、既定の白い枠のクラスの代わりに使う（画面いっぱいの暗いビューアなど、枠の見た目が違うとき）。
+  className?: string
   children: ReactNode
 }
 
+const DEFAULT_CLASS_NAME = 'm-auto w-[min(92vw,32rem)] rounded-lg bg-white p-4 text-black shadow-xl backdrop:bg-black/40'
+
 // <dialog> の枠。ConfirmDialog と同じく、開閉の正は props の open で、showModal() / close() はそれに合わせるだけにする。
 // 中身は開いている間だけ描く。閉じるたびに入力欄が新しくなり、隠れた入力欄が読み上げや検索に残らない。
-export function ModalDialog({ open, labelledBy, onCancel, children }: ModalDialogProps) {
+export function ModalDialog({ open, labelledBy, label, onCancel, className, children }: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
 
@@ -37,6 +43,7 @@ export function ModalDialog({ open, labelledBy, onCancel, children }: ModalDialo
     <dialog
       ref={dialogRef}
       aria-labelledby={labelledBy}
+      aria-label={label}
       // Esc はブラウザが閉じる前に cancel イベントを出す。そのまま閉じさせず、閉じる判断は呼び出し側の状態に任せる。
       onCancel={(event) => {
         event.preventDefault()
@@ -48,7 +55,7 @@ export function ModalDialog({ open, labelledBy, onCancel, children }: ModalDialo
       onClose={() => {
         if (open) onCancel()
       }}
-      className="m-auto w-[min(92vw,32rem)] rounded-lg bg-white p-4 text-black shadow-xl backdrop:bg-black/40"
+      className={className ?? DEFAULT_CLASS_NAME}
     >
       {open && children}
     </dialog>

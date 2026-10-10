@@ -18,6 +18,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.tkmedia.raisetimeline.domain.ReplacedAvatar;
 import com.tkmedia.raisetimeline.domain.User;
 
 /**
@@ -166,6 +167,47 @@ class UserMapperTest {
 		assertThat(userMapper.findById(id).orElseThrow().bio().codePointCount(0, 320)).isEqualTo(160);
 		assertThatThrownBy(() -> userMapper.updateProfile(id, "名前", "😀".repeat(161), now))
 				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@DisplayName("初めてのアイコン差し替えは古いキーが null で返り、2 回目は 1 回目のキーが返る")
+	void replaceAvatarKeyReturnsOldKey() {
+		String s = suffix();
+		UUID id = userMapper.insert(newUser("user_" + s, "user_" + s + "@example.com"));
+		OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+
+		ReplacedAvatar first = userMapper.replaceAvatarKey(id, "avatars/" + id + "/a.png", now).orElseThrow();
+		ReplacedAvatar second = userMapper.replaceAvatarKey(id, "avatars/" + id + "/b.png", now).orElseThrow();
+
+		assertThat(first.userId()).isEqualTo(id);
+		assertThat(first.oldKey()).isNull();
+		assertThat(second.userId()).isEqualTo(id);
+		assertThat(second.oldKey()).isEqualTo("avatars/" + id + "/a.png");
+		assertThat(userMapper.findById(id).orElseThrow().avatarKey()).isEqualTo("avatars/" + id + "/b.png");
+	}
+
+	@Test
+	@DisplayName("無い id のアイコン差し替えは空が返る")
+	void replaceAvatarKeyOfMissingUserIsEmpty() {
+		assertThat(userMapper.replaceAvatarKey(UUID.randomUUID(), "avatars/x/a.png", OffsetDateTime.now(ZoneOffset.UTC)))
+				.isEmpty();
+	}
+
+	@Test
+	@DisplayName("アイコンを差し替えると updated_at が渡した時刻になり、ほかの列は変わらない")
+	void replaceAvatarKeySetsUpdatedAt() {
+		String s = suffix();
+		UUID id = userMapper.insert(newUser("user_" + s, "user_" + s + "@example.com"));
+		User before = userMapper.findById(id).orElseThrow();
+		OffsetDateTime later = OffsetDateTime.of(2026, 10, 10, 9, 0, 0, 0, ZoneOffset.UTC);
+
+		userMapper.replaceAvatarKey(id, "avatars/" + id + "/a.png", later);
+
+		User after = userMapper.findById(id).orElseThrow();
+		assertThat(after.updatedAt().toInstant()).isEqualTo(later.toInstant());
+		assertThat(after.displayName()).isEqualTo(before.displayName());
+		assertThat(after.bio()).isEqualTo(before.bio());
+		assertThat(after.createdAt().toInstant()).isEqualTo(before.createdAt().toInstant());
 	}
 
 }

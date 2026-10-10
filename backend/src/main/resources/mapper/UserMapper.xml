@@ -43,4 +43,17 @@
 		UPDATE users SET display_name = #{displayName}, bio = #{bio}, updated_at = #{updatedAt} WHERE id = #{id}
 	</update>
 
+	<!--
+		差し替え前のキーを、UPDATE と同じ文の RETURNING OLD で受ける（PostgreSQL 18 の構文）。
+		先に SELECT してから UPDATE すると、同時に 2 回差し替えたとき二人が同じ古いキーを読み、片方の画像が孤児になる。
+		user_id も返すのは、初めての設定だと old_key が null で、行の全部の列が null になると MyBatis が
+		結果を null にしてしまい、「行が無い（空）」と区別できなくなるため。
+		INSERT ... RETURNING と同じ理由で、<select> でも flushCache="true" useCache="false" にする。
+	-->
+	<select id="replaceAvatarKey" resultType="com.tkmedia.raisetimeline.domain.ReplacedAvatar"
+			flushCache="true" useCache="false">
+		UPDATE users SET avatar_key = #{key}, updated_at = #{updatedAt} WHERE id = #{id}
+		RETURNING id AS user_id, OLD.avatar_key AS old_key
+	</select>
+
 </mapper>

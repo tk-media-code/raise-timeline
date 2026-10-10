@@ -23,3 +23,10 @@ export function getMe(): Promise<Me> {
 export function updateMe(input: ProfileInput): Promise<Me> {
   return apiFetch<Me>('/api/users/me', { method: 'PATCH', body: input })
 }
+
+// アイコンの差し替え。部品名は file。選んだ時点で送る（「保存」とは別の要求）。
+export function updateAvatar(file: File): Promise<{ avatarUrl: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  return apiFetch<{ avatarUrl: string }>('/api/users/me/avatar', { method: 'PUT', body: form })
+}

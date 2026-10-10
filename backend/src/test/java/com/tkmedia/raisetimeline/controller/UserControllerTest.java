@@ -1,9 +1,14 @@
 package com.tkmedia.raisetimeline.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -20,6 +25,8 @@ import com.tkmedia.raisetimeline.dto.UserSummary;
 import com.tkmedia.raisetimeline.error.ApiExceptionHandler;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.ProblemDetailWriter;
+import com.tkmedia.raisetimeline.dto.AvatarResponse;
+import com.tkmedia.raisetimeline.service.AvatarService;
 import com.tkmedia.raisetimeline.service.UserPostsService;
 import com.tkmedia.raisetimeline.service.UserService;
 import java.nio.charset.StandardCharsets;
@@ -30,14 +37,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.AbstractMockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @WebMvcTest(controllers = UserController.class)
@@ -58,6 +67,9 @@ class UserControllerTest {
 
 	@MockitoBean
 	private UserPostsService userPostsService;
+
+	@MockitoBean
+	private AvatarService avatarService;
 
 	private static RequestPostProcessor me() {
 		return jwt().jwt(j -> j.subject(USER_ID.toString()));
@@ -96,20 +108,24 @@ class UserControllerTest {
 	}
 
 	@ParameterizedTest(name = "{0}")
-	@ValueSource(strings = { "GET /api/users/alice", "GET /api/users/alice/posts", "PATCH /api/users/me" })
+	@ValueSource(strings = { "GET /api/users/alice", "GET /api/users/alice/posts", "PATCH /api/users/me",
+			"PUT /api/users/me/avatar" })
 	@DisplayName("Bearer が無いプロフィールの API は 401 UNAUTHENTICATED になり、サービスは呼ばれない")
 	void requestsWithoutBearerReturn401(String route) throws Exception {
 		String[] parts = route.split(" ");
-		MockHttpServletRequestBuilder request = parts[0].equals("PATCH")
-				? patch(parts[1]).contentType(MediaType.APPLICATION_JSON)
-						.content("{\"displayName\":\"アリス\",\"bio\":\"\"}".getBytes(StandardCharsets.UTF_8))
-				: get(parts[1]);
+		AbstractMockHttpServletRequestBuilder<?> request = switch (parts[0]) {
+			case "PATCH" -> patch(parts[1]).contentType(MediaType.APPLICATION_JSON)
+					.content("{\"displayName\":\"アリス\",\"bio\":\"\"}".getBytes(StandardCharsets.UTF_8));
+			case "PUT" -> multipart(HttpMethod.PUT, parts[1])
+					.file(new MockMultipartFile("file", "a.png", "image/png", new byte[] { 1 }));
+			default -> get(parts[1]);
+		};
 
 		mockMvc.perform(request)
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 
-		verifyNoInteractions(userService, userPostsService);
+		verifyNoInteractions(userService, userPostsService, avatarService);
 	}
 
 	@Test
@@ -217,6 +233,30 @@ class UserControllerTest {
 				.andExpect(status().isMethodNotAllowed());
 
 		verifyNoInteractions(userService);
+	}
+
+	@Test
+	@DisplayName("PUT /api/users/me/avatar は JWT の本人の id で AvatarService を呼び、avatarUrl を 200 で返す")
+	void putAvatarCallsServiceWithMe() throws Exception {
+		MockMultipartFile file = new MockMultipartFile("file", "a.png", "image/png", new byte[] { 1, 2, 3 });
+		when(avatarService.replace(eq(USER_ID), any()))
+				.thenReturn(new AvatarResponse("https://images.test/avatars/x/a.png"));
+
+		mockMvc.perform(multipart(HttpMethod.PUT, "/api/users/me/avatar").file(file).with(me()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.avatarUrl").value("https://images.test/avatars/x/a.png"));
+
+		verify(avatarService).replace(eq(USER_ID),
+				argThat(f -> "a.png".equals(f.getOriginalFilename())));
+	}
+
+	@Test
+	@DisplayName("PUT /api/users/me/avatar に file の部品が無ければ 400 で、サービスは呼ばれない")
+	void putAvatarWithoutFilePartReturns400() throws Exception {
+		mockMvc.perform(multipart(HttpMethod.PUT, "/api/users/me/avatar").with(me()))
+				.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(avatarService);
 	}
 
 }

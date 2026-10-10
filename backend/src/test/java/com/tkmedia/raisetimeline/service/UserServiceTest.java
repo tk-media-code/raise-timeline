@@ -13,6 +13,7 @@ import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
 import com.tkmedia.raisetimeline.dto.UserDetail;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.UnauthenticatedException;
+import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
 import java.time.Clock;
 import java.time.Instant;
@@ -33,7 +34,8 @@ class UserServiceTest {
 	private final UserMapper userMapper = mock(UserMapper.class);
 	private static final Instant NOW = Instant.parse("2026-10-09T10:00:00Z");
 
-	private final UserService service = new UserService(userMapper, Clock.fixed(NOW, ZoneOffset.UTC));
+	private final UserService service = new UserService(userMapper, new InMemoryImageStorage(),
+			Clock.fixed(NOW, ZoneOffset.UTC));
 
 	@Test
 	@DisplayName("利用者がいなければ NotFoundException を投げる")
@@ -57,7 +59,7 @@ class UserServiceTest {
 	}
 
 	@Test
-	@DisplayName("toMe はフォロー数 0・isFollowing false・avatarUrl null・isMe true の暫定値を入れる")
+	@DisplayName("toMe はフォロー数 0・isFollowing false・isMe true の暫定値を入れ、アイコンが無ければ avatarUrl は null")
 	void toMeUsesInterimValues() {
 		Me me = service.toMe(user());
 
@@ -71,7 +73,7 @@ class UserServiceTest {
 	}
 
 	@Test
-	@DisplayName("本人のプロフィールは isMe true。フォロー状態・数・avatarUrl は暫定値")
+	@DisplayName("本人のプロフィールは isMe true。フォロー状態・数は暫定値で、アイコンが無ければ avatarUrl は null")
 	void profileOfSelf() {
 		when(userMapper.findByUsername("alice")).thenReturn(Optional.of(user()));
 
@@ -148,6 +150,18 @@ class UserServiceTest {
 
 		assertThatThrownBy(() -> service.updateProfile(USER_ID, new UpdateProfileRequest("アリス", "")))
 				.isInstanceOf(UnauthenticatedException.class);
+	}
+
+	@Test
+	@DisplayName("avatarKey のある利用者は、Me と UserDetail に保存先の URL が入る")
+	void avatarUrlIsBuiltFromKey() {
+		User withAvatar = new User(USER_ID, "alice", "アリス", "alice@example.com", "$2a$10$hash", "",
+				"avatars/" + USER_ID + "/a.png", CREATED_AT, CREATED_AT);
+
+		assertThat(service.toMe(withAvatar).avatarUrl())
+				.isEqualTo("https://images.test/avatars/" + USER_ID + "/a.png");
+		assertThat(service.toDetail(withAvatar, USER_ID).avatarUrl())
+				.isEqualTo("https://images.test/avatars/" + USER_ID + "/a.png");
 	}
 
 	private static User user() {

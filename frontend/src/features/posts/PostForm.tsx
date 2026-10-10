@@ -1,5 +1,7 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useToast } from '../../components/Toast'
+import { ImagePicker } from '../images/ImagePicker'
+import { POST_IMAGE_MAX_BYTES, imageRejectionMessage, releaseImages, type SelectedImage } from '../images/imageFiles'
 import { BodyField } from './BodyField'
 import { failureMessage, toValidationFailure, useCreatePost } from './mutations'
 import { useIsMounted } from './useIsMounted'
@@ -17,13 +19,24 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
   const [body, setBody] = useState('')
   const [bodyError, setBodyError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [images, setImages] = useState<SelectedImage[]>([])
+  // 選んだ時点の検査の文言と、サーバーの断りの文言。画像の一覧の下に出す。
+  const [imageError, setImageError] = useState<string | null>(null)
   const create = useCreatePost()
   const toast = useToast()
   // isPending の反映は少し遅れるので、素早い 2 回目の押下は ref で止める。
   const submitting = useRef(false)
   const mounted = useIsMounted()
 
-  const canSubmit = canSubmitBody(body) && !create.isPending
+  const canSubmit = canSubmitBody(body, images.length > 0) && !create.isPending
+
+  // フォームが消えるとき、まだ持っているプレビューの URL を解放する（ブラウザはページを閉じるまで保持し続ける）。
+  // 後始末は最新の並びを見る必要があるので ref に控える。
+  const imagesRef = useRef(images)
+  useEffect(() => {
+    imagesRef.current = images
+  }, [images])
+  useEffect(() => () => releaseImages(imagesRef.current), [])
 
   function change(value: string) {
     setBody(value)
@@ -35,17 +48,25 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
     if (!canSubmit || submitting.current) return
     submitting.current = true
     setBodyError(null)
+    setImageError(null)
     setFormError(null)
     try {
-      await create.mutateAsync(body)
+      await create.mutateAsync({ body, images: images.map((image) => image.file) })
     } catch (error) {
       const validation = toValidationFailure(error)
-      if (validation && mounted.current) {
-        setBodyError(validation.bodyMessage)
-        setFormError(validation.formMessage)
-      } else if (validation) {
+      // 413 / 415 は画像の一覧の下。422 の images の誤りも同じ場所に出す。
+      const imageMessage = validation?.imagesMessage ?? imageRejectionMessage(error, POST_IMAGE_MAX_BYTES)
+      if ((validation || imageMessage) && mounted.current) {
+        // 本文も画像も残す。直して、あるいはそのまま、もう一度送れるように。
+        setBodyError(validation?.bodyMessage ?? null)
+        setImageError(imageMessage)
+        setFormError(validation?.formMessage ?? null)
+      } else if (validation || imageMessage) {
         // 送信中に閉じられた。誤りを見せる欄が無いので、通知で伝える。
-        toast.show(validation.bodyMessage ?? validation.formMessage ?? failureMessage(error), 'error')
+        toast.show(
+          validation?.bodyMessage ?? imageMessage ?? validation?.formMessage ?? failureMessage(error),
+          'error',
+        )
       } else {
         // 入力は残す。直して、あるいはそのまま、もう一度送れるように。
         toast.show(failureMessage(error), 'error')
@@ -55,6 +76,8 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
       submitting.current = false
     }
     setBody('')
+    releaseImages(images)
+    setImages([])
     toast.show('投稿しました')
     // 送信中に閉じられていたら呼ばない（開き直した別のダイアログを閉じてしまう）。
     if (mounted.current) onPosted?.()
@@ -68,15 +91,23 @@ export function PostForm({ id, autoFocus, onPosted }: PostFormProps) {
         </p>
       )}
       <BodyField id={`${id}-body`} value={body} onChange={change} error={bodyError} focusOnMount={autoFocus} />
-      <div className="flex justify-end">
+      <ImagePicker
+        images={images}
+        onChange={(next, message) => {
+          setImages(next)
+          setImageError(message)
+        }}
+        error={imageError}
+        disabled={create.isPending}
+      >
         <button
           type="submit"
           disabled={!canSubmit}
-          className="min-h-11 min-w-11 rounded-full bg-sky-600 px-6 font-bold text-white hover:bg-sky-700 focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+          className="min-h-11 min-w-11 shrink-0 rounded-full bg-sky-600 px-6 font-bold text-white hover:bg-sky-700 focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
         >
           投稿する
         </button>
-      </div>
+      </ImagePicker>
     </form>
   )
 }

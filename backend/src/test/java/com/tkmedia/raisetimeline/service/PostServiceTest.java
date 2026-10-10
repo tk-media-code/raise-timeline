@@ -3,6 +3,9 @@ package com.tkmedia.raisetimeline.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -11,21 +14,37 @@ import static org.mockito.Mockito.when;
 import com.tkmedia.raisetimeline.domain.Post;
 import com.tkmedia.raisetimeline.domain.PostWithAuthor;
 import com.tkmedia.raisetimeline.dto.PostResponse;
+import com.tkmedia.raisetimeline.error.FileTooLargeException;
 import com.tkmedia.raisetimeline.error.ForbiddenException;
+import com.tkmedia.raisetimeline.error.ImageStorageUnavailableException;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.UnauthenticatedException;
+import com.tkmedia.raisetimeline.error.UnsupportedImageTypeException;
 import com.tkmedia.raisetimeline.error.ValidationException;
+import com.tkmedia.raisetimeline.image.DisabledImageStorage;
+import com.tkmedia.raisetimeline.image.ImageStorage;
+import com.tkmedia.raisetimeline.image.ImageCleaner;
+import com.tkmedia.raisetimeline.image.ImageUploadRules;
+import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.image.TestImages;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionOperations;
 
 class PostServiceTest {
 
@@ -36,8 +55,19 @@ class PostServiceTest {
 	private static final OffsetDateTime NOW = OffsetDateTime.ofInstant(NOW_INSTANT, ZoneOffset.UTC);
 
 	private final PostMapper postMapper = mock(PostMapper.class);
-	private final PostService service = new PostService(postMapper, new PostAssembler(),
-			Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
+	private final InMemoryImageStorage storage = new InMemoryImageStorage();
+	private final PostService service = serviceWith(storage);
+
+	private PostService serviceWith(ImageStorage imageStorage) {
+		return new PostService(postMapper, new PostAssembler(postMapper, imageStorage), imageStorage,
+				new ImageCleaner(imageStorage), TransactionOperations.withoutTransaction(),
+				Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
+	}
+
+	private static MockMultipartFile part(byte[] content) {
+		// 申告するファイル名と Content-Type は無視されるので、中身と合わない値にしておく。
+		return new MockMultipartFile("images", "photo.jpg", "image/jpeg", content);
+	}
 
 	private static PostWithAuthor row(UUID owner, String body) {
 		return new PostWithAuthor(POST_ID, owner, body, NOW, NOW, "taro_1", "太郎", null);
@@ -54,7 +84,7 @@ class PostServiceTest {
 		when(postMapper.insert(any())).thenReturn(POST_ID);
 		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "一行目\n二行目")));
 
-		PostResponse response = service.create(ME, "一行目\r\n二行目");
+		PostResponse response = service.create(ME, "一行目\r\n二行目", List.of());
 
 		verify(postMapper).insert(new Post(null, ME, "一行目\n二行目", NOW, NOW));
 		assertThat(response.id()).isEqualTo(POST_ID);
@@ -65,7 +95,7 @@ class PostServiceTest {
 	@Test
 	@DisplayName("create は本文が空白だけなら ValidationException で、insert を呼ばない")
 	void createRejectsWhitespaceOnly() {
-		assertThatThrownBy(() -> service.create(ME, " \n　 ")).isInstanceOf(ValidationException.class);
+		assertThatThrownBy(() -> service.create(ME, " \n　 ", List.of())).isInstanceOf(ValidationException.class);
 
 		verify(postMapper, never()).insert(any());
 	}
@@ -75,7 +105,7 @@ class PostServiceTest {
 	void createTranslatesUserForeignKeyViolation() {
 		when(postMapper.insert(any())).thenThrow(violation("posts_user_id_fkey"));
 
-		assertThatThrownBy(() -> service.create(ME, "こんにちは")).isInstanceOf(UnauthenticatedException.class);
+		assertThatThrownBy(() -> service.create(ME, "こんにちは", List.of())).isInstanceOf(UnauthenticatedException.class);
 	}
 
 	@Test
@@ -84,7 +114,7 @@ class PostServiceTest {
 		DataIntegrityViolationException other = violation("posts_something_else_fkey");
 		when(postMapper.insert(any())).thenThrow(other);
 
-		assertThatThrownBy(() -> service.create(ME, "こんにちは")).isSameAs(other);
+		assertThatThrownBy(() -> service.create(ME, "こんにちは", List.of())).isSameAs(other);
 	}
 
 	@Test
@@ -195,6 +225,286 @@ class PostServiceTest {
 		when(postMapper.delete(POST_ID)).thenReturn(0);
 
 		assertThatThrownBy(() -> service.delete(ME, POST_ID)).isInstanceOf(NotFoundException.class);
+	}
+
+	@Test
+	@DisplayName("保存先が使えず画像があると、本文が 281 文字でも 503 になる（本文の検査より先）")
+	void createWithImagesWhenStorageUnavailableReturns503BeforeBodyCheck() {
+		PostService disabled = serviceWith(new DisabledImageStorage());
+
+		assertThatThrownBy(() -> disabled.create(ME, "あ".repeat(281), List.of(part(TestImages.png()))))
+				.isInstanceOf(ImageStorageUnavailableException.class);
+
+		verify(postMapper, never()).insert(any());
+	}
+
+	@Test
+	@DisplayName("保存先が使えなくても、画像が無ければ今までどおり作れる")
+	void createWithoutImagesWhenStorageUnavailable() {
+		PostService disabled = serviceWith(new DisabledImageStorage());
+		when(postMapper.insert(any())).thenReturn(POST_ID);
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "本文だけ")));
+
+		assertThat(disabled.create(ME, "本文だけ", List.of()).body()).isEqualTo("本文だけ");
+	}
+
+	@Test
+	@DisplayName("本文が 281 文字で画像が 1 枚なら 422 で、field は body。何も PUT しない")
+	void createRejectsLongBodyEvenWithImage() {
+		assertThatThrownBy(() -> service.create(ME, "あ".repeat(281), List.of(part(TestImages.png()))))
+				.isInstanceOfSatisfying(ValidationException.class,
+						e -> assertThat(e.errors()).extracting("field").containsExactly("body"));
+
+		assertThat(storage.objects()).isEmpty();
+		verify(postMapper, never()).insert(any());
+	}
+
+	@Test
+	@DisplayName("5 枚は 422「画像は 4 枚までです」で、field は images。何も PUT しない")
+	void createRejectsFiveImages() {
+		List<MockMultipartFile> five = new ArrayList<>();
+		for (int i = 0; i < 5; i++) {
+			five.add(part(TestImages.png()));
+		}
+
+		assertThatThrownBy(() -> service.create(ME, "本文", List.copyOf(five)))
+				.isInstanceOfSatisfying(ValidationException.class, e -> {
+					assertThat(e.errors()).extracting("field").containsExactly("images");
+					assertThat(e.errors()).extracting("message").containsExactly("画像は 4 枚までです");
+					assertThat(e.errors().get(0).message()).isEqualTo(ImageUploadRules.TOO_MANY);
+				});
+
+		assertThat(storage.objects()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("4 枚は送った順に posts/<uuid>.<拡張子> で PUT され、insertImages のキーも同じ順")
+	void createUploadsFourImagesInSentOrder() {
+		when(postMapper.insert(any())).thenReturn(POST_ID);
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "本文")));
+
+		service.create(ME, "本文", List.of(part(TestImages.jpeg()), part(TestImages.png()),
+				part(TestImages.gif()), part(TestImages.webp())));
+
+		List<String> keys = new ArrayList<>(storage.objects().keySet());
+		assertThat(keys).hasSize(4);
+		assertThat(keys.get(0)).matches("posts/[0-9a-f-]{36}\\.jpg");
+		assertThat(keys.get(1)).matches("posts/[0-9a-f-]{36}\\.png");
+		assertThat(keys.get(2)).matches("posts/[0-9a-f-]{36}\\.gif");
+		assertThat(keys.get(3)).matches("posts/[0-9a-f-]{36}\\.webp");
+		assertThat(storage.objects().values()).extracting(o -> o.contentType())
+				.containsExactly("image/jpeg", "image/png", "image/gif", "image/webp");
+		verify(postMapper).insertImages(POST_ID, keys);
+	}
+
+	@Test
+	@DisplayName("本文が空で画像だけなら作れる（本文は空文字で保存する）")
+	void createWithImageOnly() {
+		when(postMapper.insert(any())).thenReturn(POST_ID);
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "")));
+
+		service.create(ME, "", List.of(part(TestImages.png())));
+
+		verify(postMapper).insert(new Post(null, ME, "", NOW, NOW));
+		assertThat(storage.objects()).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("2 枚目の検査で 415 なら、何も PUT されず、insert も呼ばれない")
+	void createChecksAllImagesBeforeUploading() {
+		assertThatThrownBy(() -> service.create(ME, "本文", List.of(part(TestImages.png()), part(TestImages.svg()))))
+				.isInstanceOf(UnsupportedImageTypeException.class);
+
+		assertThat(storage.objects()).isEmpty();
+		verify(postMapper, never()).insert(any());
+	}
+
+	@Test
+	@DisplayName("5 MB を超える画像は 413、空のファイルと壊れた JPEG は 422（field は images）")
+	void createRejectsTooLargeEmptyAndBrokenImages() {
+		assertThatThrownBy(() -> service.create(ME, "本文",
+				List.of(part(TestImages.pngOfSize(ImageUploadRules.POST_MAX_BYTES + 1)))))
+				.isInstanceOf(FileTooLargeException.class);
+		assertThatThrownBy(() -> service.create(ME, "本文", List.of(part(new byte[0]))))
+				.isInstanceOfSatisfying(ValidationException.class,
+						e -> assertThat(e.errors()).extracting("field").containsExactly("images"));
+		assertThatThrownBy(() -> service.create(ME, "本文", List.of(part(TestImages.fakeJpeg()))))
+				.isInstanceOfSatisfying(ValidationException.class,
+						e -> assertThat(e.errors()).extracting("field").containsExactly("images"));
+
+		assertThat(storage.objects()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("2 枚目の PUT が失敗すると、その例外がそのまま上がり、1 枚目のキーが消され、insert は呼ばれない")
+	void createCleansUploadedKeysWhenPutFails() {
+		storage.failPutOn(2);
+
+		assertThatThrownBy(() -> service.create(ME, "本文", List.of(part(TestImages.png()), part(TestImages.png()))))
+				.isInstanceOf(IllegalStateException.class);
+
+		assertThat(storage.objects()).isEmpty();
+		assertThat(storage.deletedKeys()).hasSize(1);
+		verify(postMapper, never()).insert(any());
+	}
+
+	@Test
+	@DisplayName("insertImages が失敗すると、上げたキーが全部消され、例外はそのまま上がる")
+	void createCleansUploadedKeysWhenInsertImagesFails() {
+		when(postMapper.insert(any())).thenReturn(POST_ID);
+		IllegalStateException failure = new IllegalStateException("insertImages 失敗");
+		doThrow(failure).when(postMapper).insertImages(any(), any());
+
+		assertThatThrownBy(() -> service.create(ME, "本文", List.of(part(TestImages.png()), part(TestImages.gif()))))
+				.isSameAs(failure);
+
+		assertThat(storage.objects()).isEmpty();
+		assertThat(storage.deletedKeys()).hasSize(2);
+	}
+
+	@Test
+	@DisplayName("投稿の行と画像の行は、同じ 1 回のトランザクションの中で入れる（外では入れない）")
+	void createInsertsPostAndImageRowsInsideOneTransaction() {
+		RecordingTransactions transactions = new RecordingTransactions();
+		PostService recording = new PostService(postMapper, new PostAssembler(postMapper, storage), storage,
+				new ImageCleaner(storage), transactions, Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
+		// 呼ばれた瞬間にトランザクションの中だったかを記録する。範囲を外すと false が残って落ちる。
+		List<Boolean> insertCalls = new ArrayList<>();
+		List<Boolean> insertImagesCalls = new ArrayList<>();
+		when(postMapper.insert(any())).thenAnswer(invocation -> {
+			insertCalls.add(transactions.active);
+			return POST_ID;
+		});
+		doAnswer(invocation -> {
+			insertImagesCalls.add(transactions.active);
+			return null;
+		}).when(postMapper).insertImages(any(), any());
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "本文")));
+
+		recording.create(ME, "本文", List.of(part(TestImages.png()), part(TestImages.gif())));
+
+		assertThat(transactions.executions).isEqualTo(1);
+		assertThat(insertCalls).containsExactly(true);
+		assertThat(insertImagesCalls).containsExactly(true);
+	}
+
+	@Test
+	@DisplayName("投稿者の外部キー違反は UnauthenticatedException になり、上げたキーが消される")
+	void createTranslatesForeignKeyViolationAndCleansKeys() {
+		when(postMapper.insert(any())).thenThrow(violation("posts_user_id_fkey"));
+
+		assertThatThrownBy(() -> service.create(ME, "本文", List.of(part(TestImages.png()))))
+				.isInstanceOf(UnauthenticatedException.class);
+
+		assertThat(storage.objects()).isEmpty();
+		assertThat(storage.deletedKeys()).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("知らない制約の違反は変換せず、上げたキーを消して同じ例外のまま投げる")
+	void createRethrowsUnknownViolationAndCleansKeys() {
+		DataIntegrityViolationException other = violation("posts_something_else_fkey");
+		when(postMapper.insert(any())).thenThrow(other);
+
+		assertThatThrownBy(() -> service.create(ME, "本文", List.of(part(TestImages.png())))).isSameAs(other);
+
+		assertThat(storage.deletedKeys()).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("DB の書き込みが失敗したあとのキーの削除が失敗しても、元の例外が上がる")
+	void createKeepsOriginalExceptionWhenCleanupFails() {
+		DataIntegrityViolationException other = violation("posts_something_else_fkey");
+		when(postMapper.insert(any())).thenThrow(other);
+		storage.failDeletes();
+
+		assertThatThrownBy(() -> service.create(ME, "本文", List.of(part(TestImages.png())))).isSameAs(other);
+	}
+
+	@Test
+	@DisplayName("updateBody は画像のある投稿なら、本文を空にできる")
+	void updateAllowsEmptyBodyWhenPostHasImages() {
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "元")));
+		when(postMapper.findImageKeys(POST_ID)).thenReturn(List.of("posts/a.jpg"));
+		when(postMapper.updateBody(POST_ID, "", NOW)).thenReturn(1);
+
+		service.updateBody(ME, POST_ID, "");
+
+		verify(postMapper).updateBody(POST_ID, "", NOW);
+	}
+
+	@Test
+	@DisplayName("updateBody は画像の無い投稿なら、本文を空にすると 422")
+	void updateRejectsEmptyBodyWhenPostHasNoImages() {
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "元")));
+		when(postMapper.findImageKeys(POST_ID)).thenReturn(List.of());
+
+		assertThatThrownBy(() -> service.updateBody(ME, POST_ID, " ")).isInstanceOf(ValidationException.class);
+
+		verify(postMapper, never()).updateBody(any(), any(), any());
+	}
+
+	@Test
+	@DisplayName("delete は画像のキーを行を消す前に読み、消せたあとに deleteAll へ渡す")
+	void deleteRemovesImagesFromStorage() {
+		storage.put("posts/a.jpg", new byte[] { 1 }, "image/jpeg");
+		storage.put("posts/b.png", new byte[] { 2 }, "image/png");
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "自分")));
+		when(postMapper.findImageKeys(POST_ID)).thenReturn(List.of("posts/a.jpg", "posts/b.png"));
+		when(postMapper.delete(POST_ID)).thenReturn(1);
+
+		service.delete(ME, POST_ID);
+
+		InOrder order = inOrder(postMapper);
+		order.verify(postMapper).findImageKeys(POST_ID);
+		order.verify(postMapper).delete(POST_ID);
+		assertThat(storage.deletedKeys()).containsExactly("posts/a.jpg", "posts/b.png");
+		assertThat(storage.objects()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("delete は deleteAll が失敗しても例外にしない")
+	void deleteSucceedsEvenWhenStorageDeleteFails() {
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "自分")));
+		when(postMapper.findImageKeys(POST_ID)).thenReturn(List.of("posts/a.jpg"));
+		when(postMapper.delete(POST_ID)).thenReturn(1);
+		storage.failDeletes();
+
+		service.delete(ME, POST_ID);
+
+		verify(postMapper).delete(POST_ID);
+	}
+
+	@Test
+	@DisplayName("delete は行が消せなかった（0 行）ときは、画像を消さない")
+	void deleteKeepsImagesWhenRowNotDeleted() {
+		when(postMapper.findById(POST_ID)).thenReturn(Optional.of(row(ME, "自分")));
+		when(postMapper.findImageKeys(POST_ID)).thenReturn(List.of("posts/a.jpg"));
+		when(postMapper.delete(POST_ID)).thenReturn(0);
+
+		assertThatThrownBy(() -> service.delete(ME, POST_ID)).isInstanceOf(NotFoundException.class);
+
+		assertThat(storage.deletedKeys()).isEmpty();
+	}
+
+	/** トランザクションの中にいる間だけ {@code active} が true になる、記録用の {@link TransactionOperations}。 */
+	private static final class RecordingTransactions implements TransactionOperations {
+
+		boolean active;
+		int executions;
+
+		@Override
+		public <T> T execute(TransactionCallback<T> action) {
+			executions++;
+			active = true;
+			try {
+				return action.doInTransaction(new SimpleTransactionStatus());
+			}
+			finally {
+				active = false;
+			}
+		}
+
 	}
 
 }

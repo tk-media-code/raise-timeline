@@ -105,7 +105,7 @@ describe('AppLayout', () => {
     await userEvent.paste('こんにちは')
     await userEvent.click(within(dialog).getByRole('button', { name: '投稿する' }))
 
-    expect(api.createPost).toHaveBeenCalledWith('こんにちは')
+    expect(api.createPost).toHaveBeenCalledWith('こんにちは', [])
     expect(await screen.findByText('投稿しました')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })

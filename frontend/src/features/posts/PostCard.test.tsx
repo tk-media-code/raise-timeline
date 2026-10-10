@@ -280,3 +280,60 @@ describe('PostCard の投稿詳細への移動', () => {
     expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
   })
 })
+
+describe('PostCard の画像', () => {
+  const images = [
+    { id: 'i1', url: '/media/i1.jpg' },
+    { id: 'i2', url: '/media/i2.jpg' },
+    { id: 'i3', url: '/media/i3.jpg' },
+  ]
+
+  it('画像が無ければ並びを出さない', () => {
+    renderCard()
+
+    expect(screen.queryByRole('button', { name: /を拡大/ })).not.toBeInTheDocument()
+  })
+
+  it('画像があれば押せる並びで出す', () => {
+    renderCard({ post: makePost({ images }) })
+
+    expect(screen.getAllByRole('button', { name: /を拡大/ })).toHaveLength(3)
+  })
+
+  it('画像の並びを押してビューアを開いても、詳細へは移らない', async () => {
+    const user = userEvent.setup()
+    renderCard({ post: makePost({ images }), linkToDetail: true })
+
+    await user.click(screen.getByRole('button', { name: '画像 2 を拡大' }))
+
+    expect(screen.getByRole('dialog', { name: '画像' })).toBeInTheDocument()
+    expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
+  })
+
+  it('並びの隙間（枠）を押しても、詳細へは移らない', async () => {
+    const user = userEvent.setup()
+    renderCard({ post: makePost({ images }), linkToDetail: true })
+    const frame = screen.getByRole('button', { name: '画像 1 を拡大' }).parentElement as HTMLElement
+
+    await user.click(frame)
+
+    expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
+  })
+
+  it('ビューアの背景・次の画像・閉じるを押しても、詳細へは移らない', async () => {
+    const user = userEvent.setup()
+    renderCard({ post: makePost({ images }), linkToDetail: true })
+    await user.click(screen.getByRole('button', { name: '画像 1 を拡大' }))
+
+    // ビューアの <dialog> はカードの DOM の子孫なので、押下がカードまで届く。
+    await user.click(screen.getByRole('button', { name: '次の画像' }))
+    await user.click(screen.getByRole('img', { name: '画像 2 / 3' }).parentElement as HTMLElement)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '画像 1 を拡大' }))
+    await user.click(screen.getByRole('button', { name: '閉じる' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
+  })
+})
