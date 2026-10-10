@@ -58,7 +58,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 @WebMvcTest(controllers = AuthController.class)
 @Import({ SecurityConfig.class, ApiExceptionHandler.class, LoggingConfig.class, ClockConfig.class,
-		ProblemDetailWriter.class })
+		ProblemDetailWriter.class, RefreshTokenCookies.class })
 @TestPropertySource(properties = {
 		"auth.jwt-secret=dGVzdC1vbmx5LWp3dC1zZWNyZXQtMzItYnl0ZXMtbG9uZyE=",
 		"auth.issuer=raise-timeline",

@@ -1,6 +1,7 @@
 package com.tkmedia.raisetimeline.mapper;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,5 +46,20 @@ public interface UserMapper {
 	 */
 	Optional<ReplacedAvatar> replaceAvatarKey(@Param("id") UUID id, @Param("key") String key,
 			@Param("updatedAt") OffsetDateTime updatedAt);
+
+	/**
+	 * 行を {@code FOR UPDATE} で押さえ、あれば id を返す。無い id では空。
+	 * 退会が、同じ人の進行中の投稿やアイコンの更新（外部キーの検査が行を共有ロックする）を待つために使う。
+	 */
+	Optional<UUID> lockById(UUID id);
+
+	/**
+	 * その人の S3 のキー（投稿の画像と、設定していればアイコン）。行を消すと連鎖して画像の行も消えるので、
+	 * 消す前に集める。順は決まっていない。
+	 */
+	List<String> findImageKeysOf(UUID userId);
+
+	/** 行を消し、消した行数を返す。投稿・画像の行・リフレッシュトークンは外部キーの連鎖で一緒に消える。 */
+	int deleteById(UUID id);
 
 }

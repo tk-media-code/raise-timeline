@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +35,9 @@ class UserMapperTest {
 
 	@Autowired
 	private UserMapper userMapper;
+
+	@Autowired
+	private JdbcTemplate jdbc;
 
 	/** 利用者名の長さの上限（20 文字）に収まるよう、UUID の一部を 8 文字だけ使う。 */
 	private static String suffix() {
@@ -217,6 +222,88 @@ class UserMapperTest {
 		assertThat(after.displayName()).isEqualTo(before.displayName());
 		assertThat(after.bio()).isEqualTo(before.bio());
 		assertThat(after.createdAt().toInstant()).isEqualTo(before.createdAt().toInstant());
+	}
+
+	/** 画像 2 枚つきの投稿を 1 件入れ、画像のキーを返す。 */
+	private List<String> insertPostWithImages(UUID userId) {
+		UUID postId = jdbc.queryForObject("INSERT INTO posts (user_id, body) VALUES (?, '本文') RETURNING id", UUID.class,
+				userId);
+		List<String> keys = List.of("posts/" + UUID.randomUUID() + ".png", "posts/" + UUID.randomUUID() + ".png");
+		for (int position = 0; position < keys.size(); position++) {
+			jdbc.update("INSERT INTO post_images (post_id, object_key, position) VALUES (?, ?, ?)", postId,
+					keys.get(position), position);
+		}
+		return keys;
+	}
+
+	private int count(String sql, Object... args) {
+		Integer count = jdbc.queryForObject(sql, Integer.class, args);
+		return count == null ? 0 : count;
+	}
+
+	@Test
+	@DisplayName("lockById は登録済みの id を返し、知らない id で空")
+	void lockByIdReturnsIdOrEmpty() {
+		String s = suffix();
+		UUID id = userMapper.insert(newUser("user_" + s, "user_" + s + "@example.com"));
+
+		assertThat(userMapper.lockById(id)).hasValue(id);
+		assertThat(userMapper.lockById(UUID.randomUUID())).isEmpty();
+	}
+
+	@Test
+	@DisplayName("findImageKeysOf はその人の投稿画像とアイコンのキーを返し、他人のキーは含めない")
+	void findImageKeysOfReturnsOwnKeysOnly() {
+		String s = suffix();
+		UUID taro = userMapper.insert(newUser("taro_" + s, "taro_" + s + "@example.com"));
+		UUID hanako = userMapper.insert(newUser("hana_" + s, "hana_" + s + "@example.com"));
+		OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+		List<String> taroKeys = insertPostWithImages(taro);
+		insertPostWithImages(hanako);
+		userMapper.replaceAvatarKey(taro, "avatars/" + taro + "/a.png", now);
+		userMapper.replaceAvatarKey(hanako, "avatars/" + hanako + "/a.png", now);
+
+		List<String> keys = userMapper.findImageKeysOf(taro);
+
+		assertThat(keys).containsExactlyInAnyOrder(taroKeys.get(0), taroKeys.get(1), "avatars/" + taro + "/a.png");
+	}
+
+	@Test
+	@DisplayName("findImageKeysOf は画像もアイコンも無い人で空")
+	void findImageKeysOfReturnsEmptyWithoutImages() {
+		String s = suffix();
+		UUID id = userMapper.insert(newUser("user_" + s, "user_" + s + "@example.com"));
+		jdbc.update("INSERT INTO posts (user_id, body) VALUES (?, '文字だけ')", id);
+
+		assertThat(userMapper.findImageKeysOf(id)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("deleteById でその人の投稿・画像の行・リフレッシュトークンも消え、他人の行は残る")
+	void deleteByIdCascadesAndLeavesOthers() {
+		String s = suffix();
+		UUID taro = userMapper.insert(newUser("taro_" + s, "taro_" + s + "@example.com"));
+		UUID hanako = userMapper.insert(newUser("hana_" + s, "hana_" + s + "@example.com"));
+		for (UUID id : List.of(taro, hanako)) {
+			insertPostWithImages(id);
+			jdbc.update("INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, now() + interval '1 day')",
+					id, "hash_" + id);
+		}
+
+		int deleted = userMapper.deleteById(taro);
+
+		assertThat(deleted).isEqualTo(1);
+		assertThat(userMapper.findById(taro)).isEmpty();
+		assertThat(count("SELECT count(*) FROM posts WHERE user_id = ?", taro)).isZero();
+		assertThat(count("SELECT count(*) FROM post_images i JOIN posts p ON p.id = i.post_id WHERE p.user_id = ?", taro))
+				.isZero();
+		assertThat(count("SELECT count(*) FROM refresh_tokens WHERE user_id = ?", taro)).isZero();
+		assertThat(userMapper.findById(hanako)).isPresent();
+		assertThat(count("SELECT count(*) FROM posts WHERE user_id = ?", hanako)).isEqualTo(1);
+		assertThat(count("SELECT count(*) FROM post_images i JOIN posts p ON p.id = i.post_id WHERE p.user_id = ?", hanako))
+				.isEqualTo(2);
+		assertThat(count("SELECT count(*) FROM refresh_tokens WHERE user_id = ?", hanako)).isEqualTo(1);
+		assertThat(userMapper.deleteById(taro)).isZero();
 	}
 
 }
