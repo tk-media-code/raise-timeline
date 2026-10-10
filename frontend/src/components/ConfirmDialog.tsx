@@ -3,7 +3,8 @@ import { useEffect, useId, useRef } from 'react'
 type ConfirmDialogProps = {
   open: boolean
   title: string
-  description: string
+  // 見出しだけで足りるときは省く（説明の段落と aria-describedby を出さない）。
+  description?: string
   confirmLabel: string
   onConfirm: () => void
   onCancel: () => void
@@ -16,6 +17,7 @@ export function ConfirmDialog({ open, title, description, confirmLabel, onConfir
   const cancelRef = useRef<HTMLButtonElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
   const titleId = useId()
+  const descriptionId = useId()
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -39,6 +41,7 @@ export function ConfirmDialog({ open, title, description, confirmLabel, onConfir
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
       // Esc はブラウザが閉じる前に cancel イベントを出す。そのまま閉じさせず、閉じる判断は呼び出し側の状態に任せる。
       onCancel={(event) => {
         event.preventDefault()
@@ -49,7 +52,11 @@ export function ConfirmDialog({ open, title, description, confirmLabel, onConfir
       <h2 id={titleId} className="text-lg font-bold">
         {title}
       </h2>
-      <p className="mt-2 text-sm text-gray-700">{description}</p>
+      {description && (
+        <p id={descriptionId} className="mt-2 text-sm text-gray-700">
+          {description}
+        </p>
+      )}
       <div className="mt-6 flex justify-end gap-3">
         <button
           ref={cancelRef}

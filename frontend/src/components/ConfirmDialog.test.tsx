@@ -77,4 +77,22 @@ describe('ConfirmDialog', () => {
     expect(notPrevented).toBe(false)
     expect(dialog).toHaveAttribute('open')
   })
+
+  it('description があれば説明の段落を出し、aria-describedby でつなぐ', () => {
+    renderDialog(true)
+
+    expect(screen.getByRole('dialog', { name: 'ログアウトしますか？' })).toHaveAccessibleDescription(
+      'この端末のログイン状態を破棄します。',
+    )
+  })
+
+  it('description を省くと説明の段落と aria-describedby を出さない', () => {
+    const { container } = render(
+      <ConfirmDialog open title="コメントを削除しますか？" confirmLabel="削除" onConfirm={() => {}} onCancel={() => {}} />,
+    )
+
+    const dialog = container.querySelector('dialog')!
+    expect(dialog).not.toHaveAttribute('aria-describedby')
+    expect(dialog.querySelector('p')).toBeNull()
+  })
 })
