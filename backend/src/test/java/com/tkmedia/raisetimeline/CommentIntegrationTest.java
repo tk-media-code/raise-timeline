@@ -271,6 +271,31 @@ class CommentIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("nextCursor のコメントが消えても、2 ページ目は最初の 1 件だけで、欠けも重複も無い")
+	void deletedCursorComment() throws Exception {
+		UUID post = createPost(other);
+		List<UUID> ids = new ArrayList<>();
+		for (int i = 0; i < 21; i++) {
+			ids.add(commentMapper.insert(post, i % 2 == 0 ? me : other, "コメント" + i, NOW.plusSeconds(i)));
+		}
+		MvcResult first = comments(me, post, null);
+		String cursor = JsonPath.read(json(first), "$.nextCursor");
+		List<String> firstIds = JsonPath.read(json(first), "$.items[*].id");
+		// nextCursor は 1 ページ目の最後（= 20 件目）のコメントの id。書いたのは other（i = 1）
+		assertThat(cursor).isEqualTo(ids.get(1).toString());
+		assertThat(firstIds.get(19)).isEqualTo(cursor);
+
+		assertThat(statusOf(remove(other, cursor))).isEqualTo(204);
+		MvcResult second = comments(me, post, cursor);
+
+		assertThat(statusOf(second)).isEqualTo(200);
+		List<String> secondIds = JsonPath.read(json(second), "$.items[*].id");
+		assertThat(secondIds).containsExactly(ids.get(0).toString());
+		assertThat(JsonPath.<Object>read(json(second), "$.nextCursor")).isNull();
+		assertThat(firstIds).doesNotContainAnyElementsOf(secondIds);
+	}
+
+	@Test
 	@DisplayName("0 件なら items は空、nextCursor は null")
 	void emptyList() throws Exception {
 		UUID post = createPost(other);
@@ -346,7 +371,7 @@ class CommentIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("削除の要求に comment.deleted の行が 1 本あり、user.id と app.comment.id が付き、本文はどの行にも出ない")
+	@DisplayName("削除の要求に comment.deleted の行が 1 本あり、user.id と app.comment.id が付き、削除の要求のどの行にも本文が出ない")
 	void deleteWritesEvent(CapturedOutput output) throws Exception {
 		UUID post = createPost(other);
 		String body = "ログに出てはいけないコメント " + UUID.randomUUID();
