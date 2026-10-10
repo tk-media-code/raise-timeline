@@ -1,9 +1,11 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Link } from 'react-router'
 import { ApiError } from '../api/client'
 import type { Comment } from '../api/comments'
 import type { Post } from '../api/posts'
+import { postKey } from '../features/posts/queryKeys'
 import { renderWithProviders } from '../test/providers'
 import PostDetailPage from './PostDetailPage'
 
@@ -46,6 +48,17 @@ function apiError(init: Partial<ConstructorParameters<typeof ApiError>[0]>): Api
 
 function renderDetail() {
   return renderWithProviders(<PostDetailPage />, { route: '/posts/p1', path: '/posts/:id' })
+}
+
+// 別の投稿の詳細へ移るためのリンクを足して描く（同じ PostDetailPage のまま URL の id だけが変わる）。
+function renderDetailWithLinkToP2() {
+  return renderWithProviders(
+    <>
+      <Link to="/posts/p2">p2 へ</Link>
+      <PostDetailPage />
+    </>,
+    { route: '/posts/p1', path: '/posts/:id' },
+  )
 }
 
 describe('PostDetailPage', () => {
@@ -174,6 +187,22 @@ describe('PostDetailPage', () => {
 
     expect(await screen.findByRole('img', { name: 'コメント 3 件' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'コメント 3 件' })).not.toBeInTheDocument()
+  })
+
+  it('p1 の入力欄に書いて p2 の詳細へ移ると、入力欄が空になる', async () => {
+    api.getPost.mockImplementation((id: string) => Promise.resolve(makePost({ id })))
+    const { queryClient } = renderDetailWithLinkToP2()
+    // p2 の詳細を先に持たせておく。読み込み中の表示（節ごと消える）を挟まず、同じ節のまま id だけが変わる状況にする。
+    queryClient.setQueryData(postKey('p2'), makePost({ id: 'p2' }))
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('textbox', { name: 'コメント' }))
+    await user.paste('p1 に書きかけ')
+    expect(screen.getByRole('textbox', { name: 'コメント' })).toHaveValue('p1 に書きかけ')
+
+    await user.click(screen.getByRole('link', { name: 'p2 へ' }))
+
+    await waitFor(() => expect(commentsApi.getComments).toHaveBeenCalledWith('p2', null))
+    expect(await screen.findByRole('textbox', { name: 'コメント' })).toHaveValue('')
   })
 
   it('コメントの 404 でホームへ移る', async () => {

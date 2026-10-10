@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query'
-import { screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Comment } from '../../api/comments'
@@ -124,6 +124,24 @@ describe('CommentItem', () => {
     expect(api.deleteComment).toHaveBeenCalledWith('c1')
     expect(await screen.findByText('コメントを削除しました')).toBeInTheDocument()
     expect(listItems(queryClient)).toEqual([])
+  })
+
+  it('確認の「削除」を同じ tick で 2 回押しても、deleteComment は 1 回だけ', async () => {
+    api.deleteComment.mockReturnValue(new Promise(() => {}))
+    renderItem()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'このコメントを削除' }))
+    const confirm = within(screen.getByRole('dialog')).getByRole('button', { name: '削除' })
+
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+
+    // mutate は非同期に deleteComment を呼ぶ。1 回目が呼ばれるのを待ち、2 回目が来る余地を流してから数える。
+    await waitFor(() => expect(api.deleteComment).toHaveBeenCalled())
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(api.deleteComment).toHaveBeenCalledTimes(1)
   })
 
   it('404 は「見つかりません」を通知し、一覧からコメントが除かれ、投稿詳細が読み直しの対象になる', async () => {

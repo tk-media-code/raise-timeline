@@ -1,9 +1,12 @@
-import { screen } from '@testing-library/react'
+import type { InfiniteData } from '@tanstack/react-query'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Comment } from '../../api/comments'
 import { ApiError } from '../../api/client'
+import type { Page, Post } from '../../api/posts'
 import { renderWithProviders } from '../../test/providers'
+import { timelineKeys } from '../posts/queryKeys'
 import { CommentForm } from './CommentForm'
 
 const api = vi.hoisted(() => ({ getComments: vi.fn(), createComment: vi.fn(), deleteComment: vi.fn() }))
@@ -15,6 +18,20 @@ function makeComment(id: string, body: string): Comment {
     author: { id: 'u1', username: 'alice', displayName: 'アリス', avatarUrl: null },
     body,
     createdAt: '2026-10-06T05:09:00Z',
+  }
+}
+
+function makePost(id: string): Post {
+  return {
+    id,
+    author: { id: 'u2', username: 'bob', displayName: 'ボブ', avatarUrl: null },
+    body: '投稿',
+    images: [],
+    likeCount: 0,
+    commentCount: 0,
+    likedByMe: false,
+    edited: false,
+    createdAt: '2026-10-06T05:00:00Z',
   }
 }
 
@@ -95,6 +112,25 @@ describe('CommentForm', () => {
     expect(api.createComment).toHaveBeenCalledTimes(1)
   })
 
+  it('同じ tick で submit が 2 回届いても（ボタンが無効になる前）、createComment は 1 回だけ', async () => {
+    api.createComment.mockReturnValue(new Promise(() => {}))
+    renderForm()
+    await typeBody('こんにちは')
+    const form = submitButton().closest('form')!
+
+    act(() => {
+      fireEvent.submit(form)
+      fireEvent.submit(form)
+    })
+
+    // mutate は非同期に createComment を呼ぶ。1 回目が呼ばれるのを待ち、2 回目が来る余地を流してから数える。
+    await waitFor(() => expect(api.createComment).toHaveBeenCalled())
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(api.createComment).toHaveBeenCalledTimes(1)
+  })
+
   it('送信中はボタンが無効', async () => {
     api.createComment.mockReturnValue(new Promise(() => {}))
     renderForm()
@@ -128,6 +164,19 @@ describe('CommentForm', () => {
     expect(textbox()).not.toHaveAttribute('aria-invalid')
   })
 
+  it('body の誤りが無い 422 は、detail がフォームの上に出て、入力が残る', async () => {
+    api.createComment.mockRejectedValue(apiError({ status: 422, detail: '入力内容に誤りがあります', errors: [] }))
+    renderForm()
+    const user = await typeBody('こんにちは')
+
+    await user.click(submitButton())
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('入力内容に誤りがあります')
+    expect(textbox()).not.toHaveAttribute('aria-invalid')
+    expect(textbox()).toHaveValue('こんにちは')
+  })
+
   it('500 は ID 付きの文言を通知し、入力が残る', async () => {
     api.createComment.mockRejectedValue(apiError({ status: 500, requestId: 'req-1' }))
     const { onPostGone } = renderForm()
@@ -149,5 +198,28 @@ describe('CommentForm', () => {
 
     expect(await screen.findByText('見つかりません')).toBeInTheDocument()
     expect(onPostGone).toHaveBeenCalledTimes(1)
+  })
+
+  it('404 では、onPostGone を呼ぶ時点で、その投稿がタイムラインのキャッシュから除かれている', async () => {
+    api.createComment.mockRejectedValue(apiError({ status: 404, code: 'NOT_FOUND', detail: '見つかりません' }))
+    const onPostGone = vi.fn()
+    let itemIdsWhenGone: string[] = []
+    const { queryClient } = renderWithProviders(<CommentForm postId="p1" onPostGone={onPostGone} />)
+    onPostGone.mockImplementation(() => {
+      const data = queryClient.getQueryData<InfiniteData<Page<Post>, string | null>>(timelineKeys.all)
+      itemIdsWhenGone = data?.pages.flatMap((page) => page.items.map((item) => item.id)) ?? []
+    })
+    const data: InfiniteData<Page<Post>, string | null> = {
+      pages: [{ items: [makePost('p1'), makePost('p2')], nextCursor: null }],
+      pageParams: [null],
+    }
+    queryClient.setQueryData(timelineKeys.all, data)
+    const user = await typeBody('こんにちは')
+
+    await user.click(submitButton())
+
+    expect(await screen.findByText('見つかりません')).toBeInTheDocument()
+    expect(onPostGone).toHaveBeenCalledTimes(1)
+    expect(itemIdsWhenGone).toEqual(['p2'])
   })
 })
