@@ -16,7 +16,7 @@
 - ハートと数。付けていれば塗りつぶしの ♥（`text-pink-600`）、いなければ ♡。ボタンの名前は「いいね n 件」のままにして、`aria-pressed` で状態を伝える（[requirements.md](../requirements.md) の 6 章で決めた名前）
 - 押した瞬間に見た目と数を変え、裏で API を呼ぶ。失敗したら元に戻して通知する（楽観的更新）
 - 一覧のカードでは、ハートと数で 1 つのボタンにする。投稿詳細では、ハート（付け外しのボタン）と数（「いいねした人」へのリンク、名前は「いいねした人を見る（n 件）」）に分ける。どちらも 44px 四方以上にする。プロトタイプでは数のリンクが幅 32px で押しにくかった
-- コメント数は Issue 8 まで、押せない表示（`role="img"`）のまま
+- コメント数は、一覧のカードでは投稿詳細へのリンク、投稿詳細の中では押せない表示（`role="img"`）（[comment.md](comment.md)）
 
 #### 押したときの画面の動き
 
@@ -52,7 +52,7 @@
 - 外す: `likes` から行を消す。無くても 204
 - 投稿の存在確認: `PUT` は存在を先に確かめず、`INSERT ... ON CONFLICT DO NOTHING` の外部キー違反で投稿の有無を見分ける。`DELETE` は付けていなくても 204 なので、消した行数では投稿の有無が分からない。そのため `DELETE` と一覧は、先に `PostMapper.existsById` で確かめて、無ければ 404 にする（一覧は、投稿が無いのか 0 件なのかを区別する）
 - 外部キー違反は制約名で見分ける。`likes_post_id_fkey` は 404 `NOT_FOUND`（付ける直前に投稿が消された）、`likes_user_id_fkey` は 401 `UNAUTHENTICATED`（退会と同時に付けた）。知らない名前は変換せず 500（[error-handling-design.md](../error-handling-design.md)）
-- 投稿の `likeCount` と `likedByMe` は、投稿を返すときに `likes` を数える。1 ページの問い合わせは、本体・画像・いいね数・自分のいいねの 4 本で、ページの件数によらない（コメント数は Issue 8 で 5 本目になる）。空のページでは問い合わせない（[timeline.md](timeline.md) の 4 章）
+- 投稿の `likeCount` と `likedByMe` は、投稿を返すときに `likes` を数える。1 ページの問い合わせは、本体・画像・いいね数・自分のいいね・コメント数の 5 本で、ページの件数によらない（コメント数は [comment.md](comment.md)）。空のページでは問い合わせない（[timeline.md](timeline.md) の 4 章）
 - 一覧: 並びとカーソルは `likes.id`。`nextCursor` には返す最後の行の `likes.id` を入れ、画面はそのまま送り返す。項目は UserCard で、`isFollowing` は Issue 9 まで false 固定にして、SQL に `follows` は出さない（[database-design.md](../database-design.md) の 5 章）。`email` と `password_hash` は読まない
 - いいねの出来事のログは足さない。[logging-design.md](../logging-design.md) の 3 章の表に無く、要求ログ（`http.request`）で追えるため
 
@@ -68,7 +68,7 @@
 - 外すと 204。`likeCount` が戻り、`likedByMe` が false
 - 自分の投稿にも付けられる
 - いいねした人の一覧に、付けた人が新しい順に UserCard で返る。`isFollowing` が付く（`isFollowing` は Issue 9 で確かめる。それまでは false）
-- タイムラインと投稿詳細の `likeCount`・`likedByMe` が、`likes` を数えた値になる。1 ページの問い合わせは 4 本で、ページの件数によらない
+- タイムラインと投稿詳細の `likeCount`・`likedByMe` が、`likes` を数えた値になる。1 ページの問い合わせは 5 本で、ページの件数によらない
 - 投稿を消すと、その投稿のいいねも消える。退会すると、本人のいいねと、本人の投稿へのいいねが消え、他人の投稿の `likeCount` が減る
 
 ### 入力の境界

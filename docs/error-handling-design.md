@@ -60,7 +60,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 
 - 例外の変換は `@RestControllerAdvice` の 1 クラス（`ApiExceptionHandler`）に集める。`ResponseEntityExceptionHandler` を継承し、Spring が投げる例外（JSON の構文エラー、`@Valid` の失敗、multipart の超過など）も同じ形にする
 - 業務の例外はサービス層が投げる。`NotFoundException`（404）、`ForbiddenException`（403）、`ConflictException`（409、どの項目かを持つ）、`InvalidCredentialsException`（401）、`InvalidRefreshTokenException`（401）、`InvalidPasswordException`（401。退会の確認）、`UnsupportedImageTypeException`（415）、`FileTooLargeException`（413。アイコンの 2 MB 超のように、要求全体の上限より小さい上限はアプリで検査する）、`ValidationException`（422。サービス層で検証するテーブルをまたぐ規則）、`ImageStorageUnavailableException`（503）
-- いいねやコメントを付けようとした投稿が同時に消されて外部キー違反になったときは、404 `NOT_FOUND` に変換する（`ON CONFLICT DO NOTHING` は一意制約にしか効かない）。退会と同時に走った操作が、操作した本人（`user_id`、`follower_id`）への外部キー違反になったときは 401 `UNAUTHENTICATED` に変換する。フォローの相手（`followee_id`）への外部キー違反は、相手が同時に退会したということなので 404 `NOT_FOUND` にする。どの列への違反かは制約名（PostgreSQL の既定の名前 `<テーブル>_<列>_fkey`。例 `follows_followee_id_fkey`）で見分ける。知らない制約名の違反は変換せず 500 `INTERNAL_ERROR` のままにして、ERROR のログで気づけるようにする
+- いいねやコメントを付けようとした投稿が同時に消されて外部キー違反になったときは、404 `NOT_FOUND` に変換する（`ON CONFLICT DO NOTHING` は一意制約にしか効かない）。退会と同時に走った操作が、操作した本人（`user_id`、`follower_id`）への外部キー違反になったときは 401 `UNAUTHENTICATED` に変換する。フォローの相手（`followee_id`）への外部キー違反は、相手が同時に退会したということなので 404 `NOT_FOUND` にする。どの列への違反かは制約名（PostgreSQL の既定の名前 `<テーブル>_<列>_fkey`。例 `follows_followee_id_fkey`）で見分ける。制約名を調べる部分は `ConstraintViolations` に共有し、名前から何にするかは機能ごとに持つ。知らない制約名の違反は変換せず 500 `INTERNAL_ERROR` のままにして、ERROR のログで気づけるようにする
 - Spring Security の 401 と 403 は、例外ハンドラに届く前に止まる。`AuthenticationEntryPoint` と `AccessDeniedHandler` を差し替えて、同じ Problem Details を書き出す
 - 存在しない URL（`NoResourceFoundException`）は 404 `NOT_FOUND` にする
 - 想定外の例外（`Exception`）は 500 `INTERNAL_ERROR`。`detail` は固定文言
