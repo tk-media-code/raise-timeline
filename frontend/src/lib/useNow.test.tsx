@@ -86,4 +86,27 @@ describe('useNow', () => {
 
     expect(screen.getByText('a: 2026-10-11T03:00:00.000Z')).toBeInTheDocument()
   })
+
+  it('時計が戻っていても、次に使うときは今の時刻から始まる', () => {
+    const first = render(<Clock name="a" />)
+    first.unmount()
+
+    vi.setSystemTime(new Date('2026-10-10T21:00:00Z'))
+    render(<Clock name="a" />)
+
+    expect(screen.getByText('a: 2026-10-10T21:00:00.000Z')).toBeInTheDocument()
+  })
+
+  it('タイマーが動き出しても、使い始めの最初の描画のほかに描き直さない', () => {
+    const renders = vi.fn()
+    function Counted() {
+      renders()
+      return <p>{useNow().toISOString()}</p>
+    }
+
+    render(<Counted />)
+
+    // useSyncExternalStore は描画のあとに購読し、値が変わっていればもう一度描く。購読で時刻を取り直すと、ここが 2 になる。
+    expect(renders).toHaveBeenCalledTimes(1)
+  })
 })

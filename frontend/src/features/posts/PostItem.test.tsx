@@ -54,8 +54,8 @@ function renderItem(options: { post?: Post } = {}) {
   return { ...result, queryClient, onRemoved }
 }
 
-// 実際の一覧と同じく、投稿はキャッシュから読み、ul > li の中に並べる（onRemoved は渡さない）。
-function renderList(posts: Post[]) {
+// 実際の一覧と同じく、投稿はキャッシュから読み、ul > li の中に並べる。onRemoved は、渡したときだけ PostItem に渡す。
+function renderList(posts: Post[], onRemoved?: () => void) {
   const queryClient = createQueryClient()
   const data: Data = { pages: [{ items: posts, nextCursor: null }], pageParams: [null] }
   queryClient.setQueryData(timelineKeys.all, data)
@@ -72,7 +72,7 @@ function renderList(posts: Post[]) {
         <ul>
           {cached?.pages[0]?.items.map((post) => (
             <li key={post.id}>
-              <PostItem post={post} timeStyle="absolute" linkToDetail={false} />
+              <PostItem post={post} timeStyle="absolute" linkToDetail={false} onRemoved={onRemoved} />
             </li>
           ))}
         </ul>
@@ -316,16 +316,19 @@ describe('PostItem', () => {
     expect(second).toHaveFocus()
   })
 
-  it('onRemoved で画面を移る場合（投稿詳細）は、フォーカスを動かさない', async () => {
+  it('onRemoved で画面を移る場合（投稿詳細）は、フォーカスを動かさない。隣の項目にも見出しにも移さず、移った先に任せる', async () => {
     api.deletePost.mockResolvedValue(undefined)
-    const { onRemoved } = renderItem()
+    const onRemoved = vi.fn()
+    renderList([makePost({ id: 'p1' }), makePost({ id: 'p2' })], onRemoved)
     const user = userEvent.setup()
-    await openMenu(user)
-    await user.click(screen.getByRole('button', { name: '削除' }))
+    const [first, second] = screen.getAllByRole('article')
 
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '削除' }))
+    await deleteIn(user, first as HTMLElement)
 
     await vi.waitFor(() => expect(onRemoved).toHaveBeenCalledTimes(1))
-    expect(screen.getByRole('button', { name: 'この投稿の操作' })).toHaveFocus()
+    await vi.waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1))
+    expect(second).not.toHaveFocus()
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus()
+    expect(document.activeElement).toBe(document.body)
   })
 })

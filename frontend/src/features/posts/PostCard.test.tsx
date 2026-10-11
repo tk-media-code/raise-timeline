@@ -455,4 +455,19 @@ describe('PostCard の相対時刻の更新', () => {
 
     expect(screen.getByText('3 分前')).toBeInTheDocument()
   })
+
+  it('絶対時刻のカードだけのときは、タイマーを作らない（今の時刻を購読しない）', () => {
+    vi.useFakeTimers()
+    renderCard({ timeStyle: 'absolute', now: undefined })
+    expect(screen.getByText('2026/10/06 14:09')).toBeInTheDocument()
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('相対時刻のカードは、タイマーを 1 本使う', () => {
+    vi.useFakeTimers()
+    renderCard({ timeStyle: 'relative', now: undefined })
+
+    expect(vi.getTimerCount()).toBe(1)
+  })
 })

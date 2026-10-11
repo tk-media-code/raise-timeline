@@ -18,7 +18,8 @@ describe('UserLink', () => {
     const { container, unmount } = renderWithProviders(<UserLink user={alice} />)
 
     expect(container.querySelector('img')).toBeNull()
-    expect(screen.getByRole('link')).toHaveTextContent('ア')
+    // リンク全体の文字には表示名も入るので、頭文字は丸の中だけを完全一致で見る。
+    expect(screen.getByRole('link').querySelector('[aria-hidden="true"]')?.textContent).toBe('ア')
     unmount()
 
     const { container: withImage } = renderWithProviders(

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setAccessToken } from '../auth/tokenStore'
 import { getMe, getUser, getUserPosts, searchUsers, updateAvatar, updateMe, withdraw } from './users'
 
 const user = {
@@ -29,6 +30,7 @@ describe('プロフィールの API', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    setAccessToken(null)
   })
 
   it('getUser は GET /api/users/{username} を呼ぶ', async () => {
@@ -109,7 +111,8 @@ describe('プロフィールの API', () => {
     expect(new Headers(init.headers).get('Content-Type')).toBeNull()
   })
 
-  it('withdraw は DELETE /api/users/me に { password } の JSON を送り、204 なら何も返さない', async () => {
+  it('withdraw は DELETE /api/users/me に { password } の JSON を送り、アクセストークンを Bearer で付け、204 なら何も返さない', async () => {
+    setAccessToken('access-1')
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
 
     const result = await withdraw('correct-horse-1')
@@ -119,7 +122,23 @@ describe('プロフィールの API', () => {
     expect(path).toBe('/api/users/me')
     expect(init.method).toBe('DELETE')
     expect(init.body).toBe('{"password":"correct-horse-1"}')
-    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
+    const headers = new Headers(init.headers)
+    expect(headers.get('Content-Type')).toBe('application/json')
+    expect(headers.get('Authorization')).toBe('Bearer access-1')
+  })
+
+})
+
+describe('ユーザー検索の API', () => {
+  const fetchMock = vi.fn()
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('searchUsers は /api/users?q= に語をエンコードして付け、cursor があれば &cursor= を付ける', async () => {

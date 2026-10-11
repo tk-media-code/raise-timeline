@@ -285,6 +285,59 @@ describe('useToggleLike', () => {
     await waitFor(() => expect(likers.result.current.isSuccess).toBe(true))
   })
 
+  it('同じ QueryClient の 2 つのフック（一覧と詳細のカード）は状態を共有する。片方で付けて、もう片方で押すと外す', async () => {
+    const likes = holdCalls(api.likePost)
+    const unlikes = holdCalls(api.unlikePost)
+    client = createQueryClient()
+    const post = makePost()
+    client.setQueryData<Data>(timelineKeys.all, { pages: [{ items: [post], nextCursor: null }], pageParams: [null] })
+    client.setQueryData(postKey(post.id), post)
+    function wrapper({ children }: { children: ReactNode }) {
+      return <TestProviders queryClient={client}>{children}</TestProviders>
+    }
+    const { result } = renderHook(() => ({ list: useToggleLike(post), detail: useToggleLike(post) }), { wrapper })
+
+    await pressAndWaitSent(result.current.list, api.likePost)
+    // 詳細のフックの post は古いまま（likedByMe false）。状態を共有していなければ、ここで「付ける」になってしまう。
+    press(result.current.detail)
+    await expectShown(false, 2)
+    await settle(likes, 0)
+    await waitFor(() => expect(api.unlikePost).toHaveBeenCalledTimes(1))
+    await settle(unlikes, 0)
+
+    expect(api.likePost).toHaveBeenCalledTimes(1)
+    await expectShown(false, 2)
+  })
+
+  it('付ける要求が失敗したあとも、開いていない「いいねした人」の一覧はデータが空に戻る（後始末は成功のときだけではない）', async () => {
+    const likes = holdCalls(api.likePost)
+    const { result } = setup()
+    client.setQueryData(likersKeys.of('p1'), { pages: [], pageParams: [] })
+    client.setQueryData(likersKeys.of('p2'), { pages: [], pageParams: [] })
+
+    press(result.current)
+    await waitFor(() => expect(api.likePost).toHaveBeenCalledTimes(1))
+    await settle(likes, 0, { reject: apiError({ status: 500 }) })
+
+    await expectShown(false, 2)
+    await waitFor(() => expect(client.getQueryData(likersKeys.of('p1'))).toBeUndefined())
+    expect(client.getQueryData(likersKeys.of('p2'))).toBeDefined()
+  })
+
+  it('画面が無くなったあとの 404 では、通知と一覧の掃除はするが、onRemoved は呼ばない', async () => {
+    const likes = holdCalls(api.likePost)
+    const { result, unmount } = setup()
+
+    press(result.current)
+    await waitFor(() => expect(api.likePost).toHaveBeenCalledTimes(1))
+    unmount()
+    await settle(likes, 0, { reject: apiError({ status: 404, code: 'NOT_FOUND', detail: '見つかりません' }) })
+
+    await waitFor(() => expect(listed()).toBeUndefined())
+    expect(detail()).toBeUndefined()
+    expect(onRemoved).not.toHaveBeenCalled()
+  })
+
   // アプリの QueryClient は 1 つで、ログアウトやセッション切れで clear() される。MutationCache が空になり、
   // 順番待ちの要求は二度と動かない（onSettled も来ない）。
   describe('client.clear() のあと', () => {
@@ -349,6 +402,31 @@ describe('useToggleLike', () => {
       await expectShown(true, 3)
       await settle(likes, 1)
       await expectShown(true, 3)
+    })
+
+    it('clear の前から送信中だった要求が終わっても、押し直して作られた新しい状態は消さない（続けて押すと、新しい状態から外す）', async () => {
+      const likes = holdCalls(api.likePost)
+      const unlikes = holdCalls(api.unlikePost)
+      const { result } = setup()
+      await pressAndWaitSent(result.current, api.likePost)
+      act(() => {
+        client.clear()
+      })
+      putAgainAfterClear()
+      await pressAndWaitSent(result.current, api.likePost)
+      await expectShown(true, 3)
+
+      // 古い要求が先に終わる。新しい状態（押し直した分）は残っていなければならない。
+      await settle(likes, 0)
+      // post.likedByMe は false のまま。新しい状態が残っていなければ、ここで「付ける」になってしまう。
+      press(result.current)
+      await expectShown(false, 2)
+      await settle(likes, 1)
+      await waitFor(() => expect(api.unlikePost).toHaveBeenCalledTimes(1))
+      await settle(unlikes, 0)
+
+      await expectShown(false, 2)
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
   })
 })

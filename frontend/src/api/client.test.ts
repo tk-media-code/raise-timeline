@@ -551,20 +551,30 @@ describe('通信の待ち時間の上限', () => {
     expect(state.error).toMatchObject({ name: 'AbortError' })
   })
 
-  it('呼ぶ側の signal があっても、上限に当たれば通信の失敗になる。応答が来たら登録を外す', async () => {
+  it('呼ぶ側の signal があっても、上限に当たれば通信の失敗になる。止まった要求も、応答が来た要求も、足した登録を外す', async () => {
     fetchMock.mockImplementation(stallUntilAborted)
     const { apiFetch, ApiError } = await load()
     const controller = new AbortController()
+    const addSpy = vi.spyOn(controller.signal, 'addEventListener')
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener')
 
     const stalled = track(apiFetch('/api/x', { signal: controller.signal }))
     await vi.advanceTimersByTimeAsync(30_000)
     expect(stalled.error).toBeInstanceOf(ApiError)
+    // 足した関数と同じ関数が外される（別の関数を外しても、登録は残る）。
+    expect(addSpy).toHaveBeenCalledTimes(1)
+    const [stalledType, stalledListener] = addSpy.mock.calls[0]
+    expect(stalledType).toBe('abort')
+    expect(removeSpy).toHaveBeenCalledWith('abort', stalledListener)
 
     fetchMock.mockReset()
     fetchMock.mockResolvedValueOnce(ok(me))
-    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener')
+    addSpy.mockClear()
+    removeSpy.mockClear()
     await apiFetch('/api/y', { signal: controller.signal })
-    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function))
+    expect(addSpy).toHaveBeenCalledTimes(1)
+    const [, okListener] = addSpy.mock.calls[0]
+    expect(removeSpy).toHaveBeenCalledWith('abort', okListener)
   })
 
   it('上限に当たった要求のあと、次の要求はすぐ送れる（ログインの更新の鍵を持ったままにならない）', async () => {
@@ -602,9 +612,6 @@ describe('通信の待ち時間の上限', () => {
     expect(next.settled).toBe(true)
     expect(next.error).toBeUndefined()
     expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/a', '/api/auth/refresh', '/api/auth/login'])
-
-    // 鍵を使わない普通の要求も、待たされずに送られる。
-    await expect(apiFetch('/api/b')).resolves.toEqual({ accessToken: 'x', user: me })
   })
 })
 

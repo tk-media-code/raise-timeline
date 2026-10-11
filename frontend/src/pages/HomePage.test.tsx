@@ -231,6 +231,30 @@ describe('HomePage', () => {
     expect(callsTo(mock, '/api/timeline/all')).toHaveLength(1)
   })
 
+  it('タブを切り替えると、一覧の要素ごと作り直される（前のタブの一覧の要素を使い回さない）', async () => {
+    stubFetch((url) =>
+      url.startsWith('/api/timeline/all')
+        ? json({ items: [makePost('p-all', 'すべての投稿')], nextCursor: null })
+        : json({ items: [makePost('p-following', 'フォロー中の投稿')], nextCursor: null }),
+    )
+    renderWithProviders(<HomePage />)
+    const user = userEvent.setup()
+    const followingList = await screen.findByRole('list', { name: 'タイムライン' })
+
+    await user.click(within(tabNav()).getByRole('link', { name: 'すべて' }))
+    await screen.findByText('すべての投稿')
+    const allList = screen.getByRole('list', { name: 'タイムライン' })
+
+    expect(allList).not.toBe(followingList)
+    expect(followingList).not.toBeInTheDocument()
+
+    await user.click(within(tabNav()).getByRole('link', { name: 'フォロー中' }))
+    await screen.findByText('フォロー中の投稿')
+
+    expect(screen.getByRole('list', { name: 'タイムライン' })).not.toBe(allList)
+    expect(allList).not.toBeInTheDocument()
+  })
+
   it('/?tab=all で開いたあと「フォロー中」へ行っても、「すべて」は読み直さない', async () => {
     const mock = stubFetch(() => json(EMPTY))
     renderWithProviders(<HomePage />, { route: '/?tab=all' })

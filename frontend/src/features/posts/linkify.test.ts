@@ -33,7 +33,7 @@ describe('linkify', () => {
     ['Https://example.com', 'Https://example.com'],
     ['HTTPS://EXAMPLE.COM/a', 'HTTPS://EXAMPLE.COM/a'],
     ['hTTp://a.example/B?c=D', 'hTTp://a.example/B?c=D'],
-  ])('スキームの大文字小文字を区別してリンクにする。url は書かれたまま（%s）', (body, url) => {
+  ])('スキームの大文字小文字を区別せずにリンクにする。url は書かれたまま（%s）', (body, url) => {
     expect(linkify(`見て ${body} です`)).toEqual([text('見て '), link(url), text(' です')])
   })
 
