@@ -60,7 +60,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 
 - 例外の変換は `@RestControllerAdvice` の 1 クラス（`ApiExceptionHandler`）に集める。`ResponseEntityExceptionHandler` を継承し、Spring が投げる例外（JSON の構文エラー、`@Valid` の失敗、multipart の超過など）も同じ形にする
 - 業務の例外はサービス層が投げる。`NotFoundException`（404）、`ForbiddenException`（403）、`ConflictException`（409、どの項目かを持つ）、`InvalidCredentialsException`（401）、`InvalidRefreshTokenException`（401）、`InvalidPasswordException`（401。退会の確認）、`UnsupportedImageTypeException`（415）、`FileTooLargeException`（413。アイコンの 2 MB 超のように、要求全体の上限より小さい上限はアプリで検査する）、`ValidationException`（422。サービス層で検証するテーブルをまたぐ規則）、`ImageStorageUnavailableException`（503）
-- いいねやコメントを付けようとした投稿が同時に消されて外部キー違反になったときは、404 `NOT_FOUND` に変換する（`ON CONFLICT DO NOTHING` は一意制約にしか効かない）。退会と同時に走った操作が、操作した本人（`user_id`、`follower_id`）への外部キー違反になったときは 401 `UNAUTHENTICATED` に変換する。フォローの相手（`followee_id`）への外部キー違反は、相手が同時に退会したということなので 404 `NOT_FOUND` にする。どの列への違反かは制約名（PostgreSQL の既定の名前 `<テーブル>_<列>_fkey`。例 `follows_followee_id_fkey`）で見分ける。制約名を調べる部分は `ConstraintViolations` に共有し、名前から何にするかは機能ごとに持つ。知らない制約名の違反は変換せず 500 `INTERNAL_ERROR` のままにして、ERROR のログで気づけるようにする
+- いいねやコメントを付けようとした投稿が同時に消されて外部キー違反になったときは、404 `NOT_FOUND` に変換する（`ON CONFLICT DO NOTHING` は一意制約にしか効かない）。退会と同時に走った操作が、操作した本人（`user_id`、`follower_id`）への外部キー違反になったときは 401 `UNAUTHENTICATED` に変換する。ただしログインだけは例外で、照合のあいだに本人が退会してトークンの挿入が外部キー違反になったときは、401 `INVALID_CREDENTIALS` に変換する（まだ認証を通っておらず、メールアドレスが無い場合と同じ応答にするため。[features/auth.md](features/auth.md) の 4 章）。フォローの相手（`followee_id`）への外部キー違反は、相手が同時に退会したということなので 404 `NOT_FOUND` にする。どの列への違反かは制約名（PostgreSQL の既定の名前 `<テーブル>_<列>_fkey`。例 `follows_followee_id_fkey`）で見分ける。制約名を調べる部分は `ConstraintViolations` に共有し、名前から何にするかは機能ごとに持つ。知らない制約名の違反は変換せず 500 `INTERNAL_ERROR` のままにして、ERROR のログで気づけるようにする
 - Spring Security の 401 と 403 は、例外ハンドラに届く前に止まる。`AuthenticationEntryPoint` と `AccessDeniedHandler` を差し替えて、同じ Problem Details を書き出す
 - 存在しない URL（`NoResourceFoundException`）は 404 `NOT_FOUND` にする
 - 想定外の例外（`Exception`）は 500 `INTERNAL_ERROR`。`detail` は固定文言
@@ -118,7 +118,7 @@ nginx が `client_max_body_size` で止めた 413 は nginx の HTML が返る�
 | 429 | 「しばらく待ってから再試行してください」 |
 | 500 | 通知で `detail` と requestId を表示する。「問題が起きました（ID: <requestId>）」の形で、Problem Details の `requestId` を省略せず全桁出す（[logging-design.md](logging-design.md) の 6 章）。入力中の内容は消さない |
 | 503 `IMAGE_STORAGE_UNAVAILABLE` | 「画像の保存が設定されていません」。開発環境で S3 を設定していないときだけ起きる |
-| 通信失敗（応答なし） | 「通信に失敗しました」。一覧なら「再試行」ボタンを出す |
+| 通信失敗（応答なし） | 「通信に失敗しました」。一覧なら「再試行」ボタンを出す。応答が返らないまま止まった要求も、待ち時間の上限（普通の要求は 30 秒、画像つきの投稿やアイコンのように本文が `FormData` の要求は 120 秒）で打ち切り、同じ通信失敗（`status` 0）として扱う。新しい文言は足さない。画像 4 枚の送信は遅い回線で 30 秒を超えうるので、長く取る。上限が無いと、止まった要求が画面の「送信中」を、止まった更新が全タブのログイン系の要求を、いつまでも待たせる。上限は応答の先頭（ヘッダー）が届くまで。届いたあとの本文の読み込みには掛けない |
 | 楽観的更新の失敗（いいね、フォロー） | 見た目を元に戻し、通知で伝える |
 | 描画そのものの例外 | React の ErrorBoundary で「問題が起きました。再読み込みしてください」の画面を出す |
 | 存在しない URL | 「ページが見つかりません」の画面とホームへのリンク |
