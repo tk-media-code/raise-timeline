@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import type { Post } from '../../api/posts'
 import { useAuth } from '../../auth/AuthProvider'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { prepareFocusAfterRemoval } from '../../components/focusAfterRemoval'
 import { useToast } from '../../components/Toast'
 import { useToggleLike } from '../likes/useToggleLike'
 import { EditPostDialog } from './EditPostDialog'
@@ -29,21 +30,26 @@ export function PostItem({ post, timeStyle, linkToDetail, onRemoved, showLikersL
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const deleting = useRef(false)
+  const articleRef = useRef<HTMLElement>(null)
   const isMine = user?.id === post.author.id
 
   async function confirmDelete() {
     setConfirming(false)
     if (deleting.current) return
     deleting.current = true
+    // 一覧から消えると、フォーカスも一緒に消える。onRemoved で画面を移るとき（投稿詳細）は、移った先に任せる。
+    const restoreFocus = onRemoved ? null : prepareFocusAfterRemoval(articleRef.current)
     try {
       await remove.mutateAsync(post.id)
       toast.show('投稿を削除しました')
       onRemoved?.()
+      restoreFocus?.()
     } catch (error) {
       toast.show(failureMessage(error), 'error')
       if (isApiError(error, 404)) {
         await forgetMissingPost(client, post.id)
         onRemoved?.()
+        restoreFocus?.()
       }
     } finally {
       deleting.current = false
@@ -53,6 +59,7 @@ export function PostItem({ post, timeStyle, linkToDetail, onRemoved, showLikersL
   return (
     <>
       <PostCard
+        ref={articleRef}
         post={post}
         isMine={isMine}
         timeStyle={timeStyle}

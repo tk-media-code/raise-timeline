@@ -1,7 +1,8 @@
 import type { InfiniteData } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Comment } from '../../api/comments'
 import { ApiError } from '../../api/client'
 import type { Page, Post } from '../../api/posts'
@@ -54,6 +55,40 @@ function renderItem(comment = makeComment(), now?: Date) {
   queryClient.setQueryData(postKey('p1'), makePost())
   const result = renderWithProviders(<CommentItem comment={comment} postId="p1" now={now} />, { queryClient })
   return { ...result, queryClient }
+}
+
+// 実際の一覧と同じく、コメントはキャッシュから読み、ul > li の中に並べる。
+function renderList(comments: Comment[]) {
+  const queryClient = createQueryClient()
+  const data: Data = { pages: [{ items: comments, nextCursor: null }], pageParams: [null] }
+  queryClient.setQueryData(commentsKeys.of('p1'), data)
+  queryClient.setQueryData(postKey('p1'), makePost())
+  function List() {
+    const { data: cached } = useQuery<Data>({
+      queryKey: commentsKeys.of('p1'),
+      // 取り直しが走っても、消した結果のキャッシュをそのまま返す（元の一覧に戻さない）。
+      queryFn: () => queryClient.getQueryData<Data>(commentsKeys.of('p1')) ?? data,
+      staleTime: Infinity,
+    })
+    return (
+      <main>
+        <h1>投稿</h1>
+        <ul>
+          {cached?.pages[0]?.items.map((comment) => (
+            <li key={comment.id}>
+              <CommentItem comment={comment} postId="p1" />
+            </li>
+          ))}
+        </ul>
+      </main>
+    )
+  }
+  return renderWithProviders(<List />, { queryClient })
+}
+
+async function deleteIn(user: ReturnType<typeof userEvent.setup>, article: HTMLElement) {
+  await user.click(within(article).getByRole('button', { name: 'このコメントを削除' }))
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '削除' }))
 }
 
 function listItems(queryClient: ReturnType<typeof createQueryClient>): Comment[] {
@@ -168,5 +203,95 @@ describe('CommentItem', () => {
 
     expect(await screen.findByText(/req-1/)).toBeInTheDocument()
     expect(listItems(queryClient)).toHaveLength(1)
+  })
+})
+
+describe('CommentItem の削除のあとのフォーカス', () => {
+  beforeEach(() => {
+    api.deleteComment.mockReset()
+    useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u1', username: 'alice' } })
+  })
+
+  it('一覧でコメントを消すと、フォーカスが次のコメントに移る', async () => {
+    api.deleteComment.mockResolvedValue(undefined)
+    renderList([makeComment({ id: 'c1' }), makeComment({ id: 'c2' }), makeComment({ id: 'c3' })])
+    const user = userEvent.setup()
+    const [first, second] = screen.getAllByRole('article')
+
+    await deleteIn(user, first as HTMLElement)
+
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2))
+    expect(second).toHaveFocus()
+  })
+
+  it('最後のコメントを消すと、フォーカスが前のコメントに移る', async () => {
+    api.deleteComment.mockResolvedValue(undefined)
+    renderList([makeComment({ id: 'c1' }), makeComment({ id: 'c2' })])
+    const user = userEvent.setup()
+    const [first, second] = screen.getAllByRole('article')
+
+    await deleteIn(user, second as HTMLElement)
+
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1))
+    expect(first).toHaveFocus()
+  })
+
+  it('最後の 1 件を消すと、フォーカスがページの見出しに移る', async () => {
+    api.deleteComment.mockResolvedValue(undefined)
+    renderList([makeComment({ id: 'c1' })])
+    const user = userEvent.setup()
+
+    await deleteIn(user, screen.getByRole('article'))
+
+    await waitFor(() => expect(screen.queryByRole('article')).not.toBeInTheDocument())
+    expect(screen.getByRole('heading', { level: 1 })).toHaveFocus()
+  })
+
+  it('消すのに失敗したら、フォーカスは動かない（「このコメントを削除」に戻ったまま）', async () => {
+    api.deleteComment.mockRejectedValue(apiError({ status: 500 }))
+    renderList([makeComment({ id: 'c1' }), makeComment({ id: 'c2' })])
+    const user = userEvent.setup()
+    const [first] = screen.getAllByRole('article')
+
+    await deleteIn(user, first as HTMLElement)
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(within(first as HTMLElement).getByRole('button', { name: 'このコメントを削除' })).toHaveFocus()
+    expect(screen.getAllByRole('article')).toHaveLength(2)
+  })
+
+  it('404 で一覧から除かれたときも、フォーカスが次のコメントに移る', async () => {
+    api.deleteComment.mockRejectedValue(apiError({ status: 404, code: 'NOT_FOUND', detail: '見つかりません' }))
+    renderList([makeComment({ id: 'c1' }), makeComment({ id: 'c2' })])
+    const user = userEvent.setup()
+    const [first, second] = screen.getAllByRole('article')
+
+    await deleteIn(user, first as HTMLElement)
+
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1))
+    expect(second).toHaveFocus()
+  })
+})
+
+describe('CommentItem の相対時刻の更新', () => {
+  beforeEach(() => {
+    useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u9', username: 'zed' } })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('now を渡さないとき、1 分前のコメントは 60 秒後に「2 分前」になる', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-06T05:10:30Z'))
+    renderItem()
+    expect(screen.getByText('1 分前')).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
+
+    expect(screen.getByText('2 分前')).toBeInTheDocument()
   })
 })
