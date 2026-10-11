@@ -17,6 +17,12 @@ export function getUserPosts(username: string, cursor: string | null): Promise<P
   return apiFetch<Page<Post>>(`/api/users/${encodeURIComponent(username)}/posts${query}`)
 }
 
+// ユーザー検索。q は前後の空白を除いた語（呼ぶ側が検証済み）。cursor は前のページの nextCursor（最初は null）。
+export function searchUsers(q: string, cursor: string | null): Promise<Page<UserCard>> {
+  const cursorPart = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`
+  return apiFetch<Page<UserCard>>(`/api/users?q=${encodeURIComponent(q)}${cursorPart}`)
+}
+
 export function getMe(): Promise<Me> {
   return apiFetch<Me>('/api/users/me')
 }

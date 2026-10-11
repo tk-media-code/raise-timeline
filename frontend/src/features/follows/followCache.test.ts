@@ -6,6 +6,7 @@ import type { UserCard, UserDetail } from '../../api/users'
 import { likersKeys } from '../likes/queryKeys'
 import { userKey } from '../profile/queryKeys'
 import { timelineKeys } from '../posts/queryKeys'
+import { searchKeys } from '../search/queryKeys'
 import { forgetMissingUser, refreshAfterFollow, setFollowingInCache, type FollowTarget } from './followCache'
 import { followKeys } from './queryKeys'
 
@@ -63,6 +64,21 @@ describe('setFollowingInCache', () => {
 
     expect(client.getQueryData<UserDetail>(userKey('alice'))).toMatchObject({ isFollowing: true, followersCount: 6, followingCount: 3 })
     for (const key of [likersKeys.of('p1'), followKeys.following('bob'), followKeys.followers('carol')]) {
+      expect(flags(client.getQueryData<Data>(key))).toEqual([
+        [true, false],
+        [false, true],
+      ])
+    }
+  })
+
+  it('検索結果の全ページの同じ人のカードの isFollowing も書き換え、ほかの人は変えない（検索語が違う 2 つのキャッシュの両方）', async () => {
+    const client = new QueryClient()
+    client.setQueryData(searchKeys.of('ali'), twoPages())
+    client.setQueryData(searchKeys.of('bo'), twoPages())
+
+    await setFollowingInCache(client, alice, true)
+
+    for (const key of [searchKeys.of('ali'), searchKeys.of('bo')]) {
       expect(flags(client.getQueryData<Data>(key))).toEqual([
         [true, false],
         [false, true],
@@ -230,6 +246,17 @@ describe('forgetMissingUser', () => {
     expect(ids(client.getQueryData<Data>(likersKeys.of('p1')))).toEqual(['b', 'c'])
     expect(ids(client.getQueryData<Data>(followKeys.followers('carol')))).toEqual(['b', 'c'])
     expect(client.getQueryState(userKey('alice'))?.isInvalidated).toBe(true)
+  })
+
+  it('検索結果からもその人のカードを除く', async () => {
+    const client = new QueryClient()
+    client.setQueryData(searchKeys.of('ali'), twoPages())
+    client.setQueryData(searchKeys.of('bo'), twoPages())
+
+    await forgetMissingUser(client, alice)
+
+    expect(ids(client.getQueryData<Data>(searchKeys.of('ali')))).toEqual(['b', 'c'])
+    expect(ids(client.getQueryData<Data>(searchKeys.of('bo')))).toEqual(['b', 'c'])
   })
 })
 
