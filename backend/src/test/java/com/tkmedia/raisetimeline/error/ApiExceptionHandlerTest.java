@@ -54,6 +54,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.apache.tomcat.util.http.InvalidParameterException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 
@@ -307,6 +308,22 @@ class ApiExceptionHandlerTest {
 	}
 
 	@Test
+	@DisplayName("書き方の壊れた要求パラメータ（% の後ろが不正）は 400 の BAD_REQUEST になり、値を含む例外の文言は出さず、WARN も ERROR も書かない")
+	void invalidParameterReturns400WithoutLeakingValue(CapturedOutput output) throws Exception {
+		MvcResult result = mockMvc.perform(get("/api/t/invalid-parameter").header("X-Request-Id", "param-1").with(jwt()))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+				.andExpect(jsonPath("$.detail").value("要求の形式が正しくありません"))
+				.andReturn();
+
+		assertThat(result.getResponse().getContentAsString()).doesNotContain("secret-q");
+		assertNoWarnOrError(output);
+		assertThat(output.getAll()).doesNotContain("secret-q");
+		Map<String, Object> requestLine = onlyRequestLine(output, "param-1");
+		assertThat(LogLines.get(requestLine, "event.code")).isEqualTo("BAD_REQUEST");
+	}
+
+	@Test
 	@DisplayName("アップロードの大きさ超過（MaxUploadSizeExceededException）は 413 の FILE_TOO_LARGE になり、detail は「画像が大きすぎます」")
 	void maxUploadSizeReturns413(CapturedOutput output) throws Exception {
 		mockMvc.perform(get("/api/t/multipart-too-large").with(jwt()))
@@ -450,6 +467,11 @@ class ApiExceptionHandlerTest {
 		@GetMapping("/api/t/multipart-broken")
 		void multipartBroken() {
 			throw new MultipartException("boundary missing secret-mp");
+		}
+
+		@GetMapping("/api/t/invalid-parameter")
+		void invalidParameter() {
+			throw new InvalidParameterException("Character decoding failed. Parameter [q] with value [secret-q%zz] has been ignored");
 		}
 
 		@GetMapping("/api/t/multipart-too-large")

@@ -4,6 +4,7 @@ import com.tkmedia.raisetimeline.web.RequestLogFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
+import org.apache.tomcat.util.http.InvalidParameterException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -45,6 +46,18 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 	 */
 	@ExceptionHandler(MultipartException.class)
 	public ResponseEntity<Object> handleMalformedMultipart(MultipartException ex, WebRequest request) {
+		return respond(ex, ErrorCode.BAD_REQUEST, List.of(), new HttpHeaders(), request);
+	}
+
+	/**
+	 * 要求パラメータの書き方が壊れている（{@code ?q=alice%zz}、壊れた UTF-8 など）ときに Tomcat が投げる。
+	 * {@code IllegalStateException} の派生で、パラメータを最初に読む {@code getParameterValues} が、解析で保存した例外を投げ直す。
+	 * 利用者の入力の誤りなので 400 にして ERROR は書かない。500 にすると、利用者の操作で ERROR を起こせてしまううえ、
+	 * この例外の文言には送られた値（検索語など）が入るので、ERROR の行の {@code error.message} から値が漏れる。
+	 * 文言は応答にもログにも出さない。
+	 */
+	@ExceptionHandler(InvalidParameterException.class)
+	public ResponseEntity<Object> handleInvalidParameter(InvalidParameterException ex, WebRequest request) {
 		return respond(ex, ErrorCode.BAD_REQUEST, List.of(), new HttpHeaders(), request);
 	}
 
