@@ -42,4 +42,12 @@ describe('TabNav', () => {
     expect(screen.getByRole('link', { name: 'すべて' })).toHaveClass('border-b-2', 'border-transparent')
     expect(screen.getByRole('link', { name: 'すべて' })).not.toHaveClass('font-bold')
   })
+
+  it('どのタブも高さ・幅が 44px 以上（min-h-11 min-w-11）で、指で押せる', () => {
+    renderTabs()
+
+    for (const name of ['フォロー中', 'すべて']) {
+      expect(screen.getByRole('link', { name })).toHaveClass('min-h-11', 'min-w-11')
+    }
+  })
 })

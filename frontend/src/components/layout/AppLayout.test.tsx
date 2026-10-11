@@ -145,13 +145,53 @@ describe('AppLayout', () => {
 
   it('＋ボタンを出す画面では main の下の余白が pb-36、設定の画面では pb-16', () => {
     const { unmount } = renderLayout('/')
-    expect(screen.getByRole('main')).toHaveClass('pb-36', 'md:pb-0')
+    expect(screen.getByRole('main')).toHaveClass('pb-36')
     expect(screen.getByRole('main')).not.toHaveClass('pb-16')
     unmount()
 
     renderLayout('/settings/profile')
-    expect(screen.getByRole('main')).toHaveClass('pb-16', 'md:pb-0')
+    expect(screen.getByRole('main')).toHaveClass('pb-16')
     expect(screen.getByRole('main')).not.toHaveClass('pb-36')
+  })
+
+  // 通知は PC 幅でも画面の下に固定される（md:bottom-4）。ページの最後の要素がその下に入ったままにならないよう、PC でも余白を持つ。
+  it('main は PC 幅でも下に余白を持つ（md:pb-24。md:pb-0 ではない）', () => {
+    const { unmount } = renderLayout('/')
+    expect(screen.getByRole('main')).toHaveClass('md:pb-24')
+    expect(screen.getByRole('main')).not.toHaveClass('md:pb-0')
+    unmount()
+
+    renderLayout('/settings/profile')
+    expect(screen.getByRole('main')).toHaveClass('md:pb-24')
+    expect(screen.getByRole('main')).not.toHaveClass('md:pb-0')
+  })
+
+  // React Router は大文字小文字と末尾の / を区別せずに画面を選ぶので、判定もそろえる。
+  it.each(['/Settings/profile', '/settings/profile/', '/SETTINGS/Profile/'])(
+    '%s でも設定の画面なので、スマホの丸ボタンを出さない',
+    (route) => {
+      renderLayout(route)
+
+      expect(screen.getByText('プロフィール編集の中身')).toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: '投稿する' })).toHaveLength(1)
+      expect(screen.getByRole('main')).toHaveClass('pb-16')
+      expect(within(screen.getByRole('banner')).getByText('プロフィール編集')).toBeInTheDocument()
+    },
+  )
+
+  it.each([
+    ['/users/bob/Followers', 'フォロワー'],
+    ['/users/bob/followers/', 'フォロワー'],
+    ['/users/bob/Following/', 'フォロー中'],
+    ['/posts/x/likes/', 'いいねした人'],
+    ['/Posts/x/Likes', 'いいねした人'],
+    ['/users/bob/', 'プロフィール'],
+    ['/posts/x/', '投稿'],
+    ['/', 'ホーム'],
+  ])('%s の上部バーは「%s」', (route, name) => {
+    renderLayout(route)
+
+    expect(within(screen.getByRole('banner')).getByText(name)).toBeInTheDocument()
   })
 
   it('ブラウザが先にダイアログを閉じても（open のまま close()）、状態が合い、もう一度開ける', async () => {

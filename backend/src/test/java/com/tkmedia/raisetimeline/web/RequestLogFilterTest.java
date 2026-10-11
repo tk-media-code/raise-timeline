@@ -170,6 +170,17 @@ class RequestLogFilterTest {
 	}
 
 	@Test
+	@DisplayName("= の無い部分（q）は伏せる値が無いので、そのまま残る")
+	void parameterWithoutEqualsIsKept(CapturedOutput output) throws Exception {
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "mask-no-equals-1").with(rawQuery("q&limit=20&q=secret"))
+				.with(jwt()))
+				.andExpect(status().isOk());
+
+		assertThat(loggedQuery(output, "mask-no-equals-1")).isEqualTo("q&limit=20&q=***");
+		assertThat(output.getOut()).doesNotContain("secret");
+	}
+
+	@Test
 	@DisplayName("名前をデコードできない（%zz=）部分は、安全側に倒して値を伏せる")
 	void undecodableParameterNameIsMasked(CapturedOutput output) throws Exception {
 		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "mask-malformed-1").with(rawQuery("%zz=secret&limit=20"))

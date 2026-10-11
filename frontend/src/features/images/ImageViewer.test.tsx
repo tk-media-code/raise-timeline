@@ -132,4 +132,21 @@ describe('ImageViewer', () => {
 
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  // 白い画像でも黒い画像でも枠が見えるよう、キーボードで選んだときは白（ring）と黒（outline）の二重にする。
+  it('閉じる・前の画像・次の画像は、キーボードで選んだときの枠が白と黒の二重', () => {
+    renderViewer(3)
+
+    for (const name of ['閉じる', '前の画像', '次の画像']) {
+      const button = screen.getByRole('button', { name })
+      expect(button).toHaveClass(
+        'focus-visible:ring-2',
+        'focus-visible:ring-white',
+        'focus-visible:outline-2',
+        'focus-visible:outline-offset-2',
+        'focus-visible:outline-black',
+      )
+      expect(button).not.toHaveClass('focus-visible:outline-white')
+    }
+  })
 })

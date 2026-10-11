@@ -150,15 +150,17 @@ class FollowIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("解除すると 204 で、プロフィールの isFollowing と数が戻る")
+	@DisplayName("解除すると 204 で、プロフィールの isFollowing と数が戻る。自分のプロフィール（/api/users/{me} と /api/users/me）の followingCount も減る")
 	void unfollowRestoresProfiles() throws Exception {
 		assertThat(follow(me, alice.username())).isEqualTo(204);
+		assertThat((Integer) JsonPath.read(profile(me, me.username()), "$.followingCount")).isEqualTo(1);
 
 		assertThat(unfollow(me, alice.username())).isEqualTo(204);
 
 		String aliceJson = profile(me, alice.username());
 		assertThat((Boolean) JsonPath.read(aliceJson, "$.isFollowing")).isFalse();
 		assertThat((Integer) JsonPath.read(aliceJson, "$.followersCount")).isZero();
+		assertThat((Integer) JsonPath.read(profile(me, me.username()), "$.followingCount")).isZero();
 		assertThat((Integer) JsonPath.read(meJson(me), "$.followingCount")).isZero();
 		assertThat(followRows(me, alice)).isZero();
 	}

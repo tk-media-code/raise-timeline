@@ -133,7 +133,7 @@ erDiagram
 | updated_at | timestamptz | 不可 | now() | created_at より後なら「編集済み」 |
 
 - 外部キー: `user_id → users.id`（CASCADE）
-- 索引: `(user_id, id)`。プロフィールの投稿一覧に使う。フォロー中タイムラインでも、投稿の多い表では相手ごとの引きに使われうる（5 章の注）
+- 索引: `(user_id, id)`。プロフィールの投稿一覧に使う。フォロー中タイムラインでも、フォローの集合が投稿に比べて小さいときは、相手ごとの引きに使われうる（5 章の注）
 
 ### post_images（投稿に添付した画像）
 
@@ -209,7 +209,7 @@ erDiagram
 
 ## 5. 代表的な問い合わせ
 
-SQL は MyBatis の XML に書き、値は必ず `#{}` で渡す。`${}` は使わない（SQL の注入を防ぐ）。`IN` の列挙は `<foreach>` で組み立てる。カーソルは `java.util.UUID` に変換してから渡す（文字列のままだと PostgreSQL は uuid と varchar を比べられない）。
+SQL は MyBatis の XML に書き、値は必ず `#{}` で渡す。`${}` は使わない（SQL の注入を防ぐ）。`IN` の列挙は `<foreach>` で組み立てる。カーソルは `java.util.UUID` に変換してから渡す（文字列のままだと PostgreSQL は uuid と varchar を比べられない）。カーソルが無いときは、`(#{cursor}::uuid IS NULL OR ...)` と書かず、MyBatis の `<if test="cursor != null">` で条件ごと外す（`IS NULL` の形だと、null の型を PostgreSQL に推測させることになるため）。下の例は、この `<if>` と引数の名前を実際の XML に合わせて書いてある。
 
 フォロー中タイムライン。投稿者は本体の SQL で結合し、列は明示する（`password_hash` と `email` は読まない）。21 件取って、21 件目があれば「次がある」と判断し、20 件を返す。
 
@@ -219,56 +219,58 @@ SELECT p.id, p.user_id, p.body, p.created_at, p.updated_at,
 FROM posts p
 JOIN users u ON u.id = p.user_id
 WHERE p.user_id IN (
-        SELECT followee_id FROM follows WHERE follower_id = #{me}
+        SELECT followee_id FROM follows WHERE follower_id = #{viewer}
         UNION ALL
-        SELECT CAST(#{me} AS uuid)
+        SELECT CAST(#{viewer} AS uuid)
       )
-  AND (#{cursor}::uuid IS NULL OR p.id < #{cursor})
+<if test="cursor != null">  AND p.id < #{cursor}</if>
 ORDER BY p.id DESC
-LIMIT 21;
+LIMIT #{limit};
 ```
 
-書いた人を「フォロー先と自分自身」の集合への `IN` で絞る。`IN` を `WHERE` の最上位に置くので、副問い合わせを結合（semi-join）に引き上げられ、投稿の多い表では相手ごとに `posts (user_id, id)` を引く計画も選べる。`p.user_id = 自分 OR p.user_id IN (...)` のように `IN` を `OR` の下に置くと引き上げられず、`posts` の主キーを逆向きに読んで 1 行ずつ捨てる計画になりうる（テスト用 DB の 6 万件（300 人 x 200 件）で、フォローも投稿も無い利用者の読み込みが 856 buffers から 14 buffers になった）。どの計画を選ぶかは表の統計しだいで、保証ではない。自分とフォロー相手が長く投稿していないと、1 ページを埋めるまでに多くの投稿を読むことがあるが、利用者が数十〜数百人の規模では十分速い。利用者が増えたら、問い合わせの形を見直す。
+`#{limit}` には、返す件数に 1 を足した値（20 件なら 21）を渡す。
+
+書いた人を「フォロー先と自分自身」の集合への `IN` で絞る。`IN` を `WHERE` の最上位に置くので、副問い合わせを結合（semi-join）に引き上げられ、フォローの集合が投稿に比べて小さいときは、相手ごとに `posts (user_id, id)` を引く計画も選べる。`p.user_id = 自分 OR p.user_id IN (...)` のように `IN` を `OR` の下に置くと引き上げられず、`posts` の主キーを逆向きに読んで 1 行ずつ捨てる計画になりうる（テスト用 DB の 6 万件（300 人 x 200 件）で、フォローも投稿も無い利用者の読み込みが 856 buffers から 14 buffers になった）。どの計画を選ぶかは表の統計しだいで、保証ではない。自分とフォロー相手が長く投稿していないと、1 ページを埋めるまでに多くの投稿を読むことがあるが、利用者が数十〜数百人の規模では十分速い。利用者が増えたら、問い合わせの形を見直す。
 
 投稿に付く画像・数・「自分がいいね済みか」は、投稿の一覧を取ったあとに、その投稿 id の集合に対してまとめて取る（投稿ごとに取りに行かない）。1 ページあたりの問い合わせは本体を含めて 5 本で固定になる。
 
 ```sql
 SELECT post_id, object_key, position FROM post_images WHERE post_id IN (<foreach>) ORDER BY post_id, position;
 SELECT post_id, count(*) AS like_count FROM likes WHERE post_id IN (<foreach>) GROUP BY post_id;
-SELECT post_id FROM likes WHERE user_id = #{me} AND post_id IN (<foreach>);
+SELECT post_id FROM likes WHERE user_id = #{userId} AND post_id IN (<foreach>);
 ```
 
 コメント数も同じ形で `comments` を数える。
 
-いいねした人の一覧。並びとカーソルは `likes.id` で、項目は利用者。各行の「ログイン中の利用者がその人をフォローしているか」は `EXISTS` で取る。フォロワーとフォロー中の一覧も同じ形（`follows.id` で並べる）。
+いいねした人の一覧。並びとカーソルは `likes.id` で、項目は利用者。各行の「ログイン中の利用者がその人をフォローしているか」は、行ごとの `EXISTS` で取る（`follows` の `(follower_id, followee_id)` の一意制約の索引で引く）。フォロワーとフォロー中の一覧も同じ形（`follows.id` で並べる）。
 
 ```sql
-SELECT l.id AS cursor_id, u.id, u.username, u.display_name, u.avatar_key, u.bio,
-       EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = #{me} AND f.followee_id = u.id) AS is_following
+SELECT l.id AS cursor_id, u.id AS user_id, u.username, u.display_name, u.avatar_key, u.bio,
+       EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = #{viewer} AND f.followee_id = u.id) AS is_following
 FROM likes l
 JOIN users u ON u.id = l.user_id
 WHERE l.post_id = #{postId}
-  AND (#{cursor}::uuid IS NULL OR l.id < #{cursor})
+<if test="cursor != null">  AND l.id < #{cursor}</if>
 ORDER BY l.id DESC
-LIMIT 21;
+LIMIT #{limit};
 ```
 
 いいねとフォローの追加。同時に 2 回押されても 1 行にし、トランザクションを中断させない。
 
 ```sql
-INSERT INTO likes (post_id, user_id) VALUES (#{postId}, #{me}) ON CONFLICT DO NOTHING;
+INSERT INTO likes (post_id, user_id) VALUES (#{postId}, #{userId}) ON CONFLICT (post_id, user_id) DO NOTHING;
 ```
 
-ユーザー検索。`%` と `_` と `\` はエスケープしてから使う。列は明示する。
+ユーザー検索。パターン（`%` ＋ 検索語 ＋ `%`）は Java で作って `#{pattern}` に渡す。検索語の `\` `%` `_` は、Java で `\` を付けて打ち消してから埋め込む（SQL の `ESCAPE '\'` と対）。利用者の入力は文字として探される。前後に `%` を付けた `ILIKE` は索引を使えず `users` を全件読むが、数百人の規模なので許す（4 章）。列は明示する。
 
 ```sql
-SELECT u.id, u.username, u.display_name, u.avatar_key, u.bio,
-       EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = #{me} AND f.followee_id = u.id) AS is_following
+SELECT u.id AS cursor_id, u.id AS user_id, u.username, u.display_name, u.avatar_key, u.bio,
+       EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = #{viewer} AND f.followee_id = u.id) AS is_following
 FROM users u
-WHERE (u.username ILIKE '%' || #{q} || '%' ESCAPE '\' OR u.display_name ILIKE '%' || #{q} || '%' ESCAPE '\')
-  AND (#{cursor}::uuid IS NULL OR u.id < #{cursor})
+WHERE (u.username ILIKE #{pattern} ESCAPE '\' OR u.display_name ILIKE #{pattern} ESCAPE '\')
+<if test="cursor != null">  AND u.id < #{cursor}</if>
 ORDER BY u.id DESC
-LIMIT 21;
+LIMIT #{limit};
 ```
 
 登録で同時に同じユーザー名が来たときは、一意制約の違反を制約名で見分けて 409 に変換する。

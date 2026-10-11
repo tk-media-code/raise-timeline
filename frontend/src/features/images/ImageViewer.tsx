@@ -17,8 +17,9 @@ type ImageViewerProps = {
 const DIALOG_CLASS = 'fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none overflow-hidden bg-black/90 p-0 text-white backdrop:bg-transparent'
 
 // 白い丸は白っぽい画像に重なると縁が消えるので、薄い影と枠で縁を残す。
+// キーボードで選んだときの枠は、ボタンのすぐ外に白（ring）、その外に黒（outline）の二重にして、白い画像でも黒い画像でも見えるようにする。
 const BUTTON_CLASS =
-  'absolute flex size-12 items-center justify-center rounded-full bg-white text-3xl leading-none text-black shadow-md ring-1 ring-black/20 hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
+  'absolute flex size-12 items-center justify-center rounded-full bg-white text-3xl leading-none text-black shadow-md ring-1 ring-black/20 hover:bg-gray-200 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black'
 
 // 画像を大きく見るビューア。背景か × か Esc で閉じ、複数枚は左右のボタンと矢印キーで移る。
 // 中身は開いている間だけ描かれるので、開くたびに startIndex から始まる。

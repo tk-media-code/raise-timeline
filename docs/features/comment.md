@@ -77,8 +77,8 @@
 - 一覧（`GET`）: 投稿が無いのか 0 件なのかを区別するため、先に `PostMapper.existsById` で確かめて、無ければ 404 にする
 - 削除（`DELETE`）: コメントを主キーで引き、無ければ 404。`user_id` がログイン中の利用者と違えば 403。同じなら消す。消した行数が 0 なら（引いたあとに別の要求で消された）404 にする
 - 削除の出来事 `comment.deleted` を INFO で残す。項目は `app.comment.id` で、利用者 id は MDC が付ける。書いたときの出来事は足さない。[logging-design.md](../logging-design.md) の 3 章の表に無く、書いたことは要求ログ（`http.request`）で追えるため。本文はログに書かない
-- 本文の規則は `CommentBodyRules.validate`。順序は投稿の `PostBodyRules` と同じ。(1) null は空文字 (2) 使えない文字（NUL・対になっていないサロゲート）は「使えない文字が含まれています」 (3) CRLF を LF に (4) `strip()` で空なら「1〜280 文字で入力してください」 (5) 280 コードポイントを超えたら同じ文言。返すのは (3) の後の値で、前後の空白は残す。誤りは `ValidationException`（項目は `body`）
-  - 要求の型 `CreateCommentRequest` には `@NotBlank` や `@Size` を付けない。`@NotBlank` は `trim()` で判定するので、全角空白だけの本文を通してしまう。画面（JS の `trim()`）と投稿（`strip()`）は全角空白を空として扱うので、そろえた
+- 本文の規則は `CommentBodyRules.validate`。順序は投稿の `PostBodyRules` と同じ。(1) null は空文字 (2) 使えない文字（NUL・対になっていないサロゲート）は「使えない文字が含まれています」 (3) CRLF を LF に (4) `TextRules.isBlank` で空なら「1〜280 文字で入力してください」 (5) 280 コードポイントを超えたら同じ文言。返すのは (3) の後の値で、前後の空白は残す。誤りは `ValidationException`（項目は `body`）
+  - 要求の型 `CreateCommentRequest` には `@NotBlank` や `@Size` を付けない。`@NotBlank` は `trim()` で判定するので、全角空白だけの本文を通してしまう。画面（JS の `trim()`）と、投稿と同じ `TextRules.isBlank` は、全角空白や U+00A0 を空として扱うので、そろえた
 - 応答の型は `CommentResponse(id, author, body, createdAt)`。`author` は UserSummary で、`avatarUrl` はアイコンのキーが null なら null、あれば URL に変換する。`email` と `password_hash` は読まない
 - 一覧の区切り方: `limit + 1` 行を読み、あふれた分は返さず、`nextCursor` には返す最後のコメントの id を入れる。区切り方は共通の `Pages.of`（`service` パッケージ）に任せる。投稿・いいねした人・フォローの一覧と共用する。Issue 8 の時点では `CommentService` の中に書いていたが、いいね（Issue 7）のときに決めたとおり、フォローの一覧を作る Issue 9 で共通化した
 - 投稿の `commentCount` は、投稿を返すときに `comments` を数える。`PostAssembler` が、1 ページ分の投稿 id に対して 1 本の問い合わせで数え、無ければ 0 を入れる。1 ページの問い合わせは、本体・画像・いいね数・自分のいいね・コメント数の 5 本で、ページの件数によらない。空のページでは問い合わせない（[timeline.md](timeline.md) の 4 章）
@@ -106,7 +106,7 @@
 - 280 文字は通る、281 文字は 422
 - 改行を含む 280 文字が通る
 - NUL 文字を含むと 422
-- 見た目は空なのに文字がある本文: 全角空白だけ、改行だけの本文は 422「1〜280 文字で入力してください」。画面では送信ボタンが無効になる
+- 見た目は空なのに文字がある本文: 全角空白だけ、U+00A0 だけ、改行だけの本文は 422「1〜280 文字で入力してください」。画面では送信ボタンが無効になる
 - CRLF の混じった本文は、LF に直してから数える。LF に直して 280 文字なら通り、保存された本文の改行は LF
 
 ### 権限

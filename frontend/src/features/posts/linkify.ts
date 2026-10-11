@@ -1,8 +1,9 @@
 export type BodySegment = { kind: 'text'; text: string } | { kind: 'link'; url: string }
 
 // http:// と https:// で始まる URL だけをリンクにする。javascript: や data: は拾わない。
+// スキームは大文字でもよい（Https://、HTTPS://）。URL そのものは書かれたまま返す（小文字にしない）。
 // 文字の集合は ASCII だけ。全角の文字（。や日本語）は含めないので、そこで URL が終わる。
-const URL_RE = /https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/g
+const URL_RE = /https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/gi
 
 // 文末の句読点は URL の一部ではないことが多いので外す。
 const TRAILING_PUNCTUATION = /[.,;:!?'"\]]$/
@@ -35,7 +36,7 @@ export function linkify(body: string): BodySegment[] {
   for (const match of body.matchAll(URL_RE)) {
     const url = trimTrailing(match[0])
     // 末尾を外した結果、スキームだけ（「https://.」など）になったものはリンクにしない。
-    if (/^https?:\/\/$/.test(url)) continue
+    if (/^https?:\/\/$/i.test(url)) continue
     if (match.index > last) segments.push({ kind: 'text', text: body.slice(last, match.index) })
     segments.push({ kind: 'link', url })
     last = match.index + url.length

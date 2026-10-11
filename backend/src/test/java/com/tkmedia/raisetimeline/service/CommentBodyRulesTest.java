@@ -30,8 +30,8 @@ class CommentBodyRulesTest {
 
 	@ParameterizedTest(name = "[{index}]")
 	@NullSource
-	@ValueSource(strings = { "", " ", "   ", "　", "　 　", "\n", "\r\n", "  \n　" })
-	@DisplayName("null・空・半角空白・全角空白（U+3000）・改行だけは 1〜280 文字で入力してください")
+	@ValueSource(strings = { "", " ", "   ", "　", "　 　", "\n", "\r\n", "  \n　", "\u00A0", "\u2007", "\u202F", "\uFEFF", "\u00A0\u3000\uFEFF" })
+	@DisplayName("null・空・半角空白・全角空白（U+3000）・U+00A0 などの空白の文字・改行だけは 1〜280 文字で入力してください")
 	void blankIsRejected(String raw) {
 		assertRejected(raw, TOO_SHORT_OR_LONG);
 	}

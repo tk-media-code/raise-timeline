@@ -32,10 +32,11 @@ export function FollowButton({ user }: { user: FollowTarget }) {
       // 右端に置くので、幅が縮むとボタンの左端がポインタの下から外れ、ホバーが切れて「フォロー中」に戻り、ちらつく
       // （ユーザーカードでは、その帯を押すと <article> に当たってプロフィールが開く）。
       // 幅の下限は「フォロー中」の幅（全角 5 文字 + 左右の余白 2rem + 枠 2px）。「フォロー」でも「解除」でも同じ幅になり、
-      // 解除してもボタンの左端が動かない。プロトタイプの 104px（min-w-26）は「フォロー中」より約 10px 狭く、解除で縮んだ。
-      className={`group relative min-h-11 min-w-[calc(5em+2rem+2px)] shrink-0 rounded-full px-4 font-bold focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 ${
+      // 解除してもボタンの左端が動かない。プロトタイプの 104px（min-w-26）は、文字が 16px のときは「フォロー中」より約 10px 狭く、解除で縮んだ。
+      // 文字を 14px（text-sm）にした今は、この式がちょうど 104px になる（プロトタイプと同じ）。
+      className={`group relative min-h-11 min-w-[calc(5em+2rem+2px)] shrink-0 rounded-full px-4 text-sm font-bold focus:outline-2 focus:outline-offset-2 focus:outline-sky-600 ${
         following
-          ? `border border-gray-400 bg-white text-black ${justToggled ? '' : 'hover:border-red-300 hover:text-red-600'}`
+          ? `border border-gray-400 bg-white text-black ${justToggled ? '' : 'hover:border-red-700 hover:bg-red-50 hover:text-red-700'}`
           : 'bg-sky-600 text-white hover:bg-sky-700'
       }`}
     >

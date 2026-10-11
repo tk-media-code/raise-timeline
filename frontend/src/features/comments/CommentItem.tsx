@@ -3,10 +3,12 @@ import { useRef, useState } from 'react'
 import type { Comment } from '../../api/comments'
 import { useAuth } from '../../auth/AuthProvider'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { prepareFocusAfterRemoval } from '../../components/focusAfterRemoval'
 import { useToast } from '../../components/Toast'
-import { formatAbsoluteTime, formatRelativeTime } from '../posts/formatTime'
+import { formatAbsoluteTime } from '../posts/formatTime'
 import { failureMessage, isApiError } from '../posts/mutations'
 import { PostBody } from '../posts/PostBody'
+import { RelativeTime } from '../posts/RelativeTime'
 import { UserLink } from '../users/UserLink'
 import { forgetMissingComment } from './commentCache'
 import { useDeleteComment } from './mutations'
@@ -26,6 +28,7 @@ export function CommentItem({ comment, postId, now }: CommentItemProps) {
   const remove = useDeleteComment(postId)
   const [confirming, setConfirming] = useState(false)
   const deleting = useRef(false)
+  const articleRef = useRef<HTMLElement>(null)
   const { author } = comment
   const isMine = user?.id === author.id
 
@@ -33,20 +36,26 @@ export function CommentItem({ comment, postId, now }: CommentItemProps) {
     setConfirming(false)
     if (deleting.current) return
     deleting.current = true
+    // 一覧から消えると、フォーカスも一緒に消える。消し終えたあとに近くのコメントへ移す。
+    const restoreFocus = prepareFocusAfterRemoval(articleRef.current)
     try {
       await remove.mutateAsync(comment.id)
       toast.show('コメントを削除しました')
+      restoreFocus()
     } catch (error) {
       toast.show(failureMessage(error), 'error')
       // もう無いコメントが一覧に残ると、押すたびに同じ失敗をする。
-      if (isApiError(error, 404)) await forgetMissingComment(client, postId, comment.id)
+      if (isApiError(error, 404)) {
+        await forgetMissingComment(client, postId, comment.id)
+        restoreFocus()
+      }
     } finally {
       deleting.current = false
     }
   }
 
   return (
-    <article className="border-b border-gray-200 px-4 py-3">
+    <article ref={articleRef} className="border-b border-gray-200 px-4 py-3">
       <div className="flex items-start justify-between gap-2">
         <UserLink user={author} />
         {isMine && (
@@ -63,7 +72,7 @@ export function CommentItem({ comment, postId, now }: CommentItemProps) {
 
       <div className="text-sm text-gray-600">
         <time dateTime={comment.createdAt} title={formatAbsoluteTime(comment.createdAt)}>
-          {formatRelativeTime(comment.createdAt, now ?? new Date())}
+          <RelativeTime createdAt={comment.createdAt} now={now} />
         </time>
       </div>
 

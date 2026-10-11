@@ -289,15 +289,27 @@ describe('refreshAfterFollow', () => {
     unsubscribe()
   })
 
-  it('開いている「フォロー中のタイムライン」は残す', () => {
+  // 捨てる 4 つのキーのそれぞれが、開いている（オブザーバのある）ときは残る。表示中の一覧を読み直すと、押したカードが消えて押し直せなくなる。
+  // 1 つずつ開いて確かめる（まとめて開くと、1 つのキーの取りこぼしを見逃す）。
+  const refreshedKeys: { name: string; key: readonly unknown[] }[] = [
+    { name: 'ホームの「フォロー中」', key: timelineKeys.following },
+    { name: '相手のフォロワー一覧', key: followKeys.followers('alice') },
+    { name: '自分のフォロー中一覧', key: followKeys.following('bob') },
+    { name: '自分のプロフィール', key: userKey('bob') },
+  ]
+
+  it.each(refreshedKeys)('開いている「$name」は残し、ほかの 3 つ（開いていない）は捨てる', ({ key }) => {
     const client = new QueryClient()
-    client.setQueryData(timelineKeys.following, { pages: [], pageParams: [] })
-    const observer = new QueryObserver(client, { queryKey: timelineKeys.following, queryFn: () => ({ pages: [], pageParams: [] }), staleTime: Infinity })
+    for (const { key: each } of refreshedKeys) client.setQueryData(each, { pages: [], pageParams: [] })
+    const observer = new QueryObserver(client, { queryKey: key, queryFn: () => ({ pages: [], pageParams: [] }), staleTime: Infinity })
     const unsubscribe = observer.subscribe(() => {})
 
     refreshAfterFollow(client, 'alice', 'bob')
 
-    expect(client.getQueryData(timelineKeys.following)).toBeDefined()
+    for (const { key: each } of refreshedKeys) {
+      if (each === key) expect(client.getQueryData(each)).toBeDefined()
+      else expect(client.getQueryData(each)).toBeUndefined()
+    }
     unsubscribe()
   })
 

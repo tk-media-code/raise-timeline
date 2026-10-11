@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 import { useToast } from '../../components/Toast'
+import { useIsMounted } from '../../lib/useIsMounted'
 import { BodyField } from '../posts/BodyField'
 import { failureMessage, forgetMissingPost, isApiError, toValidationFailure } from '../posts/mutations'
-import { useIsMounted } from '../posts/useIsMounted'
 import { canSubmitBody } from '../posts/validation'
 import { useCreateComment } from './mutations'
 

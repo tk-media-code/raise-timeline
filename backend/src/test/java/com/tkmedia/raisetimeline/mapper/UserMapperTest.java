@@ -151,6 +151,8 @@ class UserMapperTest {
 	void updateProfileReturnsUpdatedRow() {
 		String s = suffix();
 		UUID id = userMapper.insert(newUser("user_" + s, "user_" + s + "@example.com"));
+		// アイコンのキーが null のままだと「元のまま」を null 同士で比べるだけになるので、先にキーを入れておく
+		userMapper.replaceAvatarKey(id, "avatars/" + id + "/a.png", OffsetDateTime.now(ZoneOffset.UTC));
 		User before = userMapper.findById(id).orElseThrow();
 		OffsetDateTime later = OffsetDateTime.of(2026, 10, 10, 9, 0, 0, 0, ZoneOffset.UTC);
 
@@ -162,6 +164,7 @@ class UserMapperTest {
 		assertThat(returned.updatedAt().toInstant()).isEqualTo(later.toInstant());
 		assertThat(returned.username()).isEqualTo(before.username());
 		assertThat(returned.email()).isEqualTo(before.email());
+		assertThat(before.avatarKey()).isEqualTo("avatars/" + id + "/a.png");
 		assertThat(returned.avatarKey()).isEqualTo(before.avatarKey());
 		assertThat(returned.passwordHash()).isEqualTo(before.passwordHash());
 		assertThat(returned.createdAt().toInstant()).isEqualTo(before.createdAt().toInstant());

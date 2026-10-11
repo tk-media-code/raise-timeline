@@ -10,7 +10,7 @@ export function UserCardItem({ user }: { user: UserCard }) {
   const navigate = useNavigate()
   const profilePath = `/users/${user.username}`
 
-  // 投稿カードの openDetail と同じ。リンク、ボタン、data-no-detail の上と、文字の選択の最中は動かない。
+  // 投稿カードの openDetail と同じ。移るか動かないかは shouldSkipCardNavigation が決める。
   function openProfile(event: MouseEvent<HTMLElement>) {
     if (shouldSkipCardNavigation(event)) return
     void navigate(profilePath)

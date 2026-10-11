@@ -29,6 +29,7 @@ raise-timeline は、X（旧 Twitter）を模した学習用の SNS アプリで
 | 16 | [features/comment.md](features/comment.md) | コメント |
 | 17 | [features/follow.md](features/follow.md) | フォロー／フォロワー |
 | 18 | [features/user-search.md](features/user-search.md) | ユーザー検索 |
+| 19 | [known-issues.md](known-issues.md) | 残している課題。次の Issue で扱うもの、本番の構築で扱うもの、実機で確かめるもの、直さないと決めたもの、受け入れたこと |
 
 ## 文書の切り方
 

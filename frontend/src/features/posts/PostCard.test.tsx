@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -424,5 +424,50 @@ describe('PostCard の画像', () => {
     await user.click(screen.getByRole('button', { name: '閉じる' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByText('投稿詳細の画面')).not.toBeInTheDocument()
+  })
+})
+
+describe('PostCard の相対時刻の更新', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('now を渡さないとき、1 分前の投稿は 60 秒後に「2 分前」になる', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-06T05:10:30Z'))
+    renderCard({ now: undefined })
+    expect(screen.getByText('1 分前')).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
+
+    expect(screen.getByText('2 分前')).toBeInTheDocument()
+  })
+
+  it('now を渡したときは、時間がたっても進まない', () => {
+    vi.useFakeTimers()
+    renderCard({ now: NOW })
+
+    act(() => {
+      vi.advanceTimersByTime(5 * 60_000)
+    })
+
+    expect(screen.getByText('3 分前')).toBeInTheDocument()
+  })
+
+  it('絶対時刻のカードだけのときは、タイマーを作らない（今の時刻を購読しない）', () => {
+    vi.useFakeTimers()
+    renderCard({ timeStyle: 'absolute', now: undefined })
+    expect(screen.getByText('2026/10/06 14:09')).toBeInTheDocument()
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('相対時刻のカードは、タイマーを 1 本使う', () => {
+    vi.useFakeTimers()
+    renderCard({ timeStyle: 'relative', now: undefined })
+
+    expect(vi.getTimerCount()).toBe(1)
   })
 })

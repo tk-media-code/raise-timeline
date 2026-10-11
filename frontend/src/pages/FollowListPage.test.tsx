@@ -1,9 +1,10 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route, Routes } from 'react-router'
 import { ApiError } from '../api/client'
 import type { UserCard, UserDetail } from '../api/users'
+import { installFakeIntersectionObserver } from '../test/intersectionObserver'
 import { renderWithProviders } from '../test/providers'
 import FollowListPage from './FollowListPage'
 
@@ -68,8 +69,8 @@ describe('FollowListPage', () => {
 
     const list = await screen.findByRole('list', { name: 'フォロワー' })
     expect(screen.getByRole('heading', { level: 1, name: 'アリス' })).toBeInTheDocument()
-    // 見出しは上部バーに出ないので、スマホ幅でも隠さない。
-    expect(screen.getByRole('heading', { level: 1, name: 'アリス' })).not.toHaveClass('max-md:sr-only')
+    // 見出しは上部バーに出ないので、どの幅でも隠さない（sr-only も、max-md: や md: の付いた sr-only も付けない）。
+    expect(screen.getByRole('heading', { level: 1, name: 'アリス' }).className).not.toContain('sr-only')
     const tabs = within(screen.getByRole('navigation', { name: 'フォロー中とフォロワー' })).getAllByRole('link')
     expect(tabs.map((tab) => tab.textContent)).toEqual(['フォロー中', 'フォロワー'])
     expect(tabs[0]).not.toHaveAttribute('aria-current')
@@ -136,6 +137,28 @@ describe('FollowListPage', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: '見つかりません' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '再試行' })).not.toBeInTheDocument()
+  })
+
+  it('2 ページ目以降が 404 になっても、読めている一覧は消さず、「見つかりません」にもしない。「再試行」を出す', async () => {
+    const intersection = installFakeIntersectionObserver()
+    try {
+      follows.getFollowers
+        .mockResolvedValueOnce({ items: [makeCard()], nextCursor: 'c2' })
+        .mockRejectedValueOnce(apiError({ status: 404, code: 'NOT_FOUND', detail: '対象がありません' }))
+      renderList('/users/alice/followers')
+      await screen.findByRole('link', { name: 'ボブ @bob' })
+      await waitFor(() => expect(intersection.observedCount()).toBe(1))
+
+      intersection.intersect()
+
+      expect(await screen.findByRole('button', { name: '再試行' })).toBeInTheDocument()
+      expect(follows.getFollowers).toHaveBeenCalledTimes(2)
+      expect(screen.getByRole('list', { name: 'フォロワー' })).toContainElement(screen.getByRole('link', { name: 'ボブ @bob' }))
+      expect(screen.queryByRole('heading', { level: 1, name: '見つかりません' })).not.toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1, name: 'アリス' })).toBeInTheDocument()
+    } finally {
+      intersection.uninstall()
+    }
   })
 
   it('プロフィールが 500 なら「再試行」を出し、押すと読み直す', async () => {

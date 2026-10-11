@@ -1,6 +1,7 @@
 import type { InfiniteData } from '@tanstack/react-query'
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Comment } from '../../api/comments'
 import { ApiError } from '../../api/client'
@@ -41,6 +42,8 @@ function apiError(init: Partial<ConstructorParameters<typeof ApiError>[0]>): Api
 
 const textbox = () => screen.getByRole('textbox', { name: 'コメント' })
 const submitButton = () => screen.getByRole('button', { name: 'コメントする' })
+// 通知（トースト）も role="alert" なので、フォームの中の表示は、フォームに絞って探す。
+const formElement = () => submitButton().closest('form')!
 
 async function typeBody(text: string) {
   const user = userEvent.setup()
@@ -116,7 +119,7 @@ describe('CommentForm', () => {
     api.createComment.mockReturnValue(new Promise(() => {}))
     renderForm()
     await typeBody('こんにちは')
-    const form = submitButton().closest('form')!
+    const form = formElement()
 
     act(() => {
       fireEvent.submit(form)
@@ -154,7 +157,8 @@ describe('CommentForm', () => {
 
     await user.click(submitButton())
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('使えない文字が含まれています')
+    expect(await within(formElement()).findByRole('alert')).toHaveTextContent('使えない文字が含まれています')
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(textbox()).toHaveAttribute('aria-invalid', 'true')
     expect(textbox()).toHaveValue('こんにちは')
 
@@ -171,8 +175,10 @@ describe('CommentForm', () => {
 
     await user.click(submitButton())
 
-    const alert = await screen.findByRole('alert')
+    // 通知ではなく、フォームの中に出る（通知も role="alert" なので、フォームに絞って確かめる）。
+    const alert = await within(formElement()).findByRole('alert')
     expect(alert).toHaveTextContent('入力内容に誤りがあります')
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(textbox()).not.toHaveAttribute('aria-invalid')
     expect(textbox()).toHaveValue('こんにちは')
   })
@@ -221,5 +227,64 @@ describe('CommentForm', () => {
     expect(await screen.findByText('見つかりません')).toBeInTheDocument()
     expect(onPostGone).toHaveBeenCalledTimes(1)
     expect(itemIdsWhenGone).toEqual(['p2'])
+  })
+
+  // 送信の結果を待つ間に、フォームだけが画面から消える（トーストの置き場は残る）。
+  describe('送信中に画面を離れたあと', () => {
+    function Host({ onPostGone }: { onPostGone: () => void }) {
+      const [shown, setShown] = useState(true)
+      return (
+        <>
+          <button type="button" onClick={() => setShown(false)}>
+            離れる
+          </button>
+          {shown && <CommentForm postId="p1" onPostGone={onPostGone} />}
+        </>
+      )
+    }
+
+    async function sendThenLeave() {
+      const onPostGone = vi.fn()
+      renderWithProviders(<Host onPostGone={onPostGone} />)
+      const user = await typeBody('こんにちは')
+      await user.click(submitButton())
+      await waitFor(() => expect(api.createComment).toHaveBeenCalledTimes(1))
+      await user.click(screen.getByRole('button', { name: '離れる' }))
+      expect(screen.queryByRole('textbox', { name: 'コメント' })).not.toBeInTheDocument()
+      return onPostGone
+    }
+
+    it('422 は、誤りを見せる欄が無いので通知で出る', async () => {
+      let reject: (error: unknown) => void = () => {}
+      api.createComment.mockReturnValue(new Promise((_, rejectPromise) => (reject = rejectPromise)))
+      await sendThenLeave()
+
+      await act(async () => {
+        reject(
+          apiError({
+            status: 422,
+            detail: '入力内容に誤りがあります',
+            errors: [{ field: 'body', message: '使えない文字が含まれています' }],
+          }),
+        )
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('使えない文字が含まれています')
+    })
+
+    it('404 は、見つかりませんを通知するが、onPostGone は呼ばない（画面を移さない）', async () => {
+      let reject: (error: unknown) => void = () => {}
+      api.createComment.mockReturnValue(new Promise((_, rejectPromise) => (reject = rejectPromise)))
+      const onPostGone = await sendThenLeave()
+
+      await act(async () => {
+        reject(apiError({ status: 404, code: 'NOT_FOUND', detail: '見つかりません' }))
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('見つかりません')
+      expect(onPostGone).not.toHaveBeenCalled()
+    })
   })
 })

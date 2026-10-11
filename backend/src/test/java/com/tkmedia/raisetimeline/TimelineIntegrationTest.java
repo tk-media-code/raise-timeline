@@ -2,6 +2,7 @@ package com.tkmedia.raisetimeline;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 import com.jayway.jsonpath.JsonPath;
@@ -42,6 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
 class TimelineIntegrationTest {
 
 	private static final OffsetDateTime NOW = OffsetDateTime.of(2026, 10, 9, 12, 0, 0, 0, ZoneOffset.UTC);
+	private static final String ALL_PATH = "/api/timeline/all";
+	private static final String FOLLOWING_PATH = "/api/timeline/following";
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -83,15 +86,11 @@ class TimelineIntegrationTest {
 	}
 
 	private MvcResult timeline(String cursor) throws Exception {
-		return timelineAs(me, cursor);
-	}
-
-	private MvcResult timelineAs(UUID viewer, String cursor) throws Exception {
-		return timelineAs("/api/timeline/all", viewer, cursor);
+		return timelineAs(ALL_PATH, me, cursor);
 	}
 
 	private MvcResult following(String cursor) throws Exception {
-		return timelineAs("/api/timeline/following", me, cursor);
+		return timelineAs(FOLLOWING_PATH, me, cursor);
 	}
 
 	private MvcResult timelineAs(String path, UUID viewer, String cursor) throws Exception {
@@ -102,6 +101,14 @@ class TimelineIntegrationTest {
 		MvcResult result = mockMvc.perform(request).andReturn();
 		assertThat(result.getResponse().getStatus()).isEqualTo(200);
 		return result;
+	}
+
+	/** フォロー解除を API（DELETE /api/users/{username}/follow）で行う。 */
+	private void unfollow(UUID follower, UUID followee) throws Exception {
+		String username = userMapper.findById(followee).orElseThrow().username();
+		MvcResult result = mockMvc.perform(delete("/api/users/{username}/follow", username)
+				.with(jwt().jwt(j -> j.subject(follower.toString())))).andReturn();
+		assertThat(result.getResponse().getStatus()).isEqualTo(204);
 	}
 
 	private static String json(MvcResult result) throws Exception {
@@ -148,8 +155,8 @@ class TimelineIntegrationTest {
 		jdbc.update("INSERT INTO likes (post_id, user_id) VALUES (?, ?)", liked, liker1);
 		jdbc.update("INSERT INTO likes (post_id, user_id) VALUES (?, ?)", liked, liker2);
 
-		String asLiker = json(timelineAs(liker1, null));
-		String asOther = json(timelineAs(other, null));
+		String asLiker = json(timelineAs(ALL_PATH, liker1, null));
+		String asOther = json(timelineAs(ALL_PATH, other, null));
 
 		assertThat(itemField(asLiker, liked, "likeCount")).isEqualTo(2);
 		assertThat(itemField(asLiker, liked, "likedByMe")).isEqualTo(true);
@@ -284,7 +291,7 @@ class TimelineIntegrationTest {
 		UUID theirs = createPosts(followee, 1).get(0);
 		assertThat(idsOf(following(null))).containsExactly(theirs.toString());
 
-		followMapper.delete(me, followee);
+		unfollow(me, followee);
 
 		assertThat(idsOf(following(null))).isEmpty();
 	}

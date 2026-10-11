@@ -7,7 +7,10 @@ import com.tkmedia.raisetimeline.mapper.PostMapper;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
-/** プロフィール画面の、その人の投稿一覧。並びとカーソルはタイムラインと同じ（{@link Pages}）。 */
+/**
+ * プロフィール画面の、その人の投稿一覧。並び（id の降順）は {@link PostMapper#findByUser} が
+ * タイムラインの {@link PostMapper#findAll} とそろえ、ページの打ち切りとカーソルは {@link Pages#of} で決める。
+ */
 @Service
 public class UserPostsService {
 
@@ -21,7 +24,10 @@ public class UserPostsService {
 		this.assembler = assembler;
 	}
 
-	/** 利用者がいなければ（規則に合わない名前も）{@link com.tkmedia.raisetimeline.error.NotFoundException}。 */
+	/**
+	 * 利用者がいなければ（規則に合わない名前も）{@link com.tkmedia.raisetimeline.error.NotFoundException}。
+	 * {@code viewer} は、一覧を見ている人（{@code likedByMe} の基準）で、持ち主とは限らない。
+	 */
 	public PageResponse<PostResponse> postsOf(UUID viewer, String username, UUID cursor, int limit) {
 		UUID userId = userService.requireByUsername(username).id();
 		return Pages.of(postMapper.findByUser(userId, cursor, limit + 1), limit, PostWithAuthor::id,

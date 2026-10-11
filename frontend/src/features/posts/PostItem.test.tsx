@@ -54,6 +54,40 @@ function renderItem(options: { post?: Post } = {}) {
   return { ...result, queryClient, onRemoved }
 }
 
+// 実際の一覧と同じく、投稿はキャッシュから読み、ul > li の中に並べる。onRemoved は、渡したときだけ PostItem に渡す。
+function renderList(posts: Post[], onRemoved?: () => void) {
+  const queryClient = createQueryClient()
+  const data: Data = { pages: [{ items: posts, nextCursor: null }], pageParams: [null] }
+  queryClient.setQueryData(timelineKeys.all, data)
+  function List() {
+    const { data: cached } = useQuery<Data>({
+      queryKey: timelineKeys.all,
+      // 取り直しが走っても、消した結果のキャッシュをそのまま返す（元の一覧に戻さない）。
+      queryFn: () => queryClient.getQueryData<Data>(timelineKeys.all) ?? data,
+      staleTime: Infinity,
+    })
+    return (
+      <main>
+        <h1>タイムライン</h1>
+        <ul>
+          {cached?.pages[0]?.items.map((post) => (
+            <li key={post.id}>
+              <PostItem post={post} timeStyle="absolute" linkToDetail={false} onRemoved={onRemoved} />
+            </li>
+          ))}
+        </ul>
+      </main>
+    )
+  }
+  return renderWithProviders(<List />, { queryClient })
+}
+
+async function deleteIn(user: ReturnType<typeof userEvent.setup>, article: HTMLElement) {
+  await user.click(within(article).getByRole('button', { name: 'この投稿の操作' }))
+  await user.click(within(article).getByRole('button', { name: '削除' }))
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '削除' }))
+}
+
 function timelineItems(queryClient: ReturnType<typeof createQueryClient>): Post[] {
   return queryClient.getQueryData<Data>(timelineKeys.all)?.pages[0]?.items ?? []
 }
@@ -219,5 +253,82 @@ describe('PostItem', () => {
     expect(await screen.findByRole('button', { name: 'いいね 1 件' })).toHaveAttribute('aria-pressed', 'true')
     await vi.waitFor(() => expect(likesApi.likePost).toHaveBeenCalledWith('p1'))
     expect(likesApi.unlikePost).not.toHaveBeenCalled()
+  })
+
+  it('一覧で投稿を消すと、フォーカスが次の投稿のカードに移る', async () => {
+    api.deletePost.mockResolvedValue(undefined)
+    renderList([makePost({ id: 'p1' }), makePost({ id: 'p2' }), makePost({ id: 'p3' })])
+    const user = userEvent.setup()
+    const [, second, third] = screen.getAllByRole('article')
+
+    await deleteIn(user, second as HTMLElement)
+
+    await vi.waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2))
+    expect(await screen.findByText('投稿を削除しました')).toBeInTheDocument()
+    expect(third).toHaveFocus()
+  })
+
+  it('一覧の最後の投稿を消すと、フォーカスが前の投稿のカードに移る', async () => {
+    api.deletePost.mockResolvedValue(undefined)
+    renderList([makePost({ id: 'p1' }), makePost({ id: 'p2' })])
+    const user = userEvent.setup()
+    const [first, second] = screen.getAllByRole('article')
+
+    await deleteIn(user, second as HTMLElement)
+
+    await vi.waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1))
+    expect(first).toHaveFocus()
+  })
+
+  it('一覧の最後の 1 件を消すと、フォーカスがページの見出しに移る', async () => {
+    api.deletePost.mockResolvedValue(undefined)
+    renderList([makePost({ id: 'p1' })])
+    const user = userEvent.setup()
+
+    await deleteIn(user, screen.getByRole('article'))
+
+    await vi.waitFor(() => expect(screen.queryByRole('article')).not.toBeInTheDocument())
+    expect(screen.getByRole('heading', { level: 1 })).toHaveFocus()
+  })
+
+  it('消すのに失敗したら、フォーカスは動かない（「この投稿の操作」に戻ったまま）', async () => {
+    api.deletePost.mockRejectedValue(apiError({ status: 500 }))
+    renderList([makePost({ id: 'p1' }), makePost({ id: 'p2' })])
+    const user = userEvent.setup()
+    const [first] = screen.getAllByRole('article')
+
+    await deleteIn(user, first as HTMLElement)
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(within(first as HTMLElement).getByRole('button', { name: 'この投稿の操作' })).toHaveFocus()
+    expect(screen.getAllByRole('article')).toHaveLength(2)
+  })
+
+  it('404 で一覧から除かれたときも、フォーカスが次の投稿のカードに移る', async () => {
+    api.deletePost.mockRejectedValue(apiError({ status: 404, detail: '見つかりません' }))
+    renderList([makePost({ id: 'p1' }), makePost({ id: 'p2' })])
+    const user = userEvent.setup()
+    const [first, second] = screen.getAllByRole('article')
+
+    await deleteIn(user, first as HTMLElement)
+
+    await vi.waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1))
+    expect(second).toHaveFocus()
+  })
+
+  it('onRemoved で画面を移る場合（投稿詳細）は、フォーカスを動かさない。隣の項目にも見出しにも移さず、移った先に任せる', async () => {
+    api.deletePost.mockResolvedValue(undefined)
+    const onRemoved = vi.fn()
+    renderList([makePost({ id: 'p1' }), makePost({ id: 'p2' })], onRemoved)
+    const user = userEvent.setup()
+    const [first, second] = screen.getAllByRole('article')
+
+    await deleteIn(user, first as HTMLElement)
+
+    await vi.waitFor(() => expect(onRemoved).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1))
+    expect(second).not.toHaveFocus()
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus()
+    expect(document.activeElement).toBe(document.body)
   })
 })

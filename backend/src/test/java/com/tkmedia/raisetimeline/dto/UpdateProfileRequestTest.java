@@ -45,7 +45,7 @@ class UpdateProfileRequestTest {
 
 	@ParameterizedTest(name = "[{index}] 表示名 {0}")
 	@NullSource
-	@ValueSource(strings = { "", "   ", "　" })
+	@ValueSource(strings = { "", "   ", "　", "\u00A0", "\u2007", "\u202F", "\uFEFF" })
 	@DisplayName("表示名が空・空白だけ・null なら「1〜50 文字…」の誤りになる")
 	void blankDisplayNameIsRejected(String displayName) {
 		assertThat(violations(new UpdateProfileRequest(displayName, ""))).containsEntry("displayName", DISPLAY_NAME_MESSAGE);
@@ -55,6 +55,7 @@ class UpdateProfileRequestTest {
 	@DisplayName("表示名は前後の空白を除く")
 	void displayNameIsStripped() {
 		assertThat(new UpdateProfileRequest(" アリス ", "").displayName()).isEqualTo("アリス");
+		assertThat(new UpdateProfileRequest("\u00A0アリス\uFEFF", "").displayName()).isEqualTo("アリス");
 	}
 
 	@Test
@@ -103,6 +104,7 @@ class UpdateProfileRequestTest {
 	@DisplayName("空白と改行だけの自己紹介は空文字になる")
 	void whitespaceOnlyBioBecomesEmpty() {
 		assertThat(new UpdateProfileRequest("アリス", " \n　\t").bio()).isEmpty();
+		assertThat(new UpdateProfileRequest("アリス", "\u00A0\u2007\u202F\uFEFF").bio()).isEmpty();
 	}
 
 	@Test
