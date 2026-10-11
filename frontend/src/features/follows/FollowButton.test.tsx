@@ -124,7 +124,7 @@ describe('FollowButton', () => {
     expect(label).not.toHaveClass('group-hover:hidden')
     const hover = screen.getByText('解除')
     expect(hover).toHaveClass('absolute', 'inset-0')
-    expect(screen.getByRole('button')).toHaveClass('relative', 'min-w-26')
+    expect(screen.getByRole('button')).toHaveClass('relative', 'min-w-[calc(5em+2rem+2px)]')
   })
 
   it('自分（useAuth の利用者と同じ id）には何も出さない', () => {

@@ -130,6 +130,14 @@ describe('FollowListPage', () => {
     expect(follows.getFollowers).not.toHaveBeenCalled()
   })
 
+  it('プロフィールを読んだあとに一覧が 404（持ち主が退会した）なら、「再試行」ではなく「見つかりません」', async () => {
+    follows.getFollowers.mockRejectedValue(apiError({ status: 404, code: 'NOT_FOUND', detail: '対象がありません' }))
+    renderList('/users/alice/followers')
+
+    expect(await screen.findByRole('heading', { level: 1, name: '見つかりません' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '再試行' })).not.toBeInTheDocument()
+  })
+
   it('プロフィールが 500 なら「再試行」を出し、押すと読み直す', async () => {
     users.getUser.mockRejectedValueOnce(apiError({ status: 500 }))
     follows.getFollowers.mockResolvedValue({ items: [makeCard()], nextCursor: null })

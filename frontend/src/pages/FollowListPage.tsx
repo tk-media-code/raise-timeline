@@ -34,6 +34,10 @@ export default function FollowListPage({ kind }: { kind: FollowListKind }) {
     return <RetryMessage onRetry={() => void profile.refetch()} />
   }
 
+  // プロフィールを読んだあとに持ち主が退会する（タブを切り替えたときなど）と、一覧だけが 404 になる。
+  // 「再試行」では直らないので「見つかりません」にする。表示中の一覧の読み直しが失敗しても、見えている一覧は消さない。
+  if (list.isError && !list.data && isNotFound(list.error)) return <NotFoundMessage />
+
   const tabs = (['following', 'followers'] as const).map((tabKind) => ({
     to: `/users/${username}/${tabKind}`,
     label: LISTS[tabKind].label,
