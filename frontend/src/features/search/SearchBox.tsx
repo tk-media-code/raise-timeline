@@ -67,8 +67,7 @@ export function SearchBox({ defaultValue, error, onSearch }: SearchBoxProps) {
   }
 
   return (
-    // <search> 要素でなく role="search" にしているのは、古い読み上げ環境でも検索のランドマークとして伝わるようにするため。
-    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- <search> 要素でなく role="search" にするのは、古い読み上げ環境でも検索のランドマークとして伝わるようにするため
     <form role="search" noValidate onSubmit={handleSubmit} className="border-b border-gray-200 p-4">
       <input
         type="search"

@@ -2,11 +2,11 @@ import { useEffect, useId, useRef, useState, type MouseEvent, type Ref } from 'r
 import { Link, useNavigate } from 'react-router'
 import type { Post } from '../../api/posts'
 import { shouldSkipCardNavigation } from '../../components/cardClick'
-import { useNow } from '../../lib/useNow'
 import { ImageGrid } from '../images/ImageGrid'
 import { UserLink } from '../users/UserLink'
-import { formatAbsoluteTime, formatRelativeTime } from './formatTime'
+import { formatAbsoluteTime } from './formatTime'
 import { PostBody } from './PostBody'
+import { RelativeTime } from './RelativeTime'
 
 type PostCardProps = {
   post: Post
@@ -43,12 +43,9 @@ export function PostCard({
   ref,
 }: PostCardProps) {
   const navigate = useNavigate()
-  const currentTime = useNow()
   const { author } = post
-  const timeText =
-    timeStyle === 'relative' ? formatRelativeTime(post.createdAt, now ?? currentTime) : formatAbsoluteTime(post.createdAt)
 
-  // リンク、ボタン、メニューの枠（data-no-detail）、文字の選択の最中は、カードの移動より本来の操作を優先する。
+  // 移るか、本来の操作を優先して動かないかは shouldSkipCardNavigation が決める。
   function openDetail(event: MouseEvent<HTMLElement>) {
     if (!linkToDetail) return
     if (shouldSkipCardNavigation(event)) return
@@ -71,7 +68,7 @@ export function PostCard({
       <div className="mt-1 flex items-center gap-2 text-sm text-gray-600">
         <Link to={`/posts/${post.id}`} className="inline-flex min-h-11 min-w-11 items-center hover:underline">
           <time dateTime={post.createdAt} title={formatAbsoluteTime(post.createdAt)}>
-            {timeText}
+            {timeStyle === 'relative' ? <RelativeTime createdAt={post.createdAt} now={now} /> : formatAbsoluteTime(post.createdAt)}
           </time>
         </Link>
         {post.edited && <span>編集済み</span>}
@@ -83,8 +80,6 @@ export function PostCard({
 
       <ImageGrid images={post.images} interactive />
 
-      {/* コメントを読み書きするのは投稿詳細。一覧のカードでは詳細へのリンクにし、詳細の中では（すぐ下にコメントがあるので）
-          押せない表示にする。押せるボタンに見えないよう role="img" にする。 */}
       <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
         <button
           type="button"
@@ -107,6 +102,8 @@ export function PostCard({
             <span aria-hidden="true">{post.likeCount}</span>
           </Link>
         )}
+        {/* コメントを読み書きするのは投稿詳細。一覧のカードでは詳細へのリンクにし、詳細の中では（すぐ下にコメントがあるので）
+            押せない表示にする。押せるボタンに見えないよう role="img" にする。 */}
         {linkToDetail ? (
           <Link
             to={`/posts/${post.id}`}

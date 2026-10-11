@@ -42,25 +42,33 @@ function mapItems(data: TimelineData | undefined, fn: (items: Post[]) => Post[])
 // 規則を一覧の種類ごとに書き写すと、片方だけ直し忘れる。
 const LIST_ROOTS = [timelineKeys.root, userPostsKeys.root] as const
 
-// 「フォロー中」と「すべて」（自分の投稿はどちらにも出る）と、作者の投稿一覧の、1 ページ目の先頭に足す。まだ読み込んでいなければ、何もしない（開いたときに最新が取れる）。
-// 最初の読み込みの最中なら、取り直す（reloadFirstLoads）。
-// 同じ id の投稿が既にあれば先に除く（重複して並ばないように）。
-export async function prependPost(client: QueryClient, post: Post): Promise<void> {
-  const keys = [timelineKeys.following, timelineKeys.all, userPostsKeys.of(post.author.username)]
+// 一覧のキャッシュの 1 ページ目の先頭に項目を足す（投稿もコメントも同じ規則）。まだ読み込んでいない一覧には何もしない（開いたときに最新が取れる）。
+// データのある読み込みは中断してから書き、最初の読み込みの最中なら取り直す（reloadFirstLoads）。
+// 同じ id の項目が既にあれば先に除く（重複して並ばないように）。
+export async function prependItem<T extends { id: string }>(
+  client: QueryClient,
+  keys: readonly (readonly unknown[])[],
+  item: T,
+): Promise<void> {
   await Promise.all(keys.map((queryKey) => client.cancelQueries({ queryKey, exact: true, predicate: hasData })))
   for (const queryKey of keys) {
-    client.setQueryData<TimelineData>(queryKey, (data) => {
+    client.setQueryData<InfiniteData<Page<T>, string | null>>(queryKey, (data) => {
       if (!data || data.pages.length === 0) return data
       return {
         ...data,
         pages: data.pages.map((page, index) => {
-          const rest = page.items.filter((item) => item.id !== post.id)
-          return { ...page, items: index === 0 ? [post, ...rest] : rest }
+          const rest = page.items.filter((existing) => existing.id !== item.id)
+          return { ...page, items: index === 0 ? [item, ...rest] : rest }
         }),
       }
     })
   }
   await Promise.all(keys.map((queryKey) => reloadFirstLoads(client, { queryKey, exact: true })))
+}
+
+// 「フォロー中」と「すべて」（自分の投稿はどちらにも出る）と、作者の投稿一覧の、1 ページ目の先頭に足す。
+export function prependPost(client: QueryClient, post: Post): Promise<void> {
+  return prependItem(client, [timelineKeys.following, timelineKeys.all, userPostsKeys.of(post.author.username)], post)
 }
 
 // 一覧（種類を問わず全ページ。その人の投稿一覧も含む）と詳細のキャッシュの、id が postId の投稿を apply で書き換える。

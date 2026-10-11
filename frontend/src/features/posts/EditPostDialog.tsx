@@ -3,10 +3,10 @@ import { useId, useRef, useState, type FormEvent } from 'react'
 import type { Post } from '../../api/posts'
 import { ModalDialog } from '../../components/ModalDialog'
 import { useToast } from '../../components/Toast'
+import { useIsMounted } from '../../lib/useIsMounted'
 import { ImageGrid } from '../images/ImageGrid'
 import { BodyField } from './BodyField'
 import { failureMessage, forgetMissingPost, isApiError, toValidationFailure, useUpdatePost } from './mutations'
-import { useIsMounted } from './useIsMounted'
 import { canSubmitBody } from './validation'
 
 type EditPostDialogProps = {

@@ -21,8 +21,7 @@ function tabClass({ isActive }: { isActive: boolean }): string {
 // React Router は大文字小文字と末尾の / を区別せずに画面を選ぶ（/Settings/profile も /users/bob/followers/ も開く）。
 // 画面名と丸ボタンの判定だけが文字どおりに比べるとずれるので、判定の前に 1 回そろえる（小文字にして、末尾の / を除く。/ だけは残す）。
 function normalizePath(pathname: string): string {
-  const lower = pathname.toLowerCase()
-  return lower.length > 1 && lower.endsWith('/') ? lower.replace(/\/+$/, '') || '/' : lower
+  return pathname.toLowerCase().replace(/\/+$/, '') || '/'
 }
 
 // 上部バーに出す画面名。まだ画面が無いものは、ロゴの名前に倒す。pathname は normalizePath を通したもの。

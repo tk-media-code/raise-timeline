@@ -120,10 +120,10 @@ async function toApiError(response: Response): Promise<ApiError> {
 // 上限が無いと、止まった要求が画面の「送信中」を、止まった更新が全タブのログイン系の要求を、いつまでも待たせる。
 // 更新・ログイン・登録・ログアウトは同じ Web Lock の中で送るので、更新が 1 本止まると鍵を持ったままになる。
 // 超えたら、オフラインや接続拒否と同じ ApiError（status 0）にする。画面は新しい文言を持たずに済む。
+// どちらの上限も、応答の先頭（ヘッダー）が届くまで。届いたあとの本文の読み込みには掛けない。
 // 30 秒: JSON の要求は数秒で終わる。これを超えたら、待っても返らない。
 export const REQUEST_TIMEOUT_MS = 30_000
 // 120 秒: 本文が FormData の要求（画像つきの投稿・アイコン）。画像 4 枚は、遅い回線では 30 秒を超えうる。
-// 上限は応答の先頭（ヘッダー）が届くまで。届いたあとの本文の読み込みには掛けない。
 export const UPLOAD_TIMEOUT_MS = 120_000
 
 async function send(path: string, init: ApiFetchInit): Promise<Response> {

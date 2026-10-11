@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useIsMounted } from '../posts/useIsMounted'
+import { useIsMounted } from '../../lib/useIsMounted'
 
 export type OptimisticToggleOptions = {
   // 同じ対象のボタンが画面に複数あっても状態を 1 つにする鍵。useMutation の scope の id にも使う（例 `like:<postId>`）。

@@ -21,7 +21,8 @@ export function ProfileHeader({ user }: { user: UserDetail }) {
             プロフィールを編集
           </Link>
         ) : (
-          // key は、同じ画面のままほかの人のプロフィールへ移ったときに、ボタンの状態（押した直後の印）を作り直すため。
+          // key は、同じ画面のままほかの人のプロフィールへ移ったときに、ボタンを作り直すため。付け外しの順番待ちの鍵（useMutation の scope）は
+          // 作ったときの値で固定され、途中で対象を変えられない。押した直後の印（justToggled）も、前の人の分を持ち越さない。
           <FollowButton key={user.id} user={user} />
         )}
       </div>
