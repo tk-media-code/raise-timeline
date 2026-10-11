@@ -78,4 +78,43 @@ describe('prepareFocusAfterRemoval', () => {
     expect(() => restore()).not.toThrow()
     expect(document.activeElement).toBe(document.body)
   })
+
+  it('消した項目の中にあったフォーカスは、消えたあとも「失われた」として次の項目に移す', () => {
+    const { items, articles } = buildList(3)
+    const button = document.createElement('button')
+    articles[1]?.append(button)
+    button.focus()
+    const restore = prepareFocusAfterRemoval(articles[1] ?? null)
+
+    // 消す前に、フォーカスが消す項目の中にある。項目を外すと、フォーカスは body に落ちる。
+    items[1]?.remove()
+    restore()
+
+    expect(document.activeElement).toBe(articles[2])
+  })
+
+  it('待っている間に別の画面へ移っていたら（見出しが別物なら）、フォーカスを動かさない', () => {
+    const { items, articles } = buildList(1)
+    const restore = prepareFocusAfterRemoval(articles[0] ?? null)
+
+    items[0]?.remove()
+    document.querySelector('main')!.innerHTML = '<h1>検索</h1>'
+    restore()
+
+    expect(document.activeElement).toBe(document.body)
+    expect(document.querySelector('h1')).not.toHaveAttribute('tabindex')
+  })
+
+  it('待っている間に別の入力欄へ移っていたら、フォーカスを動かさない', () => {
+    const { items, articles } = buildList(3)
+    const input = document.createElement('input')
+    document.body.append(input)
+    const restore = prepareFocusAfterRemoval(articles[1] ?? null)
+
+    input.focus()
+    items[1]?.remove()
+    restore()
+
+    expect(document.activeElement).toBe(input)
+  })
 })
