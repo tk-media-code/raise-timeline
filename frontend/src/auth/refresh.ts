@@ -62,7 +62,7 @@ async function doRefresh(startedAt: number): Promise<AuthResponse | null> {
     setSessionUserId(session.user.id)
     return session
   } catch (error) {
-    // 401 はリフレッシュトークンが無い・期限切れ・使用済みのどれか。ログアウト状態として扱う。
+    // 401 はリフレッシュトークンが無い・期限切れ・ログアウト済み・使用済みで猶予を過ぎた、のどれか。ログアウト状態として扱う。
     // それ以外（500、通信失敗）はセッションが死んだとは言えないので、トークンは残して投げる。
     if (error instanceof ApiError && error.status === 401) {
       // 古い更新の 401 で、直後にログインした人のトークンを消したり、ログアウトを知らせたりしない。

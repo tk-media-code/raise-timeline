@@ -95,7 +95,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 
 | 応答 | 場面 |
 | --- | --- |
-| 200 `{ "accessToken": "...", "user": Me }` ＋ 新しい Cookie | 有効なリフレッシュトークン |
+| 200 `{ "accessToken": "...", "user": Me }` ＋ 新しい Cookie | 有効なリフレッシュトークン。使用済みでも、使ってから猶予（60 秒）の中なら 200 |
 | 401 `INVALID_REFRESH_TOKEN`（Cookie は消さない） | 無い、期限切れ、ログアウト済み、使用済みで猶予（60 秒）を過ぎた |
 
 ### `POST /api/auth/logout`
@@ -137,7 +137,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 
 退会と同時に走った同じ人の投稿などが利用者への外部キー違反になったときは、401 `UNAUTHENTICATED` に変換する（[error-handling-design.md](../error-handling-design.md)）。
 
-退会と、同じ人のトークンの更新が同時に走ると、まれに DB のデッドロックで片方が 500 になる。更新はトークンの行を消してから `users` に依存する行を入れ、退会は `users` の行を押さえてからトークンの行を消すので、ロックの順が逆になるため。PostgreSQL が片方を取り消すのでデータは壊れず、利用者はやり直せば済むので、受け入れる。順を揃えるために退会の `FOR UPDATE` をやめると、進行中の投稿を待てず、S3 に画像が残る。
+退会と、同じ人のトークンの更新が同時に走ると、まれに DB のデッドロックで片方が 500 になる。更新はトークンの行を行ロックで押さえてから `users` に依存する行を入れ、退会は `users` の行を押さえてからトークンの行を消すので、ロックの順が逆になるため。PostgreSQL が片方を取り消すのでデータは壊れず、利用者はやり直せば済むので、受け入れる。順を揃えるために退会の `FOR UPDATE` をやめると、進行中の投稿を待てず、S3 に画像が残る。
 
 退会と同時のログインは、照合（BCrypt）の間に本人が退会してコミットすると、トークンの挿入が `refresh_tokens_user_id_fkey` の外部キー違反になる。これは 500 にせず、メールアドレスが無い場合と同じく `auth.login.failed` を INFO で残して 401 `INVALID_CREDENTIALS` にする（ほかの制約の違反は変換せず 500）。
 
@@ -208,7 +208,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 - ログイン失敗の文言は、存在しないメールアドレスでも、パスワード違いでも同じ
 - パスワードとトークンは、DEBUG を含むどのログの行にも含まれない。メールアドレスは INFO 以上の行に含まれない（DEBUG の行に出るローカルの SQL の引数は見ない。[logging-design.md](../logging-design.md) の 5 章）
 - ログイン失敗の応答時間が、メールアドレスの有無で変わらない（ダミーの照合をしている）
-- 登録、ログインの成功と失敗、更新の失敗、ログアウトが、出来事 `auth.register` `auth.login.succeeded` `auth.login.failed` `auth.refresh.failed` `auth.logout` として残る。成功の行には利用者 id が付き、失敗の行にはメールアドレスの有無を示す値が無い（[logging-design.md](../logging-design.md) の 3 章）
+- 登録、ログインの成功と失敗、更新の失敗、猶予の中の更新、ログアウトが、出来事 `auth.register` `auth.login.succeeded` `auth.login.failed` `auth.refresh.failed` `auth.refresh.grace_used` `auth.logout` として残る。成功の行には利用者 id が付き、失敗の行にはメールアドレスの有無を示す値が無い（[logging-design.md](../logging-design.md) の 3 章）
 
 ### 退会
 

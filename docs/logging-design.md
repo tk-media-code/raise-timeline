@@ -44,7 +44,7 @@
 ## 3. 残す出来事
 
 `event.action` は出来事の名前で、検索と集計の鍵になる。requestId と利用者 id は 4 章の MDC で全行に自動で付くので、表の「付ける値」には入れない（同じ名前を行の項目にも入れると行が壊れる。4 章の約束 2）。
-登録・ログイン成功・ログアウトは未ログインの要求で、MDC に `user.id` が無い。この 3 つは、出来事の行を書く前にサービスが利用者 id を MDC に置く（既にあれば上書き）。
+登録・ログイン成功・ログアウト・猶予の中の更新（`auth.refresh.grace_used`）は未ログインの要求で、MDC に `user.id` が無い。この 4 つは、出来事の行を書く前にサービスが利用者 id を MDC に置く（既にあれば上書き）。
 
 | event.action | レベル | 付ける値 | いつ |
 | --- | --- | --- | --- |
@@ -89,7 +89,7 @@ Spring Boot が自動で付ける項目と、このプロジェクトが足す�
 | --- | --- | --- |
 | `@timestamp` `log.level` `log.logger` `process.pid` `process.thread.name` `service.name` `service.environment` `message` `ecs.version` | Spring Boot | 時刻は UTC。`service.environment` は `local` か `production`。`service.version` は jar の版が取れるときだけ付く |
 | `error.type` `error.message` `error.stack_trace` | Spring Boot | 例外を渡した行にだけ付く。根本原因（cause）を先頭にする設定にする |
-| `http.request.id` `client.ip` `user.id` | MDC。要求の間ずっと | requestId、接続元の IP、ログイン中の利用者 id。要求の間に出るすべての行に付く。`user.id` は認証フィルタがトークンを検証したあとに置くので、未ログインの要求には付かない。登録・ログイン成功・ログアウトでは、サービスが出来事を書く前に置く（3 章） |
+| `http.request.id` `client.ip` `user.id` | MDC。要求の間ずっと | requestId、接続元の IP、ログイン中の利用者 id。要求の間に出るすべての行に付く。`user.id` は認証フィルタがトークンを検証したあとに置くので、未ログインの要求には付かない。登録・ログイン成功・ログアウト・猶予の中の更新では、サービスが出来事を書く前に置く（3 章） |
 | `http.request.method` `url.path` `url.query` `http.response.status_code` `event.duration` | 要求ログ | 所要時間はナノ秒。ECS と Datadog の両方がナノ秒を標準にしている |
 | `event.action` `event.code` | 出来事の行 | 出来事の名前（3 章）と、エラー応答の `code`（[error-handling-design.md](error-handling-design.md) の分類表） |
 | `app.post.id` `app.comment.id` `app.image.keys` | 出来事の行 | 辞書に無い、このアプリ固有の値。`app.image.keys` は文字列の配列 |
