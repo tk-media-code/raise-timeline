@@ -123,7 +123,7 @@ async function toApiError(response: Response): Promise<ApiError> {
 // どちらの上限も、応答の先頭（ヘッダー）が届くまで。届いたあとの本文の読み込みには掛けない。
 // 30 秒: JSON の要求は数秒で終わる。これを超えたら、待っても返らない。
 export const REQUEST_TIMEOUT_MS = 30_000
-// 120 秒: 本文が FormData の要求（画像つきの投稿・アイコン）。画像 4 枚は、遅い回線では 30 秒を超えうる。
+// 120 秒: 本文が FormData の要求（投稿の作成は画像の有無によらず multipart で送るので全部、アイコンの差し替え）。画像 4 枚は、遅い回線では 30 秒を超えうる。
 export const UPLOAD_TIMEOUT_MS = 120_000
 
 async function send(path: string, init: ApiFetchInit): Promise<Response> {
