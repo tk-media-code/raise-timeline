@@ -20,7 +20,7 @@
 実装の順序 11「本番環境に出す」で行う。構成は [architecture.md](architecture.md) の 3 章。
 
 - **回数の制限。** ログイン・登録・退会・ユーザー検索・更新（`/api/auth/refresh`）の API に、nginx の `limit_req` を掛ける。ログイン・登録・退会は 1 IP あたり毎分 20 回、バースト 20 から始める（[architecture.md](architecture.md) の 3 章「本番構築の前に決めること」と 6 章の総当たり対策）。検索の API の流量も同じ nginx で制限する。更新の口を足すのは、猶予の中では使用済みの同じ Cookie を繰り返し送るたびに 30 日有効の行が増える（掃除は未使用の行を消さない）ので、ログインしている人が `refresh_tokens` を太らせられるため
-- **V6 より前の版のアプリへ戻すとき。** ローリングデプロイで前の版と並ぶ間も含め、`DELETE FROM refresh_tokens WHERE used_at IS NOT NULL` を流す。前の版は `used_at` を知らず、使用済みの行を未使用として 1 回使えてしまうため
+- **V6 より前の版のアプリへ戻すとき。** 前の版は `used_at` を知らず、使用済みの行を未使用として 1 回使えてしまう。`DELETE FROM refresh_tokens WHERE used_at IS NOT NULL` を流して、使用済みの行を消す。流すのは、V6 の版（使った時刻を書く版）がすべて止まってから。並んでいる間に流しても、そのあと V6 の版が使用済みにした行は、前の版で 1 回使えてしまう。前の版と V6 の版が並んで動く間は、この DELETE では穴を塞げない。戻すときのローリングデプロイも、初めて V6 の版を出すときのローリングデプロイも同じ。受け入れるか、並ばせない（止めてから入れ替える）かを、本番の構築で決める
 - **本番で開発用の署名鍵を拒む。** `JWT_SECRET` は、ローカルでは `docker-compose.yml` に書いた開発専用の値で動く（[architecture.md](architecture.md) の 2 章）。本番で、この開発専用の値のまま起動したら、起動を失敗させる
 - **pgjdbc の `logServerErrorDetail`。** 既定では、制約違反の例外のメッセージにサーバーが返した詳細（重複した値など）が入る。メールアドレスなどがログに出ないよう、本番でこの設定をどうするかを決める（[logging-design.md](logging-design.md) の 5 章の、書いてはいけない値）
 - **退会のパスワード違いを見張るか。** 退会のパスワード違い（要求ログの `event.code="INVALID_PASSWORD"`）は出来事として残さない（[features/auth.md](features/auth.md) の 4 章）。総当たりの試みを見張る必要があるかを、メトリクスフィルタ（[logging-design.md](logging-design.md) の 9 章）と合わせて決める
