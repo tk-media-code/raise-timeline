@@ -13,9 +13,12 @@ import jakarta.servlet.ServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -48,6 +51,15 @@ public class RequestLogFilter extends OncePerRequestFilter {
 
 	/** 利用者が送る値をログとヘッダーにそのまま通さないための形。ログの注入や巨大な値を防ぐ。 */
 	private static final Pattern VALID_REQUEST_ID = Pattern.compile("^[A-Za-z0-9-]{1,64}$");
+
+	/**
+	 * 要求ログの {@code url.query} で値を伏せるパラメータの名前。検索語は利用者が自由に打つ文字で、メールアドレスや
+	 * 人名を含みうるため（docs/logging-design.md 5 章）。名前は URL デコードしてから比べる（コンテナも名前をデコードして
+	 * 読むので、{@code %71=} は {@code q} として届く）。
+	 */
+	private static final Set<String> MASKED_QUERY_PARAMETERS = Set.of("q");
+
+	private static final String MASK = "***";
 
 	/** 属性名は他と重ならないよう、クラス名つきにする。 */
 	private static final String ERROR_CODE_ATTRIBUTE = RequestLogFilter.class.getName() + ".errorCode";
@@ -123,13 +135,39 @@ public class RequestLogFilter extends OncePerRequestFilter {
 		// 値が無い項目は、null で出さず項目ごと出さない。
 		String query = request.getQueryString();
 		if (query != null) {
-			event = event.addKeyValue(LogFields.URL_QUERY, query);
+			event = event.addKeyValue(LogFields.URL_QUERY, maskQuery(query));
 		}
 		Object errorCode = request.getAttribute(ERROR_CODE_ATTRIBUTE);
 		if (errorCode instanceof String code) {
 			event = event.addKeyValue(LogFields.EVENT_CODE, code);
 		}
 		event.log("要求を処理した");
+	}
+
+	/**
+	 * {@link #MASKED_QUERY_PARAMETERS} の値を {@code ***} に置き換える。ほかのパラメータ、順序、{@code &} の構造は
+	 * そのまま。{@code =} の無い部分は伏せる値が無いのでそのまま。名前をデコードできない部分（不正な {@code %}）は、
+	 * 何を指すか分からないので安全側に倒して伏せる。{@code getParameter} 系は本文を読みにいくことがあるので使わず、
+	 * {@code getQueryString()} の文字列だけを扱う。
+	 */
+	private static String maskQuery(String query) {
+		String[] parts = query.split("&", -1);
+		for (int i = 0; i < parts.length; i++) {
+			int equals = parts[i].indexOf('=');
+			if (equals >= 0 && isMasked(parts[i].substring(0, equals))) {
+				parts[i] = parts[i].substring(0, equals + 1) + MASK;
+			}
+		}
+		return String.join("&", parts);
+	}
+
+	private static boolean isMasked(String rawName) {
+		try {
+			return MASKED_QUERY_PARAMETERS.contains(URLDecoder.decode(rawName, StandardCharsets.UTF_8));
+		}
+		catch (IllegalArgumentException e) {
+			return true;
+		}
 	}
 
 	private static Level levelOf(HttpServletRequest request, int status, Duration duration) {
