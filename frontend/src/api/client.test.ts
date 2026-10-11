@@ -427,6 +427,187 @@ describe('apiFetch', () => {
   })
 })
 
+describe('通信の待ち時間の上限', () => {
+  const fetchMock = vi.fn()
+
+  // 渡された signal が中断されたら、本物の fetch と同じく AbortError で失敗する。応答は返さない。
+  function stallUntilAborted(_path: string, init: RequestInit): Promise<Response> {
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init.signal
+      const abort = () => reject(new DOMException('The operation was aborted.', 'AbortError'))
+      if (!signal) return
+      if (signal.aborted) abort()
+      else signal.addEventListener('abort', abort, { once: true })
+    })
+  }
+
+  // 決着したかどうかを、時間を進めながら見るための印。
+  function track(promise: Promise<unknown>) {
+    const state: { settled: boolean; error: unknown } = { settled: false, error: undefined }
+    void (async () => {
+      try {
+        await promise
+      } catch (error) {
+        state.error = error
+      }
+      state.settled = true
+    })()
+    return state
+  }
+
+  beforeEach(() => {
+    vi.resetModules()
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('応答が 30 秒来なければ、status 0・「通信に失敗しました」の ApiError で失敗する', async () => {
+    fetchMock.mockImplementation(stallUntilAborted)
+    const { apiFetch, ApiError, REQUEST_TIMEOUT_MS } = await load()
+    expect(REQUEST_TIMEOUT_MS).toBe(30_000)
+
+    const state = track(apiFetch('/api/x'))
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(state.settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(state.settled).toBe(true)
+    expect(state.error).toBeInstanceOf(ApiError)
+    expect(state.error).toMatchObject({ status: 0, code: null, detail: '通信に失敗しました', errors: [], requestId: null })
+  })
+
+  it('本文が FormData の要求は 120 秒まで待つ', async () => {
+    fetchMock.mockImplementation(stallUntilAborted)
+    const { apiFetch, ApiError, UPLOAD_TIMEOUT_MS } = await load()
+    expect(UPLOAD_TIMEOUT_MS).toBe(120_000)
+    const form = new FormData()
+    form.append('body', 'こんにちは')
+
+    const state = track(apiFetch('/api/x', { method: 'POST', body: form }))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(state.settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(89_999)
+    expect(state.settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(state.settled).toBe(true)
+    expect(state.error).toBeInstanceOf(ApiError)
+    expect(state.error).toMatchObject({ status: 0, detail: '通信に失敗しました' })
+  })
+
+  it('応答が来たら、タイマーを止める（上限の時間が過ぎても何も起きない）', async () => {
+    fetchMock.mockResolvedValueOnce(ok(me))
+    const { apiFetch } = await load()
+
+    await expect(apiFetch('/api/x')).resolves.toEqual(me)
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('fetch が失敗したときも、タイマーを止める', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const { apiFetch } = await load()
+
+    await expect(apiFetch('/api/x')).rejects.toMatchObject({ status: 0 })
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('呼ぶ側が渡した signal で中断したときは、その中断がそのまま伝わる', async () => {
+    fetchMock.mockImplementation(stallUntilAborted)
+    const { apiFetch, ApiError } = await load()
+    const controller = new AbortController()
+
+    const state = track(apiFetch('/api/x', { signal: controller.signal }))
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(state.settled).toBe(false)
+    controller.abort()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(state.settled).toBe(true)
+    // 待ち時間の上限の失敗（ApiError）に化けない。
+    expect(state.error).not.toBeInstanceOf(ApiError)
+    expect(state.error).toMatchObject({ name: 'AbortError' })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('呼ぶ側の signal がすでに中断済みなら、すぐ中断する', async () => {
+    fetchMock.mockImplementation(stallUntilAborted)
+    const { apiFetch, ApiError } = await load()
+    const controller = new AbortController()
+    controller.abort()
+
+    const state = track(apiFetch('/api/x', { signal: controller.signal }))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(state.settled).toBe(true)
+    expect(state.error).not.toBeInstanceOf(ApiError)
+    expect(state.error).toMatchObject({ name: 'AbortError' })
+  })
+
+  it('呼ぶ側の signal があっても、上限に当たれば通信の失敗になる。応答が来たら登録を外す', async () => {
+    fetchMock.mockImplementation(stallUntilAborted)
+    const { apiFetch, ApiError } = await load()
+    const controller = new AbortController()
+
+    const stalled = track(apiFetch('/api/x', { signal: controller.signal }))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(stalled.error).toBeInstanceOf(ApiError)
+
+    fetchMock.mockReset()
+    fetchMock.mockResolvedValueOnce(ok(me))
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener')
+    await apiFetch('/api/y', { signal: controller.signal })
+    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function))
+  })
+
+  it('上限に当たった要求のあと、次の要求はすぐ送れる（ログインの更新の鍵を持ったままにならない）', async () => {
+    // 本物の Web Locks と同じく、同じ名前の鍵は 1 本ずつ。前の持ち主が終わるまで次は始まらない。
+    let tail: Promise<unknown> = Promise.resolve()
+    const request = vi.fn(<T,>(_name: string, task: () => Promise<T>): Promise<T> => {
+      const run = tail.then(task)
+      tail = run.catch(() => undefined)
+      return run
+    })
+    vi.stubGlobal('navigator', { ...navigator, locks: { request } })
+    fetchMock.mockImplementation((path: string, init: RequestInit) => {
+      if (path === '/api/a') return Promise.resolve(problem(401, 'UNAUTHENTICATED'))
+      if (path === '/api/auth/refresh') return stallUntilAborted(path, init)
+      return Promise.resolve(ok({ accessToken: 'x', user: me }))
+    })
+    const { apiFetch, login, setAccessToken, setSessionUserId } = await load()
+    setAccessToken('old')
+    setSessionUserId('1')
+
+    // 401 → 更新（鍵を取って送る）→ 更新の fetch が止まる。
+    const first = track(apiFetch('/api/a'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/a', '/api/auth/refresh'])
+    // 鍵を取る要求（ログイン）は、更新が終わるまで待たされる。
+    const next = track(login({ email: 'alice@example.com', password: 'pw' }))
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(first.settled).toBe(false)
+    expect(next.settled).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    // 30 秒で更新が通信の失敗で終わり、鍵が空く。
+    await vi.advanceTimersByTimeAsync(1)
+    expect(first.error).toMatchObject({ status: 0, detail: '通信に失敗しました' })
+    expect(next.settled).toBe(true)
+    expect(next.error).toBeUndefined()
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/a', '/api/auth/refresh', '/api/auth/login'])
+
+    // 鍵を使わない普通の要求も、待たされずに送られる。
+    await expect(apiFetch('/api/b')).resolves.toEqual({ accessToken: 'x', user: me })
+  })
+})
+
 describe('認証の API', () => {
   const fetchMock = vi.fn()
 

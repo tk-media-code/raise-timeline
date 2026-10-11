@@ -116,6 +116,16 @@ async function toApiError(response: Response): Promise<ApiError> {
   })
 }
 
+// 応答が来ない要求に付ける待ち時間の上限。
+// 上限が無いと、止まった要求が画面の「送信中」を、止まった更新が全タブのログイン系の要求を、いつまでも待たせる。
+// 更新・ログイン・登録・ログアウトは同じ Web Lock の中で送るので、更新が 1 本止まると鍵を持ったままになる。
+// 超えたら、オフラインや接続拒否と同じ ApiError（status 0）にする。画面は新しい文言を持たずに済む。
+// 30 秒: JSON の要求は数秒で終わる。これを超えたら、待っても返らない。
+export const REQUEST_TIMEOUT_MS = 30_000
+// 120 秒: 本文が FormData の要求（画像つきの投稿・アイコン）。画像 4 枚は、遅い回線では 30 秒を超えうる。
+// 上限は応答の先頭（ヘッダー）が届くまで。届いたあとの本文の読み込みには掛けない。
+export const UPLOAD_TIMEOUT_MS = 120_000
+
 async function send(path: string, init: ApiFetchInit): Promise<Response> {
   const { body, auth, retryOn401: _retryOn401, headers: initHeaders, ...rest } = init
   const headers = new Headers(initHeaders)
@@ -135,11 +145,37 @@ async function send(path: string, init: ApiFetchInit): Promise<Response> {
     headers.set('Content-Type', 'application/json')
   }
 
+  // 応答が来ないまま止まった要求を、ここで打ち切る。
+  // AbortSignal.timeout は使わない。偽のタイマー（vi.useFakeTimers）で進められず、テストで確かめられない。
+  const controller = new AbortController()
+  const timer = setTimeout(
+    () => controller.abort(),
+    encodedBody instanceof FormData ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
+  )
+  // 呼ぶ側の signal が中断されたら、こちらも中断する。中断済みの signal は abort が発火しないので、すぐ中断する。
+  const callerSignal = rest.signal ?? null
+  const abortWithCaller = () => controller.abort(callerSignal?.reason)
+  if (callerSignal?.aborted) abortWithCaller()
+  else callerSignal?.addEventListener('abort', abortWithCaller, { once: true })
+
   try {
-    return await fetch(path, { ...rest, headers, body: encodedBody, credentials: 'same-origin' })
-  } catch {
-    // 応答が無い（オフライン、接続拒否）。画面は status 0 を通信失敗として扱う。
+    return await fetch(path, {
+      ...rest,
+      signal: controller.signal,
+      headers,
+      body: encodedBody,
+      credentials: 'same-origin',
+    })
+  } catch (error) {
+    // 呼ぶ側が自分で中断したものは、通信の失敗にせず、そのまま伝える。
+    if (callerSignal?.aborted) throw error
+    // 応答が無い（オフライン、接続拒否）か、待ち時間の上限に当たった。
+    // 画面は status 0 を通信失敗として扱う。
     throw new ApiError({ status: 0, code: null, detail: FALLBACK_DETAIL, errors: [], requestId: null })
+  } finally {
+    // 応答が来ても失敗しても、タイマーと登録を残さない。
+    clearTimeout(timer)
+    callerSignal?.removeEventListener('abort', abortWithCaller)
   }
 }
 
