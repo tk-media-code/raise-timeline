@@ -1,0 +1,58 @@
+package com.tkmedia.raisetimeline.service;
+
+import com.tkmedia.raisetimeline.error.FieldError;
+import com.tkmedia.raisetimeline.error.ValidationException;
+import com.tkmedia.raisetimeline.validation.TextRules;
+import java.util.List;
+
+/**
+ * ユーザー検索の検索語の規則と、{@code ILIKE} に渡すパターンの組み立て。
+ *
+ * <p>順序: (1) null は空文字 (2) 受け取ったままの値に使えない文字があれば誤り (3) {@code strip()}
+ * (4) 空なら誤り (5) 50 コードポイントを超えれば誤り。返すのは (3) の後の値。
+ *
+ * <p>{@code @NotBlank} などの注釈で検査しないのは、{@link CommentBodyRules} と同じ理由。{@code trim()} は全角空白
+ * （U+3000）を空白と見ないので、全角空白だけの語が通ってしまう。画面（JS の {@code trim()}）は全角空白を空として扱うので、
+ * ここも {@code strip()} にそろえる。{@code trim()} は NUL も消してしまうので、使えない文字の検査を {@code strip()} より
+ * 前に置き、受け取ったままの値に当てる。
+ *
+ * <p>{@link #containsPattern} が {@code \} を最初に置き換えるのは、先に {@code %} や {@code _} を {@code \%}・{@code \_}
+ * にすると、そのとき足した {@code \} まで次の置き換えで二重になるため。
+ */
+final class SearchQueries {
+
+	static final int MAX_CODE_POINTS = 50;
+
+	static final String REQUIRED = "検索する語を入力してください";
+	static final String TOO_LONG = "50 文字以内で入力してください";
+	static final String UNUSABLE_CHARS = "使えない文字が含まれています";
+
+	private SearchQueries() {
+	}
+
+	/** 前後の空白を除いた検索語を返す。誤りは {@link ValidationException}（field は {@code q}）。 */
+	static String validate(String raw) {
+		String value = raw == null ? "" : raw;
+		if (TextRules.containsUnusableChars(value)) {
+			throw invalid(UNUSABLE_CHARS);
+		}
+		String q = value.strip();
+		if (q.isEmpty()) {
+			throw invalid(REQUIRED);
+		}
+		if (TextRules.codePointLength(q) > MAX_CODE_POINTS) {
+			throw invalid(TOO_LONG);
+		}
+		return q;
+	}
+
+	/** 部分一致の {@code ILIKE} に渡すパターン。{@code \}・{@code %}・{@code _} を文字として探すよう、{@code \} でエスケープする。 */
+	static String containsPattern(String q) {
+		return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+	}
+
+	private static ValidationException invalid(String message) {
+		return new ValidationException(List.of(new FieldError("q", message)));
+	}
+
+}

@@ -86,6 +86,25 @@
 		SELECT avatar_key FROM users WHERE id = #{userId} AND avatar_key IS NOT NULL
 	</select>
 
+	<!--
+		users からは表示に要る列だけを読む。email と password_hash は読まない。
+		前後に % を付けた ILIKE は索引を使えず、users を全件読む。数百人の規模なので許す（docs/database-design.md 4 章）。
+		結合しないので、ユーザー名と表示名の両方に一致しても 1 行にしかならない。
+		ESCAPE '\' は 1 文字の \ （PostgreSQL の既定 standard_conforming_strings = on のもとで、文字列リテラルの
+		中の \ はそのまま 1 文字）。pattern 側で \ % _ を \ で打ち消してあるので、利用者の入力は文字として探される。
+		cursorId は users.id そのもの。is_following は viewer の目から見た行の人（u）について。
+		cursor が null のときは <if> で条件ごと外す（FollowMapper.findFollowers と同じ）。
+	-->
+	<select id="search" resultType="com.tkmedia.raisetimeline.domain.UserCardRow">
+		SELECT u.id AS cursor_id, u.id AS user_id, u.username, u.display_name, u.avatar_key, u.bio,
+		       EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = #{viewer} AND f.followee_id = u.id) AS is_following
+		FROM users u
+		WHERE (u.username ILIKE #{pattern} ESCAPE '\' OR u.display_name ILIKE #{pattern} ESCAPE '\')
+		<if test="cursor != null">AND u.id &lt; #{cursor}</if>
+		ORDER BY u.id DESC
+		LIMIT #{limit}
+	</select>
+
 	<delete id="deleteById">
 		DELETE FROM users WHERE id = #{id}
 	</delete>
