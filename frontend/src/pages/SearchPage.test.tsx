@@ -49,9 +49,14 @@ function Probe() {
 function Back() {
   const navigate = useNavigate()
   return (
-    <button type="button" onClick={() => void navigate(-1)}>
-      履歴を戻る
-    </button>
+    <>
+      <button type="button" onClick={() => void navigate(-1)}>
+        履歴を戻る
+      </button>
+      <button type="button" onClick={() => void navigate(1)}>
+        履歴を進む
+      </button>
+    </>
   )
 }
 
@@ -108,6 +113,7 @@ describe('SearchPage', () => {
     expect(heading).toHaveClass('max-md:sr-only')
     expect(screen.getByText('ユーザー名か表示名で探せます')).toBeInTheDocument()
     expect(box()).toHaveValue('')
+    expect(box()).not.toHaveFocus()
     await pass(1000)
     expect(users.searchUsers).not.toHaveBeenCalled()
   })
@@ -384,5 +390,12 @@ describe('SearchPage', () => {
     expect(location()).toHaveTextContent(/^\/search\?q=ali$/)
     expect(await screen.findByRole('link', { name: '結果-ali @user-ali' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '結果-bob @user-bob' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '履歴を進む' }))
+
+    expect(box()).toHaveValue('bob')
+    expect(location()).toHaveTextContent(/^\/search\?q=bob$/)
+    expect(await screen.findByRole('link', { name: '結果-bob @user-bob' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '結果-ali @user-ali' })).not.toBeInTheDocument()
   })
 })

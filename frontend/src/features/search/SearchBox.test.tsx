@@ -79,7 +79,8 @@ describe('SearchBox', () => {
   it('Enter ですぐ呼ばれ、そのあと 400 ミリ秒待っても、もう呼ばれない', async () => {
     const { onSearch, user, input } = setup()
 
-    await user.type(input, 'ali')
+    act(() => input.focus())
+    typeSync(input, 'ali')
     await user.keyboard('{Enter}')
     expect(onSearch).toHaveBeenCalledTimes(1)
     expect(onSearch).toHaveBeenCalledWith('ali')
@@ -127,7 +128,7 @@ describe('SearchBox', () => {
     fireEvent.compositionStart(input)
     fireEvent.change(input, { target: { value: 'アリス' } })
     fireEvent.compositionEnd(input)
-    await user.click(input)
+    act(() => input.focus())
     await user.keyboard('{Enter}')
     expect(onSearch).toHaveBeenCalledTimes(1)
     expect(onSearch).toHaveBeenCalledWith('アリス')
