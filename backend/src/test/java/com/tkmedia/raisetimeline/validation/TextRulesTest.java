@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -45,6 +46,44 @@ class TextRulesTest {
 	@DisplayName("normalizeNewlines は null を null のまま返す")
 	void normalizeNewlinesKeepsNull(String value) {
 		assertThat(TextRules.normalizeNewlines(value)).isNull();
+	}
+
+	@Test
+	@DisplayName("前後の U+00A0・U+3000・U+FEFF・U+2007・U+202F・半角空白・タブ・改行を除き、中の空白は残す")
+	void stripBlankRemovesSurroundingBlankChars() {
+		String raw = " \u00A0\u3000\u2007\u202F\t\n山田\u3000太郎\uFEFF\r\n";
+
+		assertThat(TextRules.stripBlank(raw)).isEqualTo("山田\u3000太郎");
+	}
+
+	@Test
+	@DisplayName("stripBlank は null を null のまま返し、空白だけなら空文字を返す")
+	void stripBlankKeepsNullAndEmptiesBlank() {
+		assertThat(TextRules.stripBlank(null)).isNull();
+		assertThat(TextRules.stripBlank(" \u00A0\u3000")).isEmpty();
+		assertThat(TextRules.stripBlank("a")).isEqualTo("a");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "", " ", "\u00A0", "\u2007", "\u202F", "\uFEFF", "\u3000", "\t\r\n", " \u00A0\u3000\uFEFF" })
+	@NullSource
+	@DisplayName("空白の文字だけ・空文字・null は isBlank が true")
+	void blankTextIsBlank(String value) {
+		assertThat(TextRules.isBlank(value)).isTrue();
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "a", " a ", "\u00A0あ", "\u0000" })
+	@DisplayName("空白でない文字を含めば isBlank は false")
+	void textWithContentIsNotBlank(String value) {
+		assertThat(TextRules.isBlank(value)).isFalse();
+	}
+
+	@Test
+	@DisplayName("幅の無い文字（U+200B）は空白とみなさない")
+	void zeroWidthSpaceIsNotBlank() {
+		assertThat(TextRules.isBlank("\u200B")).isFalse();
+		assertThat(TextRules.stripBlank("\u200B")).isEqualTo("\u200B");
 	}
 
 	@ParameterizedTest

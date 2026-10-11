@@ -22,8 +22,8 @@ class SearchQueriesTest {
 
 	@ParameterizedTest(name = "[{index}]")
 	@NullSource
-	@ValueSource(strings = { "", "   ", "　　" })
-	@DisplayName("null・空・半角空白だけ・全角空白だけは 検索する語を入力してください")
+	@ValueSource(strings = { "", "   ", "　　", "\u00A0", "\u2007", "\u202F", "\uFEFF", "\u00A0 \u3000\uFEFF" })
+	@DisplayName("null・空・半角空白だけ・全角空白だけ・U+00A0 などの空白の文字だけは 検索する語を入力してください")
 	void blankIsRejected(String raw) {
 		assertRejected(raw, SearchQueries.REQUIRED);
 	}
@@ -33,6 +33,7 @@ class SearchQueriesTest {
 	void surroundingWhitespaceIsStripped() {
 		assertThat(SearchQueries.validate(" ali ")).isEqualTo("ali");
 		assertThat(SearchQueries.validate("　アリス　")).isEqualTo("アリス");
+		assertThat(SearchQueries.validate("\u00A0ali\uFEFF\u202F")).isEqualTo("ali");
 	}
 
 	@Test

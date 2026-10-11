@@ -8,11 +8,13 @@ import java.util.List;
 /**
  * 投稿の本文の規則。投稿と編集が同じ判定を通るよう、1 か所にまとめる。
  *
- * <p>順序: (1) null は空文字 (2) 使えない文字 (3) CRLF を LF に (4) {@code strip()} で空になるなら空文字
+ * <p>順序: (1) null は空文字 (2) 使えない文字 (3) CRLF を LF に (4) 前後の空白を除いて空になるなら空文字
  * (5) 280 コードポイントを超える (6) 空で画像も無い。
  *
  * <p>使えない文字の検査を (3) より前に置くのは、受け取ったままの文字列に当てるため
  * （docs/error-handling-design.md）。(4) の空白だけの本文を空として扱うのは、利用者から見て空だから。
+ * 空白の判定は {@link TextRules#isBlank} で、画面（JS の {@code trim()}）が除く文字（U+00A0・U+3000・U+FEFF など）にそろえる。
+ * Java の {@code strip()} は U+00A0 などを除かないので使わない。
  * それ以外の本文は、前後の空白も含めて入力のまま返す。
  */
 public final class PostBodyRules {
@@ -34,7 +36,7 @@ public final class PostBodyRules {
 		}
 		// 正規化は 1 回だけ行い、その結果を数えるのにも返すのにも使う。2 回かけると "\r\r\n" のような入力で結果が変わる。
 		body = TextRules.normalizeNewlines(body);
-		if (body.strip().isEmpty()) {
+		if (TextRules.isBlank(body)) {
 			body = "";
 		}
 		if (TextRules.codePointLength(body) > MAX_CODE_POINTS) {

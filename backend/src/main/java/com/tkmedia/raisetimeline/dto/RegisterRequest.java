@@ -2,6 +2,7 @@ package com.tkmedia.raisetimeline.dto;
 
 import com.tkmedia.raisetimeline.validation.CodePointSize;
 import com.tkmedia.raisetimeline.validation.NoNul;
+import com.tkmedia.raisetimeline.validation.TextRules;
 import com.tkmedia.raisetimeline.validation.Usernames;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -35,10 +36,14 @@ public record RegisterRequest(
 		@NoNul
 		String password) {
 
-	/** 表示名は前後の Unicode の空白を除く。{@code trim()} は NUL も消すので使わない（NUL は検証で弾く）。 */
+	/**
+	 * 表示名は前後の空白を除く。空白の判定は {@link TextRules#stripBlank} で、画面の {@code trim()} が除く文字
+	 * （U+00A0・U+FEFF など）にそろえる。Java の {@code strip()} はそれらを除かない。{@code trim()} は NUL も消すので
+	 * 使わない（NUL は検証で弾く）。
+	 */
 	public RegisterRequest {
 		if (displayName != null) {
-			displayName = displayName.strip();
+			displayName = TextRules.stripBlank(displayName);
 		}
 	}
 

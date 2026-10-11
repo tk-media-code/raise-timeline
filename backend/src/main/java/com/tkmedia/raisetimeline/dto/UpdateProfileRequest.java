@@ -24,14 +24,18 @@ public record UpdateProfileRequest(
 		@NoNul
 		String bio) {
 
-	/** {@code strip()} は Unicode の空白を除く。{@code trim()} は NUL も消してしまうので使わない（NUL は検証で弾く）。 */
+	/**
+	 * 空白の判定は {@link TextRules#stripBlank}・{@link TextRules#isBlank} で、画面の {@code trim()} が除く文字
+	 * （U+00A0・U+FEFF など）にそろえる。Java の {@code strip()} はそれらを除かない。{@code trim()} は NUL も消してしまうので
+	 * 使わない（NUL は検証で弾く）。
+	 */
 	public UpdateProfileRequest {
 		if (displayName != null) {
-			displayName = displayName.strip();
+			displayName = TextRules.stripBlank(displayName);
 		}
 		if (bio != null) {
 			bio = TextRules.normalizeNewlines(bio);
-			if (bio.strip().isEmpty()) {
+			if (TextRules.isBlank(bio)) {
 				bio = "";
 			}
 		}

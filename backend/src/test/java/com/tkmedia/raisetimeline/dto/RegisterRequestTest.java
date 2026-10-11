@@ -46,6 +46,15 @@ class RegisterRequestTest {
 	}
 
 	@Test
+	@DisplayName("displayName は前後の U+00A0 などを除き、U+00A0 だけなら必須の誤りになる")
+	void displayNameStripsNonBreakingBlank() {
+		assertThat(new RegisterRequest("alice", "\u00A0 アリス\uFEFF", "a@example.com", "password123").displayName())
+				.isEqualTo("アリス");
+		assertThat(violations(new RegisterRequest("alice", "\u00A0", "a@example.com", "password123")))
+				.containsEntry("displayName", "1〜50 文字で入力してください");
+	}
+
+	@Test
 	@DisplayName("displayName の文字数は UTF-16 ではなくコードポイントで数える")
 	void displayNameCountsCodePoints() {
 		// 絵文字 1 文字は UTF-16 で 2 単位。50 個並べても 50 文字として通す。
