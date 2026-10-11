@@ -48,6 +48,7 @@ import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -99,6 +100,84 @@ class RequestLogFilterTest {
 		assertThat(LogLines.get(line, "http.request.id")).isEqualTo("abc-123");
 		assertThat(LogLines.get(line, "client.ip")).isEqualTo("127.0.0.1");
 		assertThat(LogLines.get(line, "event.code")).isNull();
+	}
+
+	/**
+	 * クエリ文字列を、エンコードし直さずそのまま置く。{@code get("...?a%40b")} は {@code %} を {@code %25} に
+	 * 直してしまい、{@code %71} や不正な {@code %zz} を送れない。
+	 */
+	private static RequestPostProcessor rawQuery(String queryString) {
+		return request -> {
+			request.setQueryString(queryString);
+			return request;
+		};
+	}
+
+	private String loggedQuery(CapturedOutput output, String requestId) {
+		List<Map<String, Object>> lines = requestLines(output, requestId);
+		assertThat(lines).hasSize(1);
+		return (String) LogLines.get(lines.get(0), "url.query");
+	}
+
+	@Test
+	@DisplayName("検索語 q の値は、要求ログの url.query で *** に置き換える")
+	void searchTermIsMasked(CapturedOutput output) throws Exception {
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "mask-plain-1").with(rawQuery("q=alice")).with(jwt()))
+				.andExpect(status().isOk());
+
+		assertThat(loggedQuery(output, "mask-plain-1")).isEqualTo("q=***");
+		assertThat(output.getOut()).doesNotContain("alice");
+	}
+
+	@Test
+	@DisplayName("q 以外のクエリと順序・& の構造は変えず、q の値だけを伏せる。行のどこにもメールアドレスが残らない")
+	void onlySearchTermIsMaskedAmongOtherParameters(CapturedOutput output) throws Exception {
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "mask-mixed-1")
+				.with(rawQuery("limit=20&q=a%40b.example&cursor=x")).with(jwt()))
+				.andExpect(status().isOk());
+
+		assertThat(loggedQuery(output, "mask-mixed-1")).isEqualTo("limit=20&q=***&cursor=x");
+		assertThat(output.getOut()).doesNotContain("a%40b").doesNotContain("a@b");
+	}
+
+	@Test
+	@DisplayName("q が繰り返されたら、すべての値を伏せる")
+	void repeatedSearchTermIsMasked(CapturedOutput output) throws Exception {
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "mask-repeat-1").with(rawQuery("q=aaa&q=bbb")).with(jwt()))
+				.andExpect(status().isOk());
+
+		assertThat(loggedQuery(output, "mask-repeat-1")).isEqualTo("q=***&q=***");
+		assertThat(output.getOut()).doesNotContain("aaa").doesNotContain("bbb");
+	}
+
+	@Test
+	@DisplayName("値が空の q= も *** にする")
+	void emptySearchTermIsMasked(CapturedOutput output) throws Exception {
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "mask-empty-1").with(rawQuery("q=")).with(jwt()))
+				.andExpect(status().isOk());
+
+		assertThat(loggedQuery(output, "mask-empty-1")).isEqualTo("q=***");
+	}
+
+	@Test
+	@DisplayName("名前を URL エンコードした %71=（コンテナは q と読む）も、デコードしてから比べて伏せる")
+	void encodedParameterNameIsMasked(CapturedOutput output) throws Exception {
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "mask-encoded-1").with(rawQuery("%71=secret")).with(jwt()))
+				.andExpect(status().isOk());
+
+		assertThat(loggedQuery(output, "mask-encoded-1")).isEqualTo("%71=***");
+		assertThat(output.getOut()).doesNotContain("secret");
+	}
+
+	@Test
+	@DisplayName("名前をデコードできない（%zz=）部分は、安全側に倒して値を伏せる")
+	void undecodableParameterNameIsMasked(CapturedOutput output) throws Exception {
+		mockMvc.perform(get("/api/t/ok").header("X-Request-Id", "mask-malformed-1").with(rawQuery("%zz=secret&limit=20"))
+				.with(jwt()))
+				.andReturn();
+
+		assertThat(loggedQuery(output, "mask-malformed-1")).isEqualTo("%zz=***&limit=20");
+		assertThat(output.getOut()).doesNotContain("secret");
 	}
 
 	@Test

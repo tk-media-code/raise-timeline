@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getMe, getUser, getUserPosts, updateAvatar, updateMe, withdraw } from './users'
+import { getMe, getUser, getUserPosts, searchUsers, updateAvatar, updateMe, withdraw } from './users'
 
 const user = {
   id: 'u1',
@@ -120,5 +120,15 @@ describe('プロフィールの API', () => {
     expect(init.method).toBe('DELETE')
     expect(init.body).toBe('{"password":"correct-horse-1"}')
     expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
+  })
+
+  it('searchUsers は /api/users?q= に語をエンコードして付け、cursor があれば &cursor= を付ける', async () => {
+    fetchMock.mockImplementation(async () => ok({ items: [], nextCursor: null }))
+
+    await searchUsers('a&b c%#', null)
+    await searchUsers('ali', 'c 1')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/users?q=a%26b%20c%25%23')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/users?q=ali&cursor=c%201')
   })
 })

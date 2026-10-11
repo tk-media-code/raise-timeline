@@ -48,7 +48,7 @@
 
 | event.action | レベル | 付ける値 | いつ |
 | --- | --- | --- | --- |
-| `http.request` | INFO。1 秒を超えたら WARN | メソッド、パス、クエリ、status、所要時間、エラー応答の code | 要求 1 件が終わるたび。`GET /api/health` の 200 だけは DEBUG に落とす。ALB が 30 秒ごとに叩くため。画像のアップロードは 1 秒を超えやすいが、まずはそのまま数え、WARN の集計で多ければ上限を分ける |
+| `http.request` | INFO。1 秒を超えたら WARN | メソッド、パス、クエリ（検索語の値は伏せる。5 章）、status、所要時間、エラー応答の code | 要求 1 件が終わるたび。`GET /api/health` の 200 だけは DEBUG に落とす。ALB が 30 秒ごとに叩くため。画像のアップロードは 1 秒を超えやすいが、まずはそのまま数え、WARN の集計で多ければ上限を分ける |
 | `http.request.failed` | ERROR | 例外の種類・文言・スタックトレース、code | 想定外の例外で 500 を返した。MVC の例外ハンドラとフィルタのどちらの経路でも `InternalErrorLog` が書く |
 | `auth.register` | INFO | 無し。行を書く前に `user.id` を MDC に置く | 登録 |
 | `auth.login.succeeded` | INFO | 無し。行を書く前に `user.id` を MDC に置く | ログイン成功 |
@@ -147,6 +147,7 @@ MDC のキー名は ECS の `http.request.id`。API の応答に入る `requestI
 | JWT の秘密鍵、DB のパスワード、S3 の認証情報 | 起動時の設定ログにも出ないよう、設定値を文字列にしてログに渡さない |
 | メールアドレス | ログイン失敗の行に限らず、どの行にも書かない。利用者を指すときは利用者 id を使う。例外はローカルの DEBUG で出る SQL の引数だけ（本番では DEBUG を出さない） |
 | 投稿・コメント・自己紹介の本文、画像の中身 | 利用者の内容物。不具合の調査に要るときは id で DB を引く。例外は同じくローカルの DEBUG の SQL の引数 |
+| 検索語（クエリの `q`） | 利用者が自由に打つ文字で、メールアドレスや人の名前を含みうる。要求ログの `url.query` では値を `***` に置き換える（例 `q=***&limit=20`）。名前は URL デコードしてから比べる。例外はローカルの DEBUG で出る SQL の引数だけ。書き方の壊れた検索語（`q=alice%zz` など）は 400 にして、値を含む例外の文言（Tomcat の `InvalidParameterException`）を書かない |
 | 要求本文と応答本文そのもの | 上のどれかを含みうる。項目を選んで書く |
 
 書くものは、利用者 id、投稿やコメントの id、接続元の IP アドレス。IP アドレスは個人情報に当たるので、保持期間（8 章）を決めて消す。
@@ -201,7 +202,7 @@ JSON は backend と同じ入れ子にする（`{"http":{"response":{"status_cod
 | `@timestamp` | `$time_iso8601` |
 | `event.action` | 固定で `http.request` |
 | `http.request.id` | `$request_id`。同じ値を `proxy_set_header X-Request-Id $request_id` で backend に渡すので、両方のログを 1 つの ID で突き合わせられる |
-| `http.request.method` `url.path` `url.query` `http.response.status_code` `http.response.body.bytes` | `$request_method`、`$request_uri` から `?` より前を `map` で切り出した値（`$uri` は `try_files` の内部リダイレクトで `/index.html` に変わるため）、`$args` `$status` `$body_bytes_sent` |
+| `http.request.method` `url.path` `url.query` `http.response.status_code` `http.response.body.bytes` | `$request_method`、`$request_uri` から `?` より前を `map` で切り出した値（`$uri` は `try_files` の内部リダイレクトで `/index.html` に変わるため）、`$args` `$status` `$body_bytes_sent`。`$args` のうち検索語 `q` の値は伏せる必要がある（5 章。`map` などで `q=***` に置き換える。名前は URL デコードしてから比べる） |
 | `client.ip` `user_agent.original` | `$remote_addr`（ALB の後ろで復元した利用者の IP。[architecture.md](architecture.md)）、`$http_user_agent` |
 | `app.request_time_s` `app.upstream_time_s` | `$request_time` `$upstream_response_time`。nginx は掛け算ができずナノ秒にできないので、秒のまま `app` に置く。`$upstream_response_time` は `-` やカンマ区切りになることがあるので文字列 |
 
@@ -292,7 +293,7 @@ OpenTelemetry で送りたくなったときは、`management.opentelemetry.logg
 | ログの基盤を作る（実装の順序 1） | 4 章の設定、`RequestLogFilter`、`LogFields`、Problem Details と `ApiExceptionHandler` のうち Spring Security に依らない部分（500 の ERROR 出力と `event.code` の受け渡しを含む）、ヘルスチェックの `GET /` から `GET /api/health` への移動（応答は変えない）、README のログの読み方、`docker-compose.yml` で `LOG_LEVEL_APP`（既定値 `DEBUG`）と `APP_ENV` を backend に渡す、`.claude/rules/` のログの読み方（10 章）、12 章の 1〜6 と 8 |
 | 認証の基盤を作る（実装の順序 2） | 認証フィルタが `user.id` を MDC に置く。Spring Security のハンドラが `event.code` を置く。`auth.*` の出来事。画面の 500 の通知に requestId を添える（6 章）。12 章の 7 |
 | 各機能の Issue | 3 章の表の出来事を、その機能で書く |
-| 本番環境に出す（実装の順序 11） | 8 章と 9 章のすべて。10 章の保存する検索の登録。本番の `LOG_LEVEL_APP` は `INFO` を明示して渡す |
+| 本番環境に出す（実装の順序 11） | 8 章と 9 章のすべて。10 章の保存する検索の登録。本番の `LOG_LEVEL_APP` は `INFO` を明示して渡す。nginx の `$args` で検索語（`q`）の値を伏せる |
 
 認証の実装計画（`plans/2026-10-06-auth-foundation.md`）からは、requestId と Problem Details の作業をログ基盤へ移し、`logging.pattern.level` の設定を消す。
 

@@ -11,6 +11,7 @@ import PostDetailPage from './pages/PostDetailPage'
 import ProfileEditPage from './pages/ProfileEditPage'
 import ProfilePage from './pages/ProfilePage'
 import RegisterPage from './pages/RegisterPage'
+import SearchPage from './pages/SearchPage'
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/users/:username" element={<ProfilePage />} />
           <Route path="/users/:username/followers" element={<FollowListPage kind="followers" />} />
           <Route path="/users/:username/following" element={<FollowListPage kind="following" />} />
+          <Route path="/search" element={<SearchPage />} />
           <Route path="/settings/profile" element={<ProfileEditPage />} />
         </Route>
       </Route>

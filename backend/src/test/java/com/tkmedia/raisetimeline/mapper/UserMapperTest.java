@@ -2,6 +2,7 @@ package com.tkmedia.raisetimeline.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.tkmedia.raisetimeline.domain.ReplacedAvatar;
 import com.tkmedia.raisetimeline.domain.User;
+import com.tkmedia.raisetimeline.domain.UserCardRow;
 
 /**
  * users テーブルと UserMapper を、テスト専用の本物の PostgreSQL で確かめる。
@@ -35,6 +37,9 @@ class UserMapperTest {
 
 	@Autowired
 	private UserMapper userMapper;
+
+	@Autowired
+	private FollowMapper followMapper;
 
 	@Autowired
 	private JdbcTemplate jdbc;
@@ -239,6 +244,127 @@ class UserMapperTest {
 	private int count(String sql, Object... args) {
 		Integer count = jdbc.queryForObject(sql, Integer.class, args);
 		return count == null ? 0 : count;
+	}
+
+	private UUID createUser(String username, String displayName, String bio, String avatarKey) {
+		OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+		return userMapper.insert(new User(null, username, displayName, username + "@example.com", "hash", bio, avatarKey,
+				now, now));
+	}
+
+	private UUID createUser(String username, String displayName) {
+		return createUser(username, displayName, "", null);
+	}
+
+	private List<UUID> idsOf(List<UserCardRow> rows) {
+		return rows.stream().map(UserCardRow::userId).toList();
+	}
+
+	@Test
+	@DisplayName("search: ユーザー名の一部で、その人が返る")
+	void searchByUsernamePart() {
+		String s = suffix();
+		UUID target = createUser("find_" + s, "表示名");
+		createUser("other_" + suffix(), "表示名");
+
+		List<UserCardRow> rows = userMapper.search("%nd_" + s + "%", UUID.randomUUID(), null, 20);
+
+		assertThat(idsOf(rows)).containsExactly(target);
+	}
+
+	@Test
+	@DisplayName("search: 表示名の一部で、その人が返る")
+	void searchByDisplayNamePart() {
+		String s = suffix();
+		UUID target = createUser("user_" + suffix(), "検索太" + s);
+		createUser("user_" + suffix(), "別の人" + s);
+
+		List<UserCardRow> rows = userMapper.search("%索太" + s + "%", UUID.randomUUID(), null, 20);
+
+		assertThat(idsOf(rows)).containsExactly(target);
+	}
+
+	@Test
+	@DisplayName("search: 大文字小文字を区別しない")
+	void searchIgnoresCase() {
+		String s = suffix();
+		UUID target = createUser("alice_" + s, "表示名");
+
+		// _ は containsPattern を通さない生のパターンなので任意の 1 文字に一致する。乱数部分が一致すれば足りる。
+		List<UserCardRow> rows = userMapper.search("%ALICE_" + s.toUpperCase() + "%", UUID.randomUUID(), null, 20);
+
+		assertThat(idsOf(rows)).containsExactly(target);
+	}
+
+	@Test
+	@DisplayName("search: ユーザー名と表示名の両方に一致しても 1 行")
+	void searchReturnsOneRowWhenBothMatch() {
+		String s = suffix();
+		UUID target = createUser("both_" + s, "both_" + s);
+
+		List<UserCardRow> rows = userMapper.search("%both\\_" + s + "%", UUID.randomUUID(), null, 20);
+
+		assertThat(idsOf(rows)).containsExactly(target);
+	}
+
+	@Test
+	@DisplayName("search: id の降順で、cursor より小さい id だけを limit 件返す。cursorId は users.id")
+	void searchPagesByUserIdDescending() {
+		String s = suffix();
+		UUID oldest = createUser("page_a_" + s, "表示名");
+		UUID middle = createUser("page_b_" + s, "表示名");
+		UUID newest = createUser("page_c_" + s, "表示名");
+		UUID viewer = UUID.randomUUID();
+
+		List<UserCardRow> first = userMapper.search("%page\\__\\_" + s + "%", viewer, null, 2);
+
+		assertThat(idsOf(first)).containsExactly(newest, middle);
+		assertThat(first).extracting(UserCardRow::cursorId).containsExactly(newest, middle);
+
+		List<UserCardRow> second = userMapper.search("%page\\__\\_" + s + "%", viewer, first.get(1).cursorId(), 2);
+
+		assertThat(idsOf(second)).containsExactly(oldest);
+	}
+
+	@Test
+	@DisplayName("search: isFollowing は viewer がその人をフォローしているときだけ true。viewer 自身も結果に出て false")
+	void searchMarksFollowedByViewer() {
+		String s = suffix();
+		UUID viewer = createUser("fol_viewer_" + s, "表示名");
+		UUID followed = createUser("fol_yes_" + s, "表示名");
+		UUID notFollowed = createUser("fol_no_" + s, "表示名");
+		UUID followsViewer = createUser("fol_rev_" + s, "表示名");
+		followMapper.insert(viewer, followed);
+		followMapper.insert(followsViewer, viewer);
+
+		List<UserCardRow> rows = userMapper.search("%\\_" + s + "%", viewer, null, 20);
+
+		assertThat(rows).extracting(UserCardRow::userId, UserCardRow::isFollowing).containsExactlyInAnyOrder(
+				tuple(viewer, false), tuple(followed, true), tuple(notFollowed, false), tuple(followsViewer, false));
+	}
+
+	@Test
+	@DisplayName("search: \\ をエスケープ文字として扱う。\\% は % という文字だけに一致する")
+	void searchTreatsBackslashAsEscape() {
+		String s = suffix();
+		UUID percent = createUser("user_" + suffix(), "100%達成" + s);
+		createUser("user_" + suffix(), "100点" + s);
+
+		List<UserCardRow> rows = userMapper.search("%100\\%%" + s + "%", UUID.randomUUID(), null, 20);
+
+		assertThat(idsOf(rows)).containsExactly(percent);
+	}
+
+	@Test
+	@DisplayName("search: 行に bio と avatarKey が入る")
+	void searchRowCarriesBioAndAvatarKey() {
+		String s = suffix();
+		UUID id = createUser("card_" + s, "表示名", "よろしく" + s, "avatars/" + s + ".png");
+
+		UserCardRow row = userMapper.search("%card\\_" + s + "%", UUID.randomUUID(), null, 20).getFirst();
+
+		assertThat(row).isEqualTo(new UserCardRow(id, id, "card_" + s, "表示名", "avatars/" + s + ".png", "よろしく" + s,
+				false));
 	}
 
 	@Test

@@ -5,6 +5,7 @@ import { likersKeys } from '../likes/queryKeys'
 import { hasData, reloadFirstLoads } from '../posts/postCache'
 import { timelineKeys } from '../posts/queryKeys'
 import { userKey } from '../profile/queryKeys'
+import { searchKeys } from '../search/queryKeys'
 import { followKeys } from './queryKeys'
 
 // フォローの結果を、取り直さずにキャッシュへ直接書く。書き換えの規則（データのある読み込みは中断してから書き、
@@ -14,15 +15,16 @@ export type FollowTarget = Pick<UserCard, 'id' | 'username' | 'displayName' | 'i
 
 type CardsData = InfiniteData<Page<UserCard>, string | null>
 
-// UserCard が載る一覧の根のキー。どれも同じ規則で扱う。ユーザー検索（Issue 10）の一覧ができたら、ここに 1 つ足す。
-const LIST_ROOTS = [likersKeys.root, followKeys.root] as const
+// UserCard が載る一覧の根のキー。どれも同じ規則で扱う。
+// いいねした人・フォロワーとフォロー中・検索結果の 3 つ。一覧がもう 1 つ増えたら、ここに足す。
+const LIST_ROOTS = [likersKeys.root, followKeys.root, searchKeys.root] as const
 
 function mapCards(data: CardsData | undefined, fn: (items: UserCard[]) => UserCard[]): CardsData | undefined {
   if (!data) return data
   return { ...data, pages: data.pages.map((page) => ({ ...page, items: fn(page.items) })) }
 }
 
-// 一覧（いいねした人・フォロワー・フォロー中。全ページ）と相手のプロフィールのキャッシュを書き換える。
+// 一覧（いいねした人・フォロワー・フォロー中・検索結果。全ページ）と相手のプロフィールのキャッシュを書き換える。
 // プロフィールは isFollowing と followersCount（±1）、一覧は同じ id のカードの isFollowing。
 // 同じ状態を何度書いても結果が変わらない（isFollowing が同じなら値は変えず、数も増減させない。数は 0 未満にしない）ので、
 // 押したとき・失敗で戻すとき・要求が全部終わったときの 3 回、どの順で呼ばれても壊れない。

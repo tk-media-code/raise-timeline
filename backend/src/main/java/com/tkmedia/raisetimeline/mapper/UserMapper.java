@@ -10,6 +10,7 @@ import org.apache.ibatis.annotations.Param;
 
 import com.tkmedia.raisetimeline.domain.ReplacedAvatar;
 import com.tkmedia.raisetimeline.domain.User;
+import com.tkmedia.raisetimeline.domain.UserCardRow;
 
 @Mapper
 public interface UserMapper {
@@ -58,6 +59,15 @@ public interface UserMapper {
 	 * 消す前に集める。順は決まっていない。
 	 */
 	List<String> findImageKeysOf(UUID userId);
+
+	/**
+	 * ユーザー名か表示名が {@code pattern} に一致する人を、id の降順で返す。大文字小文字は区別しない。
+	 * {@code pattern} は {@code ILIKE} のパターンで、{@code \} をエスケープ文字とする
+	 * （{@code SearchQueries.containsPattern} が作る）。{@code cursor} はこれまでの最後の人の id で、null なら先頭から。
+	 * {@code cursorId} は {@code users.id}。{@code viewer} 自身も結果に出る。
+	 */
+	List<UserCardRow> search(@Param("pattern") String pattern, @Param("viewer") UUID viewer, @Param("cursor") UUID cursor,
+			@Param("limit") int limit);
 
 	/** 行を消し、消した行数を返す。投稿・画像の行・リフレッシュトークンは外部キーの連鎖で一緒に消える。 */
 	int deleteById(UUID id);
