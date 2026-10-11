@@ -87,7 +87,7 @@ class LikeControllerTest {
 	@DisplayName("GET は 200 で、items[0] に id・username・displayName・avatarUrl・bio・isFollowing の鍵があり、nextCursor を返す")
 	void getReturnsCards() throws Exception {
 		UUID userId = UUID.fromString("0199b000-0000-7000-8000-000000000002");
-		when(likeService.likers(POST_ID, CURSOR, 5)).thenReturn(new PageResponse<>(
+		when(likeService.likers(USER_ID, POST_ID, CURSOR, 5)).thenReturn(new PageResponse<>(
 				List.of(new UserCard(userId, "hanako", "花子", "https://images.test/a.png", "よろしく", false)),
 				CURSOR));
 
@@ -104,14 +104,25 @@ class LikeControllerTest {
 	}
 
 	@Test
-	@DisplayName("GET は limit を省くと 20 で呼ぶ")
-	void getDefaultsLimitTo20() throws Exception {
-		when(likeService.likers(POST_ID, null, 20)).thenReturn(new PageResponse<>(List.of(), null));
+	@DisplayName("GET はトークンの利用者を viewer として渡す")
+	void getPassesTokenUserAsViewer() throws Exception {
+		when(likeService.likers(USER_ID, POST_ID, null, 20)).thenReturn(new PageResponse<>(List.of(), null));
 
 		mockMvc.perform(get("/api/posts/{id}/likes", POST_ID).with(me()))
 				.andExpect(status().isOk());
 
-		verify(likeService).likers(POST_ID, null, 20);
+		verify(likeService).likers(USER_ID, POST_ID, null, 20);
+	}
+
+	@Test
+	@DisplayName("GET は limit を省くと 20 で呼ぶ")
+	void getDefaultsLimitTo20() throws Exception {
+		when(likeService.likers(USER_ID, POST_ID, null, 20)).thenReturn(new PageResponse<>(List.of(), null));
+
+		mockMvc.perform(get("/api/posts/{id}/likes", POST_ID).with(me()))
+				.andExpect(status().isOk());
+
+		verify(likeService).likers(USER_ID, POST_ID, null, 20);
 	}
 
 	@ParameterizedTest(name = "limit={0}")

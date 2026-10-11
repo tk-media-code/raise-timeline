@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
@@ -10,6 +10,9 @@ import ProfilePage from './ProfilePage'
 
 const api = vi.hoisted(() => ({ getUser: vi.fn(), getUserPosts: vi.fn(), getMe: vi.fn(), updateMe: vi.fn() }))
 vi.mock('../api/users', () => api)
+
+const follows = vi.hoisted(() => ({ followUser: vi.fn(), unfollowUser: vi.fn() }))
+vi.mock('../api/follows', () => follows)
 
 const useAuth = vi.hoisted(() => vi.fn())
 vi.mock('../auth/AuthProvider', () => ({ useAuth }))
@@ -56,6 +59,8 @@ describe('ProfilePage', () => {
   beforeEach(() => {
     api.getUser.mockReset()
     api.getUserPosts.mockReset()
+    follows.followUser.mockReset()
+    follows.unfollowUser.mockReset()
     useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u2', username: 'bob' } })
   })
 
@@ -131,5 +136,33 @@ describe('ProfilePage', () => {
 
     expect(api.getUser).toHaveBeenCalledWith('Alice')
     expect(queryClient.getQueryData(userKey('alice'))).toEqual(makeUser())
+  })
+
+  it('フォローを押すと、その場で「フォロワー 6」になる', async () => {
+    api.getUser.mockResolvedValue(makeUser({ followersCount: 5 }))
+    api.getUserPosts.mockResolvedValue({ items: [], nextCursor: null })
+    follows.followUser.mockResolvedValue(undefined)
+    renderProfile()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'アリスさんをフォロー' }))
+
+    expect(await screen.findByRole('link', { name: 'フォロワー 6' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'アリスさんをフォロー中（押すと解除）' })).toBeInTheDocument()
+    await waitFor(() => expect(follows.followUser).toHaveBeenCalledWith('alice'))
+  })
+
+  it('フォローが 404 なら「見つかりません」が通知され、画面が「見つかりません」になる', async () => {
+    api.getUser.mockResolvedValueOnce(makeUser())
+    api.getUser.mockRejectedValue(apiError({ status: 404, code: 'NOT_FOUND', detail: '見つかりません' }))
+    api.getUserPosts.mockResolvedValue({ items: [], nextCursor: null })
+    follows.followUser.mockRejectedValue(apiError({ status: 404, code: 'NOT_FOUND', detail: '見つかりません' }))
+    renderProfile()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'アリスさんをフォロー' }))
+
+    expect(await screen.findByRole('heading', { level: 1, name: '見つかりません' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('見つかりません')
   })
 })

@@ -131,6 +131,17 @@ class WithdrawalIntegrationTest {
 		assertThat(statusOf(result)).isEqualTo(204);
 	}
 
+	private void follow(Account account, Account target) throws Exception {
+		MvcResult result = mockMvc.perform(put("/api/users/{username}/follow", target.username())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + account.token())).andReturn();
+		assertThat(statusOf(result)).isEqualTo(204);
+	}
+
+	private MvcResult getProfile(Account viewer, Account target) throws Exception {
+		return mockMvc.perform(get("/api/users/{username}", target.username())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + viewer.token())).andReturn();
+	}
+
 	/** コメントを書く。 */
 	private void comment(Account account, String postId) throws Exception {
 		MvcResult result = mockMvc.perform(post("/api/posts/{id}/comments", postId)
@@ -362,6 +373,29 @@ class WithdrawalIntegrationTest {
 		MvcResult postB = getPost(b, postOfB);
 		assertThat(statusOf(postB)).isEqualTo(200);
 		assertThat((Integer) JsonPath.read(json(postB), "$.commentCount")).isZero();
+	}
+
+	@Test
+	@DisplayName("退会すると、本人のフォローとフォロワーの両方の行が消え、相手の followersCount と followingCount が減る")
+	void withdrawalRemovesFollowsInBothDirections() throws Exception {
+		Account a = newAccount();
+		Account b = newAccount();
+		Account c = newAccount();
+		follow(a, b);
+		follow(c, a);
+		assertThat((Integer) JsonPath.read(json(getProfile(c, b)), "$.followersCount")).isEqualTo(1);
+		assertThat((Integer) JsonPath.read(json(getProfile(b, c)), "$.followingCount")).isEqualTo(1);
+
+		assertThat(statusOf(withdraw(a, PASSWORD))).isEqualTo(204);
+
+		assertThat(count("SELECT count(*) FROM follows WHERE ?::uuid IN (follower_id, followee_id)", a.userId()))
+				.isZero();
+		MvcResult profileB = getProfile(c, b);
+		assertThat(statusOf(profileB)).isEqualTo(200);
+		assertThat((Integer) JsonPath.read(json(profileB), "$.followersCount")).isZero();
+		MvcResult profileC = getProfile(b, c);
+		assertThat(statusOf(profileC)).isEqualTo(200);
+		assertThat((Integer) JsonPath.read(json(profileC), "$.followingCount")).isZero();
 	}
 
 }

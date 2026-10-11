@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import com.jayway.jsonpath.JsonPath;
 import java.net.URI;
@@ -105,7 +106,34 @@ class ProfileIntegrationTest {
 		assertThat((String) JsonPath.read(json, "$.username")).isEqualTo(bob.username());
 		assertThat((Boolean) JsonPath.read(json, "$.isMe")).isFalse();
 		assertThat((Boolean) JsonPath.read(json, "$.isFollowing")).isFalse();
+		assertThat((Integer) JsonPath.read(json, "$.followersCount")).isZero();
+		assertThat((Integer) JsonPath.read(json, "$.followingCount")).isZero();
 		assertThat(json).doesNotContain(bob.email()).doesNotContain("\"email\"");
+	}
+
+	@Test
+	@DisplayName("フォローすると、相手のプロフィールは isFollowing true・followersCount 1、本人のプロフィールと /me は followingCount 1")
+	void profileCountsFollows() throws Exception {
+		Account alice = newAccount("alice");
+		Account bob = newAccount("bob");
+		MvcResult followed = mockMvc.perform(put("/api/users/{username}/follow", bob.username())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + alice.token())).andReturn();
+		assertThat(followed.getResponse().getStatus()).isEqualTo(204);
+
+		String bobJson = text(getAs(alice, "/api/users/" + bob.username()));
+		assertThat((Boolean) JsonPath.read(bobJson, "$.isFollowing")).isTrue();
+		assertThat((Integer) JsonPath.read(bobJson, "$.followersCount")).isEqualTo(1);
+		assertThat((Integer) JsonPath.read(bobJson, "$.followingCount")).isZero();
+		String aliceJson = text(getAs(alice, "/api/users/" + alice.username()));
+		assertThat((Integer) JsonPath.read(aliceJson, "$.followingCount")).isEqualTo(1);
+		assertThat((Boolean) JsonPath.read(aliceJson, "$.isFollowing")).isFalse();
+		String meJson = text(getAs(alice, "/api/users/me"));
+		assertThat((Integer) JsonPath.read(meJson, "$.followingCount")).isEqualTo(1);
+		assertThat((Integer) JsonPath.read(meJson, "$.followersCount")).isZero();
+		// bob から見た alice は、bob がフォローしていないので isFollowing は false（向きがある）
+		String aliceFromBob = text(getAs(bob, "/api/users/" + alice.username()));
+		assertThat((Boolean) JsonPath.read(aliceFromBob, "$.isFollowing")).isFalse();
+		assertThat((Integer) JsonPath.read(aliceFromBob, "$.followingCount")).isEqualTo(1);
 	}
 
 	@Test

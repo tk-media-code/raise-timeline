@@ -37,12 +37,14 @@
 	</select>
 
 	<!--
-		users からは表示に要る 4 列だけを読む。email と password_hash は読まない。
+		users からは表示に要る列だけを読む。email と password_hash は読まない。
+		is_following は viewer がその行の人をフォローしているか（follows の (follower_id, followee_id) の一意制約の索引で引く）。
 		(post_id, id) の索引 likes_post_id_id_idx が絞り込みと id の降順の並びの両方にそのまま使える。
 		cursor が null のときは <if> で条件ごと外す（PostMapper.findAll と同じ）。
 	-->
-	<select id="findLikers" resultType="com.tkmedia.raisetimeline.domain.Liker">
-		SELECT l.id AS like_id, u.id AS user_id, u.username, u.display_name, u.avatar_key, u.bio
+	<select id="findLikers" resultType="com.tkmedia.raisetimeline.domain.UserCardRow">
+		SELECT l.id AS cursor_id, u.id AS user_id, u.username, u.display_name, u.avatar_key, u.bio,
+		       EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = #{viewer} AND f.followee_id = u.id) AS is_following
 		FROM likes l JOIN users u ON u.id = l.user_id
 		WHERE l.post_id = #{postId}
 		<if test="cursor != null">AND l.id &lt; #{cursor}</if>

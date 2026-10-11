@@ -43,6 +43,14 @@ public interface PostMapper {
 			@Param("limit") int limit);
 
 	/**
+	 * {@code viewer} 自身の投稿と、{@code viewer} がフォローしている人の投稿を、{@link #findAll} と同じ並びと
+	 * 打ち切り方で返す。誰もフォローしていなければ、{@code viewer} 自身の投稿だけになる。
+	 * {@code limit} は取る行数そのもので、次のページがあるかを知るための +1 は呼ぶ側が足す。
+	 */
+	List<PostWithAuthor> findFollowing(@Param("viewer") UUID viewer, @Param("cursor") UUID cursor,
+			@Param("limit") int limit);
+
+	/**
 	 * 投稿に画像の行を入れる。{@code position} は {@code keys} の並びの番号（0 から）で、送られた順をそのまま保つ。
 	 * {@code keys} は 1 件以上、4 件まで（空だと SQL が成り立たない。呼ぶ側が空では呼ばない）。
 	 */

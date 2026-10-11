@@ -40,10 +40,10 @@ public class LikeController {
 	 * {@code limit} の範囲は {@link PageLimits#check} で確かめる。
 	 */
 	@GetMapping("/api/posts/{id}/likes")
-	public PageResponse<UserCard> likers(@PathVariable UUID id,
+	public PageResponse<UserCard> likers(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
 			@RequestParam(required = false) UUID cursor,
 			@RequestParam(defaultValue = PageLimits.DEFAULT_VALUE) int limit) {
-		return likeService.likers(id, cursor, PageLimits.check(limit));
+		return likeService.likers(CurrentUser.idOf(jwt), id, cursor, PageLimits.check(limit));
 	}
 
 }

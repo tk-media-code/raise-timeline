@@ -10,6 +10,12 @@ import LikersPage from './LikersPage'
 const api = vi.hoisted(() => ({ getLikers: vi.fn(), likePost: vi.fn(), unlikePost: vi.fn() }))
 vi.mock('../api/likes', () => api)
 
+const follows = vi.hoisted(() => ({ followUser: vi.fn(), unfollowUser: vi.fn() }))
+vi.mock('../api/follows', () => follows)
+
+const useAuth = vi.hoisted(() => vi.fn())
+vi.mock('../auth/AuthProvider', () => ({ useAuth }))
+
 function makeUser(overrides: Partial<UserCard> = {}): UserCard {
   return {
     id: 'u1',
@@ -33,6 +39,7 @@ function renderLikers() {
 describe('LikersPage', () => {
   beforeEach(() => {
     api.getLikers.mockReset()
+    useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u9', username: 'bob' } })
   })
 
   it('見出し「いいねした人」と、一覧「いいねした人」の中にユーザーカードが並ぶ。getLikers は (p1, null) で呼ばれる', async () => {
@@ -48,6 +55,18 @@ describe('LikersPage', () => {
     expect(within(list).getByRole('link', { name: 'ボブ @bob' })).toHaveAttribute('href', '/users/bob')
     expect(within(list).getByText('よろしく')).toBeInTheDocument()
     expect(api.getLikers).toHaveBeenCalledWith('p1', null)
+  })
+
+  it('カードにフォローボタンが出て、isFollowing true の人は「フォロー中」', async () => {
+    api.getLikers.mockResolvedValue({
+      items: [makeUser(), makeUser({ id: 'u2', username: 'bob2', displayName: 'ボブ', isFollowing: true })],
+      nextCursor: null,
+    })
+    renderLikers()
+
+    const list = await screen.findByRole('list', { name: 'いいねした人' })
+    expect(within(list).getByRole('button', { name: 'アリスさんをフォロー' })).toHaveTextContent('フォロー')
+    expect(within(list).getByRole('button', { name: 'ボブさんをフォロー中（押すと解除）' })).toHaveTextContent('フォロー中')
   })
 
   it('0 件なら「まだいいねがありません」', async () => {

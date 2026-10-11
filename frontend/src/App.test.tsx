@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthResponse, Me } from './api/auth'
 import { ApiError } from './api/client'
 import type { Post } from './api/posts'
+import type { UserDetail } from './api/users'
 import App from './App'
 import { AuthProvider } from './auth/AuthProvider'
 import { setAccessToken } from './auth/tokenStore'
@@ -50,6 +51,19 @@ function LocationProbe() {
   return <p data-testid="location">{pathname + search}</p>
 }
 
+const bob: UserDetail = {
+  id: '2',
+  username: 'bob',
+  displayName: 'Bob',
+  avatarUrl: null,
+  bio: '',
+  isFollowing: false,
+  followersCount: 1,
+  followingCount: 1,
+  createdAt: '2026-01-02T00:00:00Z',
+  isMe: false,
+}
+
 const detailPost: Post = {
   id: '11111111-1111-4111-8111-111111111111',
   author: { id: '1', username: 'alice', displayName: 'Alice', avatarUrl: null },
@@ -68,7 +82,7 @@ function stubTimelineFetch() {
     'fetch',
     vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
-      const body = url.startsWith('/api/timeline/all')
+      const body = url.startsWith('/api/timeline/')
         ? { items: [], nextCursor: null }
         : url === `/api/posts/${detailPost.id}`
           ? detailPost
@@ -76,7 +90,13 @@ function stubTimelineFetch() {
             ? { items: [{ id: '2', username: 'bob', displayName: 'Bob', avatarUrl: null, bio: '', isFollowing: false }], nextCursor: null }
             : url === '/api/users/me'
               ? me
-              : null
+              : url === '/api/users/bob'
+                ? bob
+                : url === '/api/users/bob/followers'
+                  ? { items: [{ id: '3', username: 'carol', displayName: 'Carol', avatarUrl: null, bio: '', isFollowing: false }], nextCursor: null }
+                  : url === '/api/users/bob/following'
+                    ? { items: [{ id: '4', username: 'dave', displayName: 'Dave', avatarUrl: null, bio: '', isFollowing: false }], nextCursor: null }
+                    : null
       return Promise.resolve(
         body === null
           ? new Response(null, { status: 404 })
@@ -164,6 +184,27 @@ describe('App のルート', () => {
     expect(screen.getByRole('banner', { name: '上部バー' })).toBeInTheDocument()
     expect(screen.getAllByRole('main')).toHaveLength(1)
     expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'いいねした人' })).toBeInTheDocument()
+  })
+
+  it('ログイン済みで /users/bob/followers を開くと、レイアウトの中にフォロワーの一覧が描かれる', async () => {
+    apiRefresh.mockResolvedValue(session)
+    renderAt('/users/bob/followers')
+
+    expect(await screen.findByRole('link', { name: 'Carol @carol' })).toBeInTheDocument()
+    expect(screen.getByRole('banner', { name: '上部バー' })).toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'Bob' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'フォロワー' })).toBeInTheDocument()
+  })
+
+  it('ログイン済みで /users/bob/following を開くと、レイアウトの中にフォロー中の一覧が描かれる', async () => {
+    apiRefresh.mockResolvedValue(session)
+    renderAt('/users/bob/following')
+
+    expect(await screen.findByRole('link', { name: 'Dave @dave' })).toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: 'Bob' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'フォロー中' })).toBeInTheDocument()
   })
 
   it('ログイン済みで /settings/profile を開くと、レイアウトの中にプロフィール編集が描かれる', async () => {

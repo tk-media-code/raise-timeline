@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.jayway.jsonpath.JsonPath;
 import com.tkmedia.raisetimeline.domain.Post;
 import com.tkmedia.raisetimeline.domain.User;
+import com.tkmedia.raisetimeline.mapper.FollowMapper;
 import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
@@ -58,6 +59,9 @@ class LikeIntegrationTest {
 
 	@Autowired
 	private LikeMapper likeMapper;
+
+	@Autowired
+	private FollowMapper followMapper;
 
 	@Autowired
 	private JdbcTemplate jdbc;
@@ -271,7 +275,7 @@ class LikeIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("一覧の項目に email が無く、isFollowing は false")
+	@DisplayName("一覧の項目に email が無く、フォローしていない人の isFollowing は false")
 	void cardHasNoEmail() throws Exception {
 		UUID post = createPost(other);
 		assertThat(like(other, post)).isEqualTo(204);
@@ -282,6 +286,27 @@ class LikeIntegrationTest {
 		assertThat((Boolean) JsonPath.read(json, "$.items[0].isFollowing")).isFalse();
 		assertThat((String) JsonPath.read(json, "$.items[0].id")).isEqualTo(other.toString());
 		assertThat((String) JsonPath.read(json, "$.items[0].bio")).isEqualTo("自己紹介other");
+	}
+
+	@Test
+	@DisplayName("いいねした人の一覧で、自分がフォローしている人は isFollowing が true、ほかは false")
+	void likersShowWhomIFollow() throws Exception {
+		UUID post = createPost(other);
+		UUID followed = createUser("followed");
+		UUID stranger = createUser("stranger");
+		likeMapper.insert(post, followed);
+		likeMapper.insert(post, stranger);
+		likeMapper.insert(post, me);
+		followMapper.insert(me, followed);
+		// 向きが逆のフォロー（相手が自分をフォローしている）は数えない
+		followMapper.insert(stranger, me);
+
+		String json = json(likes(me, post, null));
+
+		assertThat(JsonPath.<List<String>>read(json, "$.items[*].id"))
+				.containsExactly(me.toString(), stranger.toString(), followed.toString());
+		assertThat(JsonPath.<List<Boolean>>read(json, "$.items[*].isFollowing"))
+				.containsExactly(false, false, true);
 	}
 
 	@Test

@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import com.tkmedia.raisetimeline.config.AuthProperties;
 import com.tkmedia.raisetimeline.config.SecurityConfig;
+import com.tkmedia.raisetimeline.domain.FollowStats;
 import com.tkmedia.raisetimeline.domain.User;
 import com.tkmedia.raisetimeline.dto.LoginRequest;
 import com.tkmedia.raisetimeline.dto.RegisterRequest;
@@ -25,6 +26,7 @@ import com.tkmedia.raisetimeline.error.FieldError;
 import com.tkmedia.raisetimeline.error.InvalidCredentialsException;
 import com.tkmedia.raisetimeline.error.InvalidRefreshTokenException;
 import com.tkmedia.raisetimeline.image.InMemoryImageStorage;
+import com.tkmedia.raisetimeline.mapper.FollowMapper;
 import com.tkmedia.raisetimeline.mapper.RefreshTokenMapper;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
 import ch.qos.logback.classic.Logger;
@@ -75,12 +77,21 @@ class AuthServiceTest {
 	private final List<Boolean> encoderCallsInTransaction = new ArrayList<>();
 	private final PasswordEncoder passwordEncoder = spy(new RecordingEncoder(transactions, encoderCallsInTransaction));
 	private final TokenService tokenService = tokenService();
-	private final UserService userService = new UserService(userMapper, new InMemoryImageStorage(), clock);
+	private final FollowMapper followMapper = followMapperWithoutFollows();
+	private final UserService userService = new UserService(userMapper, followMapper, new InMemoryImageStorage(),
+			clock);
 	private final AuthService service = new AuthService(userMapper, refreshTokenMapper, tokenService, passwordEncoder,
 			userService, properties(), clock, transactions);
 
 	private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 	private final Logger authLogger = (Logger) LoggerFactory.getLogger(AuthService.class);
+
+	/** 本人の Me に入れるフォローの数を、誰もフォローしていない 0・0 で返す Mapper。 */
+	private static FollowMapper followMapperWithoutFollows() {
+		FollowMapper mapper = mock(FollowMapper.class);
+		when(mapper.stats(any(), any())).thenReturn(new FollowStats(0, 0, false));
+		return mapper;
+	}
 
 	@BeforeEach
 	void captureLogs() {

@@ -7,7 +7,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.tkmedia.raisetimeline.domain.LikeCount;
-import com.tkmedia.raisetimeline.domain.Liker;
+import com.tkmedia.raisetimeline.domain.UserCardRow;
 
 @Mapper
 public interface LikeMapper {
@@ -35,9 +35,11 @@ public interface LikeMapper {
 
 	/**
 	 * 投稿にいいねした人を、{@code likes.id} の降順（付けた順の新しい方から）で {@code limit} 行返す。
-	 * {@code cursor} が null でなければ、それより小さい {@code likes.id} の行だけを返す。
+	 * {@code cursorId} は {@code likes.id}。{@code cursor} が null でなければ、それより小さい {@code likes.id} の行だけを返す。
+	 * 各行の {@code isFollowing} は、{@code viewer} がその行の人をフォローしているか。
 	 * {@code limit} は取る行数そのもので、次のページがあるかを知るための +1 は呼ぶ側が足す。
 	 */
-	List<Liker> findLikers(@Param("postId") UUID postId, @Param("cursor") UUID cursor, @Param("limit") int limit);
+	List<UserCardRow> findLikers(@Param("postId") UUID postId, @Param("viewer") UUID viewer,
+			@Param("cursor") UUID cursor, @Param("limit") int limit);
 
 }

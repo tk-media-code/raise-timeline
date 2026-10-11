@@ -1,8 +1,14 @@
 import { screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UserDetail } from '../../api/users'
 import { renderWithProviders } from '../../test/providers'
 import { ProfileHeader } from './ProfileHeader'
+
+const api = vi.hoisted(() => ({ followUser: vi.fn(), unfollowUser: vi.fn() }))
+vi.mock('../../api/follows', () => api)
+
+const useAuth = vi.hoisted(() => vi.fn())
+vi.mock('../../auth/AuthProvider', () => ({ useAuth }))
 
 function makeUser(overrides: Partial<UserDetail> = {}): UserDetail {
   return {
@@ -21,6 +27,10 @@ function makeUser(overrides: Partial<UserDetail> = {}): UserDetail {
 }
 
 describe('ProfileHeader', () => {
+  beforeEach(() => {
+    useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u9', username: 'bob' } })
+  })
+
   it('見出しは表示名。アイコン（頭文字）、@ユーザー名、登録した月が出る', () => {
     renderWithProviders(<ProfileHeader user={makeUser()} />)
 
@@ -45,12 +55,24 @@ describe('ProfileHeader', () => {
     expect(container.querySelector('.whitespace-pre-wrap')).toBeNull()
   })
 
-  it('「フォロー中 0」「フォロワー 0」が出て、リンクではない', () => {
-    renderWithProviders(<ProfileHeader user={makeUser()} />)
+  it('「フォロー中 3」は /users/alice/following、「フォロワー 5」は /users/alice/followers へのリンク', () => {
+    renderWithProviders(<ProfileHeader user={makeUser({ followingCount: 3, followersCount: 5 })} />)
 
-    expect(screen.getByText('フォロー中 0')).toBeInTheDocument()
-    expect(screen.getByText('フォロワー 0')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /フォロー/ })).toBeNull()
+    expect(screen.getByRole('link', { name: 'フォロー中 3' })).toHaveAttribute('href', '/users/alice/following')
+    expect(screen.getByRole('link', { name: 'フォロワー 5' })).toHaveAttribute('href', '/users/alice/followers')
+  })
+
+  it('他人のプロフィールにはフォローボタンが出て、「プロフィールを編集」は出ない。自分には編集のリンクだけ', () => {
+    const { unmount } = renderWithProviders(<ProfileHeader user={makeUser({ isMe: false })} />)
+
+    expect(screen.getByRole('button', { name: 'アリスさんをフォロー' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'プロフィールを編集' })).toBeNull()
+    unmount()
+
+    useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'u1', username: 'alice' } })
+    renderWithProviders(<ProfileHeader user={makeUser({ isMe: true })} />)
+    expect(screen.getByRole('link', { name: 'プロフィールを編集' })).toBeInTheDocument()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('本人なら、「プロフィールを編集」が /settings/profile を指す', () => {

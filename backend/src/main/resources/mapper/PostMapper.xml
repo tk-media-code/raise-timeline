@@ -60,6 +60,30 @@
 	</select>
 
 	<!--
+		自分の投稿と、自分がフォローしている人の投稿を、findAll と同じ列・並び・cursor の扱いで返す。
+		書いた人を「自分のフォロー先と自分自身」の集合への IN で絞る。IN を WHERE の最上位に置くので、
+		副問い合わせを結合（semi-join）に引き上げられ、投稿の多い表では相手ごとに posts (user_id, id) の索引を
+		引く計画も選べる。IN を OR の下に置く形（p.user_id = 自分 OR p.user_id IN (...)）では引き上げられず、
+		主キー posts_pkey を逆向きに読んで 1 行ずつ捨てる計画になりうる。テスト用 DB の 6 万件（300 人 x 200 件）
+		で、フォローも投稿も無い利用者の読み込みが 856 buffers だったのが、この形では 14 buffers だった。
+		どの計画を選ぶかは表の統計しだいで、保証ではない。
+		自分の id は CAST で型を明示する（UNION ALL の片方に型の無い引数だけが並ぶのを避ける）。
+		cursor が null のときは <if> で条件ごと外す（findAll と同じ理由）。
+	-->
+	<select id="findFollowing" resultType="com.tkmedia.raisetimeline.domain.PostWithAuthor">
+		SELECT <include refid="columns"/>
+		FROM posts p JOIN users u ON u.id = p.user_id
+		WHERE p.user_id IN (
+			SELECT followee_id FROM follows WHERE follower_id = #{viewer}
+			UNION ALL
+			SELECT CAST(#{viewer} AS uuid)
+		)
+		<if test="cursor != null">AND p.id &lt; #{cursor}</if>
+		ORDER BY p.id DESC
+		LIMIT #{limit}
+	</select>
+
+	<!--
 		position は keys の並びの番号をそのまま使う（index は 0 から）。#{} だけで組み立て、値は全部バインドする。
 		INSERT なので返す値は要らない。
 	-->

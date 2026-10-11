@@ -1,5 +1,6 @@
 package com.tkmedia.raisetimeline.service;
 
+import com.tkmedia.raisetimeline.domain.FollowStats;
 import com.tkmedia.raisetimeline.domain.User;
 import com.tkmedia.raisetimeline.dto.Me;
 import com.tkmedia.raisetimeline.dto.UpdateProfileRequest;
@@ -7,6 +8,7 @@ import com.tkmedia.raisetimeline.dto.UserDetail;
 import com.tkmedia.raisetimeline.error.NotFoundException;
 import com.tkmedia.raisetimeline.error.UnauthenticatedException;
 import com.tkmedia.raisetimeline.image.ImageStorage;
+import com.tkmedia.raisetimeline.mapper.FollowMapper;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
 import com.tkmedia.raisetimeline.validation.Usernames;
 import java.time.Clock;
@@ -18,11 +20,13 @@ import org.springframework.stereotype.Service;
 public class UserService {
 
 	private final UserMapper userMapper;
+	private final FollowMapper followMapper;
 	private final ImageStorage imageStorage;
 	private final Clock clock;
 
-	public UserService(UserMapper userMapper, ImageStorage imageStorage, Clock clock) {
+	public UserService(UserMapper userMapper, FollowMapper followMapper, ImageStorage imageStorage, Clock clock) {
 		this.userMapper = userMapper;
+		this.followMapper = followMapper;
 		this.imageStorage = imageStorage;
 		this.clock = clock;
 	}
@@ -52,12 +56,14 @@ public class UserService {
 	/**
 	 * 利用者を本人向けの {@link Me} にする。
 	 *
-	 * <p>フォロー数・フォロー状態は、それぞれを作る後の Issue まで暫定値を入れる
-	 * （数は 0、{@code isFollowing} は false）。{@code avatarUrl} は保存先のキーから作る。
+	 * <p>フォローの数は {@link FollowMapper#stats} で数える。自分はフォローできないので {@code isFollowing} は常に
+	 * false。{@code avatarUrl} は保存先のキーから作る。
 	 */
 	public Me toMe(User user) {
-		return new Me(user.id(), user.username(), user.displayName(), avatarUrlOf(user), user.bio(), false, 0, 0,
-				user.createdAt(), true, user.email());
+		FollowStats stats = followMapper.stats(user.id(), user.id());
+		return new Me(user.id(), user.username(), user.displayName(), AvatarUrls.of(imageStorage, user.avatarKey()),
+				user.bio(), false, stats.followersCount(), stats.followingCount(), user.createdAt(), true,
+				user.email());
 	}
 
 	/**
@@ -81,17 +87,14 @@ public class UserService {
 	/**
 	 * 利用者を他人にも見せる {@link UserDetail} にする。{@code email} は入れない。
 	 *
-	 * <p>フォロー数・フォロー状態は、それぞれを作る後の Issue まで暫定値を入れる
-	 * （数は 0、{@code isFollowing} は false）。{@code avatarUrl} は保存先のキーから作る。
+	 * <p>フォローの数と、{@code me} がこの人をフォローしているか（{@code isFollowing}）は
+	 * {@link FollowMapper#stats} の 1 文で取る。{@code avatarUrl} は保存先のキーから作る。
 	 */
 	public UserDetail toDetail(User user, UUID me) {
-		return new UserDetail(user.id(), user.username(), user.displayName(), avatarUrlOf(user), user.bio(), false, 0, 0,
-				user.createdAt(), user.id().equals(me));
-	}
-
-	/** アイコンを設定していない人は avatarKey が null。そのときは URL も null にする。 */
-	private String avatarUrlOf(User user) {
-		return user.avatarKey() == null ? null : imageStorage.urlOf(user.avatarKey());
+		FollowStats stats = followMapper.stats(user.id(), me);
+		return new UserDetail(user.id(), user.username(), user.displayName(),
+				AvatarUrls.of(imageStorage, user.avatarKey()), user.bio(), stats.isFollowing(),
+				stats.followersCount(), stats.followingCount(), user.createdAt(), user.id().equals(me));
 	}
 
 }

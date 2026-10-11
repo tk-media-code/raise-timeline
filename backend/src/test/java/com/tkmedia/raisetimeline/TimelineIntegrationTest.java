@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.jayway.jsonpath.JsonPath;
 import com.tkmedia.raisetimeline.domain.Post;
 import com.tkmedia.raisetimeline.domain.User;
+import com.tkmedia.raisetimeline.mapper.FollowMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +30,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * タイムライン「すべて」を、本物の PostgreSQL（テスト専用 DB）に対して端から端まで確かめる。
+ * タイムライン「すべて」と「フォロー中」を、本物の PostgreSQL（テスト専用 DB）に対して端から端まで確かめる。
  *
  * <p>テストごとにロールバックするので、投稿の id は 1 つのトランザクションの中で採番される。
  * 先頭で {@code DELETE FROM posts} を実行し、他のテストが残した行が一覧に混ざらないようにする。
@@ -50,6 +51,9 @@ class TimelineIntegrationTest {
 
 	@Autowired
 	private PostMapper postMapper;
+
+	@Autowired
+	private FollowMapper followMapper;
 
 	@Autowired
 	private JdbcTemplate jdbc;
@@ -83,7 +87,15 @@ class TimelineIntegrationTest {
 	}
 
 	private MvcResult timelineAs(UUID viewer, String cursor) throws Exception {
-		var request = get("/api/timeline/all").with(jwt().jwt(j -> j.subject(viewer.toString())));
+		return timelineAs("/api/timeline/all", viewer, cursor);
+	}
+
+	private MvcResult following(String cursor) throws Exception {
+		return timelineAs("/api/timeline/following", me, cursor);
+	}
+
+	private MvcResult timelineAs(String path, UUID viewer, String cursor) throws Exception {
+		var request = get(path).with(jwt().jwt(j -> j.subject(viewer.toString())));
 		if (cursor != null) {
 			request = request.param("cursor", cursor);
 		}
@@ -233,6 +245,110 @@ class TimelineIntegrationTest {
 		assertThat((String) JsonPath.read(json, "$.items[0].author.username"))
 				.isEqualTo(userMapper.findById(other).orElseThrow().username());
 		assertThat(JsonPath.<Object>read(json, "$.items[0].author").toString()).doesNotContain("email");
+	}
+
+	@Test
+	@DisplayName("フォロー中は、自分の投稿とフォロー相手の投稿だけが新しい順に返る")
+	void followingReturnsMineAndFolloweesNewestFirst() throws Exception {
+		UUID followee = createUser("followee");
+		UUID stranger = createUser("stranger");
+		UUID follower = createUser("follower");
+		followMapper.insert(me, followee);
+		followMapper.insert(follower, me);
+		UUID mine = createPosts(me, 1).get(0);
+		createPosts(stranger, 1);
+		UUID theirs = createPosts(followee, 1).get(0);
+		createPosts(follower, 1);
+
+		MvcResult page = following(null);
+
+		assertThat(idsOf(page)).containsExactly(theirs.toString(), mine.toString());
+		assertThat(nextNull(page)).isTrue();
+	}
+
+	@Test
+	@DisplayName("フォロー中は、誰もフォローしていなければ自分の投稿だけ")
+	void followingWithoutFolloweesIsOwnPostsOnly() throws Exception {
+		UUID other = createUser("other");
+		UUID mine = createPosts(me, 1).get(0);
+		createPosts(other, 2);
+
+		assertThat(idsOf(following(null))).containsExactly(mine.toString());
+	}
+
+	@Test
+	@DisplayName("フォロー中は、解除するとその人の投稿は出なくなる")
+	void followingExcludesUnfollowedUser() throws Exception {
+		UUID followee = createUser("followee");
+		followMapper.insert(me, followee);
+		UUID theirs = createPosts(followee, 1).get(0);
+		assertThat(idsOf(following(null))).containsExactly(theirs.toString());
+
+		followMapper.delete(me, followee);
+
+		assertThat(idsOf(following(null))).isEmpty();
+	}
+
+	@Test
+	@DisplayName("フォロー中は、21 件あれば 20 件と 20 件目の id の nextCursor で、続きは 1 件で重複しない")
+	void followingTwentyOneSpansTwoPages() throws Exception {
+		UUID followee = createUser("followee");
+		followMapper.insert(me, followee);
+		createPosts(me, 10);
+		createPosts(followee, 11);
+
+		MvcResult first = following(null);
+		List<String> firstIds = idsOf(first);
+		assertThat(firstIds).hasSize(20);
+		assertThat(nextCursorOf(first)).isEqualTo(firstIds.get(19));
+
+		MvcResult second = following(nextCursorOf(first));
+		List<String> secondIds = idsOf(second);
+		assertThat(secondIds).hasSize(1);
+		assertThat(nextNull(second)).isTrue();
+
+		List<String> all = new ArrayList<>(firstIds);
+		all.addAll(secondIds);
+		assertThat(all).doesNotHaveDuplicates();
+		assertThat(all).isSortedAccordingTo(Comparator.<String>naturalOrder().reversed());
+	}
+
+	@Test
+	@DisplayName("フォロー中は、nextCursor の投稿が消えても、2 ページ目は残りの古い 1 件")
+	void followingDeletedCursorPost() throws Exception {
+		UUID followee = createUser("followee");
+		followMapper.insert(me, followee);
+		List<UUID> created = new ArrayList<>(createPosts(me, 10));
+		created.addAll(createPosts(followee, 11));
+		MvcResult first = following(null);
+		String cursor = nextCursorOf(first);
+
+		postMapper.delete(UUID.fromString(cursor));
+		MvcResult second = following(cursor);
+
+		assertThat(idsOf(second)).containsExactly(created.get(0).toString());
+		assertThat(nextNull(second)).isTrue();
+	}
+
+	@Test
+	@DisplayName("フォロー中の各投稿に likeCount・commentCount・likedByMe が付く")
+	void followingItemsCarryCountsAndLikedByMe() throws Exception {
+		UUID followee = createUser("followee");
+		followMapper.insert(me, followee);
+		UUID post = createPosts(followee, 1).get(0);
+		UUID untouched = createPosts(me, 1).get(0);
+		jdbc.update("INSERT INTO likes (post_id, user_id) VALUES (?, ?)", post, me);
+		jdbc.update("INSERT INTO comments (post_id, user_id, body) VALUES (?, ?, ?)", post, followee, "一つ目");
+		jdbc.update("INSERT INTO comments (post_id, user_id, body) VALUES (?, ?, ?)", post, me, "二つ目");
+
+		String body = json(following(null));
+
+		assertThat(itemField(body, post, "likeCount")).isEqualTo(1);
+		assertThat(itemField(body, post, "commentCount")).isEqualTo(2);
+		assertThat(itemField(body, post, "likedByMe")).isEqualTo(true);
+		assertThat(itemField(body, untouched, "likeCount")).isEqualTo(0);
+		assertThat(itemField(body, untouched, "commentCount")).isEqualTo(0);
+		assertThat(itemField(body, untouched, "likedByMe")).isEqualTo(false);
 	}
 
 	private static boolean nextNull(MvcResult result) throws Exception {

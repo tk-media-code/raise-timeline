@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createPost, deletePost, getPost, getTimelineAll, updatePost } from './posts'
+import { createPost, deletePost, getPost, getTimelineAll, getTimelineFollowing, updatePost } from './posts'
 
 const post = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -74,6 +74,16 @@ describe('投稿の API', () => {
     await getTimelineAll('a&b=c')
 
     expect(fetchMock.mock.calls[0][0]).toBe('/api/timeline/all?cursor=a%26b%3Dc')
+  })
+
+  it("getTimelineFollowing は /api/timeline/following を呼び、cursor があれば ?cursor= を付ける（URL エンコードする）", async () => {
+    fetchMock.mockImplementation(async () => ok({ items: [post], nextCursor: null }))
+
+    await getTimelineFollowing(null)
+    await getTimelineFollowing('a&b=c')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/timeline/following')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/timeline/following?cursor=a%26b%3Dc')
   })
 
   it('updatePost は PATCH で { body } の JSON を送る', async () => {

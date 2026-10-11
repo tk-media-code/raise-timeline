@@ -135,4 +135,59 @@ class TimelineControllerTest {
 				.andExpect(jsonPath("$.items").isEmpty());
 	}
 
+	@Test
+	@DisplayName("フォロー中は、Bearer が無いと 401 になり、サービスは呼ばれない")
+	void followingRequiresBearer() throws Exception {
+		mockMvc.perform(get("/api/timeline/following"))
+				.andExpect(status().isUnauthorized());
+
+		verifyNoInteractions(timelineService);
+	}
+
+	@Test
+	@DisplayName("フォロー中は、クエリが無ければ先頭から 20 件を取る")
+	void followingDefaultsToFirstPageOf20() throws Exception {
+		when(timelineService.following(USER_ID, null, 20)).thenReturn(emptyPage());
+
+		mockMvc.perform(get("/api/timeline/following").with(me()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items").isEmpty());
+
+		verify(timelineService).following(USER_ID, null, 20);
+	}
+
+	@Test
+	@DisplayName("フォロー中は、cursor と limit をサービスにそのまま渡す")
+	void followingPassesCursorAndLimit() throws Exception {
+		UUID cursor = UUID.fromString("0199b000-0000-7000-8000-0000000000a1");
+		when(timelineService.following(USER_ID, cursor, 50)).thenReturn(emptyPage());
+
+		mockMvc.perform(get("/api/timeline/following").param("cursor", cursor.toString()).param("limit", "50")
+				.with(me()))
+				.andExpect(status().isOk());
+
+		verify(timelineService).following(USER_ID, cursor, 50);
+	}
+
+	@ParameterizedTest(name = "limit={0}")
+	@ValueSource(strings = { "0", "51" })
+	@DisplayName("フォロー中は、limit が範囲外だと 400 BAD_REQUEST で、サービスは呼ばれない")
+	void followingInvalidLimitReturns400(String limit) throws Exception {
+		mockMvc.perform(get("/api/timeline/following").param("limit", limit).with(me()))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+
+		verifyNoInteractions(timelineService);
+	}
+
+	@Test
+	@DisplayName("フォロー中は、cursor が UUID でないと 400 BAD_REQUEST で、サービスは呼ばれない")
+	void followingInvalidCursorReturns400() throws Exception {
+		mockMvc.perform(get("/api/timeline/following").param("cursor", "abc").with(me()))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+
+		verifyNoInteractions(timelineService);
+	}
+
 }

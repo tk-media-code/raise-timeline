@@ -1,6 +1,6 @@
 package com.tkmedia.raisetimeline.service;
 
-import com.tkmedia.raisetimeline.domain.Liker;
+import com.tkmedia.raisetimeline.domain.UserCardRow;
 import com.tkmedia.raisetimeline.dto.PageResponse;
 import com.tkmedia.raisetimeline.dto.UserCard;
 import com.tkmedia.raisetimeline.error.NotFoundException;
@@ -58,29 +58,22 @@ public class LikeService {
 	}
 
 	/**
-	 * いいねした人を、付けた順の新しい方から返す。{@code limit} より 1 行多く読み、あふれた分は返さずに
+	 * いいねした人を、付けた順の新しい方から返す。各行の {@code isFollowing} は {@code viewer} がフォローしているか。
+	 * {@code limit} より 1 行多く読み、あふれた分は返さずに
 	 * {@code nextCursor}（返す最後の行の {@code likes.id}）で続きがあることだけを知らせる。
-	 * 打ち切りの形は {@link PostPages} と同じ（項目の型とカーソルの列が違うので、ここに書いている）。
+	 * 打ち切り方は {@link Pages}。
 	 */
-	public PageResponse<UserCard> likers(UUID postId, UUID cursor, int limit) {
+	public PageResponse<UserCard> likers(UUID viewer, UUID postId, UUID cursor, int limit) {
 		requirePost(postId);
-		List<Liker> rows = likeMapper.findLikers(postId, cursor, limit + 1);
-		boolean hasMore = rows.size() > limit;
-		List<Liker> page = hasMore ? rows.subList(0, limit) : rows;
-		UUID nextCursor = hasMore ? page.get(limit - 1).likeId() : null;
-		return new PageResponse<>(page.stream().map(this::toCard).toList(), nextCursor);
+		List<UserCardRow> rows = likeMapper.findLikers(postId, viewer, cursor, limit + 1);
+		return Pages.of(rows, limit, UserCardRow::cursorId,
+				page -> page.stream().map(row -> UserCards.of(row, imageStorage)).toList());
 	}
 
 	private void requirePost(UUID postId) {
 		if (!postMapper.existsById(postId)) {
 			throw new NotFoundException();
 		}
-	}
-
-	private UserCard toCard(Liker liker) {
-		String avatarUrl = liker.avatarKey() == null ? null : imageStorage.urlOf(liker.avatarKey());
-		// isFollowing はフォローの機能ができるまで false 固定。
-		return new UserCard(liker.userId(), liker.username(), liker.displayName(), avatarUrl, liker.bio(), false);
 	}
 
 	/**

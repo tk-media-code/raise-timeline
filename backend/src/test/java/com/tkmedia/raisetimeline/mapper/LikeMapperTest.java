@@ -2,6 +2,7 @@ package com.tkmedia.raisetimeline.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -18,9 +19,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.tkmedia.raisetimeline.domain.LikeCount;
-import com.tkmedia.raisetimeline.domain.Liker;
 import com.tkmedia.raisetimeline.domain.Post;
 import com.tkmedia.raisetimeline.domain.User;
+import com.tkmedia.raisetimeline.domain.UserCardRow;
 
 /**
  * likes テーブルと LikeMapper を、テスト専用の本物の PostgreSQL で確かめる。
@@ -42,6 +43,9 @@ class LikeMapperTest {
 
 	@Autowired
 	private LikeMapper likeMapper;
+
+	@Autowired
+	private FollowMapper followMapper;
 
 	@Autowired
 	private JdbcTemplate jdbc;
@@ -135,19 +139,41 @@ class LikeMapperTest {
 		// 別の投稿へのいいね（post_id の絞り込みが無いと、新しい順で先頭に混ざる）
 		likeMapper.insert(otherPost, stranger);
 
-		List<Liker> firstPage = likeMapper.findLikers(post, null, 2);
+		UUID viewer = createUser();
 
-		assertThat(firstPage).extracting(Liker::userId).containsExactly(u3, u2);
-		List<Liker> secondPage = likeMapper.findLikers(post, firstPage.get(1).likeId(), 2);
-		assertThat(secondPage).extracting(Liker::userId).containsExactly(u1);
+		List<UserCardRow> firstPage = likeMapper.findLikers(post, viewer, null, 2);
 
-		Liker row = secondPage.get(0);
+		assertThat(firstPage).extracting(UserCardRow::userId).containsExactly(u3, u2);
+		List<UserCardRow> secondPage = likeMapper.findLikers(post, viewer, firstPage.get(1).cursorId(), 2);
+		assertThat(secondPage).extracting(UserCardRow::userId).containsExactly(u1);
+
+		UserCardRow row = secondPage.get(0);
 		User user = userMapper.findById(u1).orElseThrow();
-		assertThat(row.likeId()).isNotNull();
+		assertThat(row.cursorId()).isNotNull();
 		assertThat(row.username()).isEqualTo(user.username());
 		assertThat(row.displayName()).isEqualTo(user.displayName());
 		assertThat(row.avatarKey()).isEqualTo(user.avatarKey());
 		assertThat(row.bio()).isEqualTo(user.bio());
+	}
+
+	@Test
+	@DisplayName("findLikers の isFollowing は、viewer がフォローしている人だけ true（向きが逆のフォローは数えない）")
+	void findLikersMarksPeopleTheViewerFollows() {
+		UUID post = createPost(createUser());
+		UUID viewer = createUser();
+		UUID followed = createUser();
+		UUID notFollowed = createUser();
+		UUID followsViewer = createUser();
+		likeMapper.insert(post, followed);
+		likeMapper.insert(post, notFollowed);
+		likeMapper.insert(post, followsViewer);
+		followMapper.insert(viewer, followed);
+		followMapper.insert(followsViewer, viewer);
+
+		List<UserCardRow> rows = likeMapper.findLikers(post, viewer, null, 10);
+
+		assertThat(rows).extracting(UserCardRow::userId, UserCardRow::isFollowing)
+				.containsExactly(tuple(followsViewer, false), tuple(notFollowed, false), tuple(followed, true));
 	}
 
 	@Test
