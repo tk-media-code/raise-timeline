@@ -95,8 +95,8 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 
 | 応答 | 場面 |
 | --- | --- |
-| 200 `{ "accessToken": "...", "user": Me }` ＋ 新しい Cookie | 有効なリフレッシュトークン |
-| 401 `INVALID_REFRESH_TOKEN`（Cookie は消さない） | 無い、期限切れ、ログアウト済み、使用済み |
+| 200 `{ "accessToken": "...", "user": Me }` ＋ 新しい Cookie | 有効なリフレッシュトークン。使用済みでも、使ってから猶予（60 秒）の中なら 200 |
+| 401 `INVALID_REFRESH_TOKEN`（Cookie は消さない） | 無い、期限切れ、ログアウト済み、使用済みで猶予（60 秒）を過ぎた |
 
 ### `POST /api/auth/logout`
 
@@ -137,7 +137,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 
 退会と同時に走った同じ人の投稿などが利用者への外部キー違反になったときは、401 `UNAUTHENTICATED` に変換する（[error-handling-design.md](../error-handling-design.md)）。
 
-退会と、同じ人のトークンの更新が同時に走ると、まれに DB のデッドロックで片方が 500 になる。更新はトークンの行を消してから `users` に依存する行を入れ、退会は `users` の行を押さえてからトークンの行を消すので、ロックの順が逆になるため。PostgreSQL が片方を取り消すのでデータは壊れず、利用者はやり直せば済むので、受け入れる。順を揃えるために退会の `FOR UPDATE` をやめると、進行中の投稿を待てず、S3 に画像が残る。
+退会と、同じ人のトークンの更新が同時に走ると、まれに DB のデッドロックで片方が 500 になる。更新はトークンの行を行ロックで押さえてから `users` に依存する行を入れ、退会は `users` の行を押さえてからトークンの行を消すので、ロックの順が逆になるため。PostgreSQL が片方を取り消すのでデータは壊れず、利用者はやり直せば済むので、受け入れる。順を揃えるために退会の `FOR UPDATE` をやめると、進行中の投稿を待てず、S3 に画像が残る。
 
 退会と同時のログインは、照合（BCrypt）の間に本人が退会してコミットすると、トークンの挿入が `refresh_tokens_user_id_fkey` の外部キー違反になる。これは 500 にせず、メールアドレスが無い場合と同じく `auth.login.failed` を INFO で残して 401 `INVALID_CREDENTIALS` にする（ほかの制約の違反は変換せず 500）。
 
@@ -154,7 +154,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 - 正しい入力で登録すると 201。応答に `accessToken` と `user`（`isMe` が true、`email` を含む）が入り、`refresh_token` の Cookie が付く
 - 登録したメールアドレスとパスワードでログインすると 200
 - ログインで返った Cookie で更新を呼ぶと 200。新しい `accessToken` と新しい Cookie が返る
-- 更新のあと、古いリフレッシュトークンで更新を呼ぶと 401（使い捨て）
+- 更新のあと、古いリフレッシュトークンで更新を呼ぶと、使ってから 60 秒未満なら 200（猶予。新しい `accessToken` と新しい Cookie が返る）、60 秒以上なら 401
 - ログアウトのあと更新を呼ぶと 401
 - `accessToken` を付けて `GET /api/users/me` を呼ぶと 200
 - 応答の `user` にパスワードのハッシュが含まれない。DB のハッシュは `$2` で始まる（BCrypt）
@@ -186,7 +186,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 - 画面: 同時に複数の要求が 401 になっても、更新は 1 回しか呼ばれない
 - 画面: 起動時の更新と API クライアントの更新が同じ 1 本にまとめられる（StrictMode で effect が 2 回走っても更新は 1 回）
 - 更新が 401 を返しても Cookie は消えない
-- 更新を同時に 2 本送ると、片方だけが 200 で、もう片方は 401（引くと消すが 1 文で行われている）
+- 同じ Cookie で更新を同時に 2 本送ると、両方 200（行ロックで読むので、後の 1 本は前の 1 本を待ってから猶予の扱いになる）。`used_at` は 1 回だけ書かれ、`auth.refresh.grace_used` は 1 件
 - 画面: ログアウトすると TanStack Query のキャッシュが空になる。続けて別の人がログインしても、前の人のデータが出ない
 - 画面: API クライアントは、本文が JSON でない応答（nginx の HTML の 413・429）と通信の失敗を、`code` が null の `ApiError` にする。例外で画面が止まらない
 - 画面: 500 の通知に requestId が全桁出る（[logging-design.md](../logging-design.md) の 6 章）
@@ -208,7 +208,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 - ログイン失敗の文言は、存在しないメールアドレスでも、パスワード違いでも同じ
 - パスワードとトークンは、DEBUG を含むどのログの行にも含まれない。メールアドレスは INFO 以上の行に含まれない（DEBUG の行に出るローカルの SQL の引数は見ない。[logging-design.md](../logging-design.md) の 5 章）
 - ログイン失敗の応答時間が、メールアドレスの有無で変わらない（ダミーの照合をしている）
-- 登録、ログインの成功と失敗、更新の失敗、ログアウトが、出来事 `auth.register` `auth.login.succeeded` `auth.login.failed` `auth.refresh.failed` `auth.logout` として残る。成功の行には利用者 id が付き、失敗の行にはメールアドレスの有無を示す値が無い（[logging-design.md](../logging-design.md) の 3 章）
+- 登録、ログインの成功と失敗、更新の失敗、猶予の中の更新、ログアウトが、出来事 `auth.register` `auth.login.succeeded` `auth.login.failed` `auth.refresh.failed` `auth.refresh.grace_used` `auth.logout` として残る。成功の行には利用者 id が付き、失敗の行にはメールアドレスの有無を示す値が無い（[logging-design.md](../logging-design.md) の 3 章）
 
 ### 退会
 

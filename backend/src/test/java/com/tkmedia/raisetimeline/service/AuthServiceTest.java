@@ -17,6 +17,7 @@ import static org.mockito.Mockito.when;
 import com.tkmedia.raisetimeline.config.AuthProperties;
 import com.tkmedia.raisetimeline.config.SecurityConfig;
 import com.tkmedia.raisetimeline.domain.FollowStats;
+import com.tkmedia.raisetimeline.domain.RefreshToken;
 import com.tkmedia.raisetimeline.domain.User;
 import com.tkmedia.raisetimeline.dto.LoginRequest;
 import com.tkmedia.raisetimeline.dto.RegisterRequest;
@@ -50,6 +51,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -305,11 +307,12 @@ class AuthServiceTest {
 	}
 
 	@Test
-	@DisplayName("更新は使い切ったトークンの代わりに新しいトークンを入れ、期限切れを掃除する")
-	void refreshRotatesToken() {
+	@DisplayName("更新は未使用の行に使った時刻を書き、新しいトークンを入れ、猶予を過ぎた行を掃除し、猶予の出来事は残さない")
+	void refreshMarksUnusedRowAndRotates() {
 		String oldRaw = tokenService.newRefreshToken();
 		String oldHash = tokenService.hashRefreshToken(oldRaw);
-		when(refreshTokenMapper.consume(oldHash, NOW_ODT)).thenReturn(USER_ID);
+		RefreshToken row = row(oldHash, null);
+		when(refreshTokenMapper.lockByTokenHash(oldHash, NOW_ODT)).thenReturn(row);
 		User stored = storedUser();
 		when(userMapper.findById(USER_ID)).thenReturn(Optional.of(stored));
 
@@ -318,26 +321,101 @@ class AuthServiceTest {
 		assertThat(result.refreshToken()).isNotEqualTo(oldRaw);
 		assertThat(result.accessToken()).isNotBlank();
 		assertThat(result.me().id()).isEqualTo(USER_ID);
-		verify(refreshTokenMapper).deleteExpiredByUserId(USER_ID, NOW_ODT);
+		verify(refreshTokenMapper).markUsed(row.id(), NOW_ODT);
+		verify(refreshTokenMapper).deleteUnusableByUserId(USER_ID, NOW_ODT, NOW_ODT.minusSeconds(60));
 		verify(refreshTokenMapper).insert(eq(USER_ID),
 				eq(tokenService.hashRefreshToken(result.refreshToken())),
 				eq(NOW_ODT.plus(Duration.ofDays(30))));
+		assertThat(eventsOf("auth.refresh.grace_used")).isEmpty();
+		assertThat(eventsOf("auth.refresh.failed")).isEmpty();
 	}
 
 	@Test
-	@DisplayName("知らない・使用済み・期限切れのトークンは InvalidRefreshTokenException にして記録する")
+	@DisplayName("使ってから 59 秒の行は受け付け、used_at を書き換えず、新しいトークンを入れ、grace_used を 1 件残す")
+	void refreshAcceptsUsedRowWithinGrace() {
+		String oldRaw = tokenService.newRefreshToken();
+		String oldHash = tokenService.hashRefreshToken(oldRaw);
+		when(refreshTokenMapper.lockByTokenHash(oldHash, NOW_ODT))
+				.thenReturn(row(oldHash, NOW_ODT.minusSeconds(59)));
+		User stored = storedUser();
+		when(userMapper.findById(USER_ID)).thenReturn(Optional.of(stored));
+
+		AuthResult result = service.refresh(oldRaw);
+
+		assertThat(result.refreshToken()).isNotEqualTo(oldRaw);
+		verify(refreshTokenMapper, never()).markUsed(any(), any());
+		verify(refreshTokenMapper).deleteUnusableByUserId(USER_ID, NOW_ODT, NOW_ODT.minusSeconds(60));
+		verify(refreshTokenMapper).insert(eq(USER_ID),
+				eq(tokenService.hashRefreshToken(result.refreshToken())),
+				eq(NOW_ODT.plus(Duration.ofDays(30))));
+		List<ILoggingEvent> lines = eventsOf("auth.refresh.grace_used");
+		assertThat(lines).hasSize(1);
+		assertThat(lines.get(0).getFormattedMessage()).isEqualTo("使用済みのリフレッシュトークンを猶予の中で受け付けた");
+		assertThat(lines.get(0).getKeyValuePairs()).hasSize(1);
+		assertThat(lines.get(0).getMDCPropertyMap().get("user.id")).isEqualTo(USER_ID.toString());
+		assertThat(eventsOf("auth.refresh.failed")).isEmpty();
+		assertThat(allLogText()).doesNotContain(oldRaw).doesNotContain(oldHash)
+				.doesNotContain(result.refreshToken())
+				.doesNotContain(tokenService.hashRefreshToken(result.refreshToken()));
+	}
+
+	@Test
+	@DisplayName("使ってから 60 秒ちょうどの行は InvalidRefreshTokenException にし、auth.refresh.failed を利用者 id なしで残す")
+	void refreshRejectsUsedRowAtExactlyGraceEnd() {
+		String oldRaw = tokenService.newRefreshToken();
+		String oldHash = tokenService.hashRefreshToken(oldRaw);
+		when(refreshTokenMapper.lockByTokenHash(oldHash, NOW_ODT))
+				.thenReturn(row(oldHash, NOW_ODT.minusSeconds(60)));
+
+		assertThatThrownBy(() -> service.refresh(oldRaw)).isInstanceOf(InvalidRefreshTokenException.class);
+
+		verify(refreshTokenMapper, never()).markUsed(any(), any());
+		verify(refreshTokenMapper, never()).deleteUnusableByUserId(any(), any(), any());
+		verify(refreshTokenMapper, never()).insert(any(), anyString(), any());
+		assertThat(eventsOf("auth.refresh.grace_used")).isEmpty();
+		List<ILoggingEvent> lines = eventsOf("auth.refresh.failed");
+		assertThat(lines).hasSize(1);
+		assertThat(lines.get(0).getFormattedMessage()).isEqualTo("ログインの更新に失敗した");
+		assertThat(lines.get(0).getMDCPropertyMap().get("user.id")).isNull();
+		assertThat(allLogText()).doesNotContain(oldRaw).doesNotContain(oldHash);
+	}
+
+	@Test
+	@DisplayName("知らない・期限切れのトークンは InvalidRefreshTokenException にして記録する")
 	void refreshRejectsUnknownToken() {
-		when(refreshTokenMapper.consume(anyString(), any())).thenReturn(null);
+		when(refreshTokenMapper.lockByTokenHash(anyString(), any())).thenReturn(null);
 
 		assertThatThrownBy(() -> service.refresh("unknown-token"))
 				.isInstanceOf(InvalidRefreshTokenException.class);
 
+		verify(refreshTokenMapper, never()).markUsed(any(), any());
 		verify(refreshTokenMapper, never()).insert(any(), anyString(), any());
-		verify(refreshTokenMapper, never()).deleteExpiredByUserId(any(), any());
+		verify(refreshTokenMapper, never()).deleteUnusableByUserId(any(), any(), any());
 		List<ILoggingEvent> lines = eventsOf("auth.refresh.failed");
 		assertThat(lines).hasSize(1);
 		assertThat(lines.get(0).getFormattedMessage()).isEqualTo("ログインの更新に失敗した");
+		assertThat(lines.get(0).getMDCPropertyMap().get("user.id")).isNull();
 		assertThat(allLogText()).doesNotContain("unknown-token");
+	}
+
+	@Test
+	@DisplayName("行を読む段で DB が失敗したら、その例外をそのまま投げ、更新の失敗として記録しない")
+	void refreshPropagatesDatabaseFailureWhileReadingRow() {
+		DataAccessResourceFailureException original = new DataAccessResourceFailureException("db down");
+		when(refreshTokenMapper.lockByTokenHash(anyString(), any())).thenThrow(original);
+
+		assertThatThrownBy(() -> service.refresh("some-token")).isSameAs(original);
+
+		verify(refreshTokenMapper, never()).insert(any(), anyString(), any());
+		assertThat(eventsOf("auth.refresh.failed")).isEmpty();
+		assertThat(eventsOf("auth.refresh.grace_used")).isEmpty();
+	}
+
+	@Test
+	@DisplayName("refresh は @Transactional を持つ（FOR UPDATE の行ロックはトランザクションの終わりまで続く）")
+	void refreshIsTransactional() throws NoSuchMethodException {
+		assertThat(AuthService.class.getMethod("refresh", String.class).isAnnotationPresent(Transactional.class))
+				.isTrue();
 	}
 
 	@Test
@@ -409,7 +487,7 @@ class AuthServiceTest {
 		assertThatThrownBy(() -> service.refresh(null)).isInstanceOf(InvalidRefreshTokenException.class);
 		assertThatThrownBy(() -> service.refresh("  ")).isInstanceOf(InvalidRefreshTokenException.class);
 
-		verify(refreshTokenMapper, never()).consume(any(), any());
+		verify(refreshTokenMapper, never()).lockByTokenHash(any(), any());
 		verify(refreshTokenMapper, never()).insert(any(), anyString(), any());
 		List<ILoggingEvent> lines = eventsOf("auth.refresh.failed");
 		assertThat(lines).hasSize(2);
@@ -454,6 +532,12 @@ class AuthServiceTest {
 				.reduce("", String::concat);
 	}
 
+	/** 期限内の refresh_tokens の行。usedAt が null ならまだ使っていない。 */
+	private static RefreshToken row(String tokenHash, OffsetDateTime usedAt) {
+		return new RefreshToken(UUID.fromString("0199b000-0000-7000-8000-0000000000aa"), USER_ID, tokenHash,
+				NOW_ODT.plusDays(30), NOW_ODT.minusDays(1), usedAt);
+	}
+
 	private User storedUser() {
 		return new User(USER_ID, "alice", "アリス", EMAIL, passwordEncoder.encode(PASSWORD), "", null, NOW_ODT,
 				NOW_ODT);
@@ -474,7 +558,7 @@ class AuthServiceTest {
 
 	private static AuthProperties properties(byte[] key) {
 		return new AuthProperties(Base64.getEncoder().encodeToString(key), Duration.ofHours(1), Duration.ofDays(30),
-				"refresh_token", true, "raise-timeline");
+				Duration.ofSeconds(60), "refresh_token", true, "raise-timeline");
 	}
 
 	/** トランザクションの中にいる間だけ {@code active} が true になる、記録用の {@link TransactionOperations}。 */

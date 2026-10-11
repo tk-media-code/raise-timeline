@@ -252,6 +252,24 @@ class WithdrawalIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("更新に使った古い Cookie も、退会のあとは猶予の中でも 401")
+	void usedCookieWithinGraceIsRejectedAfterWithdrawal() throws Exception {
+		Account taro = newAccount();
+		MvcResult refreshed = mockMvc.perform(post("/api/auth/refresh").cookie(new Cookie(COOKIE_NAME, taro.refreshCookie())))
+				.andReturn();
+		assertThat(statusOf(refreshed)).isEqualTo(200);
+		// 使った行と新しい行の 2 本があり、使った行はまだ猶予の中にある。
+		assertThat(tokenRows(taro)).isEqualTo(2);
+		assertThat(statusOf(withdraw(taro, PASSWORD))).isEqualTo(204);
+
+		MvcResult reused = mockMvc.perform(post("/api/auth/refresh").cookie(new Cookie(COOKIE_NAME, taro.refreshCookie())))
+				.andReturn();
+
+		assertThat(statusOf(reused)).isEqualTo(401);
+		assertThat(tokenRows(taro)).isZero();
+	}
+
+	@Test
 	@DisplayName("退会のあと、同じユーザー名とメールアドレスで登録でき（201）、古いトークンは 401 のまま")
 	void sameIdentityCanRegisterAgain() throws Exception {
 		Account first = newAccount();

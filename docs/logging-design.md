@@ -44,7 +44,7 @@
 ## 3. 残す出来事
 
 `event.action` は出来事の名前で、検索と集計の鍵になる。requestId と利用者 id は 4 章の MDC で全行に自動で付くので、表の「付ける値」には入れない（同じ名前を行の項目にも入れると行が壊れる。4 章の約束 2）。
-登録・ログイン成功・ログアウトは未ログインの要求で、MDC に `user.id` が無い。この 3 つは、出来事の行を書く前にサービスが利用者 id を MDC に置く（既にあれば上書き）。
+登録・ログイン成功・ログアウト・猶予の中の更新（`auth.refresh.grace_used`）は未ログインの要求で、MDC に `user.id` が無い。この 4 つは、出来事の行を書く前にサービスが利用者 id を MDC に置く（既にあれば上書き）。
 
 | event.action | レベル | 付ける値 | いつ |
 | --- | --- | --- | --- |
@@ -53,7 +53,8 @@
 | `auth.register` | INFO | 無し。行を書く前に `user.id` を MDC に置く | 登録 |
 | `auth.login.succeeded` | INFO | 無し。行を書く前に `user.id` を MDC に置く | ログイン成功 |
 | `auth.login.failed` | INFO | 無し。メールアドレスの有無も書かない | ログイン失敗 |
-| `auth.refresh.failed` | INFO | 無し | リフレッシュトークンが無い・期限切れ・ログアウト済み・使用済み（再利用） |
+| `auth.refresh.failed` | INFO | 無し | リフレッシュトークンが無い・期限切れ・ログアウト済み・使用済みで猶予（60 秒）を過ぎた |
+| `auth.refresh.grace_used` | INFO | 無し。行を書く前に `user.id` を MDC に置く | 使用済みのリフレッシュトークンを、猶予（60 秒）の中で受け付けた。初めて使った成功は残さない。通知は付けず、本番で数を見てから決める |
 | `auth.logout` | INFO | 無し。リフレッシュトークンの行から利用者が分かれば、行を書く前に `user.id` を MDC に置く | ログアウト |
 | `user.withdrew` | INFO | 無し（`user.id` は MDC にある） | 退会 |
 | `post.deleted` | INFO | 投稿 id（`app.post.id`） | 投稿の削除 |
@@ -88,7 +89,7 @@ Spring Boot が自動で付ける項目と、このプロジェクトが足す�
 | --- | --- | --- |
 | `@timestamp` `log.level` `log.logger` `process.pid` `process.thread.name` `service.name` `service.environment` `message` `ecs.version` | Spring Boot | 時刻は UTC。`service.environment` は `local` か `production`。`service.version` は jar の版が取れるときだけ付く |
 | `error.type` `error.message` `error.stack_trace` | Spring Boot | 例外を渡した行にだけ付く。根本原因（cause）を先頭にする設定にする |
-| `http.request.id` `client.ip` `user.id` | MDC。要求の間ずっと | requestId、接続元の IP、ログイン中の利用者 id。要求の間に出るすべての行に付く。`user.id` は認証フィルタがトークンを検証したあとに置くので、未ログインの要求には付かない。登録・ログイン成功・ログアウトでは、サービスが出来事を書く前に置く（3 章） |
+| `http.request.id` `client.ip` `user.id` | MDC。要求の間ずっと | requestId、接続元の IP、ログイン中の利用者 id。要求の間に出るすべての行に付く。`user.id` は認証フィルタがトークンを検証したあとに置くので、未ログインの要求には付かない。登録・ログイン成功・ログアウト・猶予の中の更新では、サービスが出来事を書く前に置く（3 章） |
 | `http.request.method` `url.path` `url.query` `http.response.status_code` `event.duration` | 要求ログ | 所要時間はナノ秒。ECS と Datadog の両方がナノ秒を標準にしている |
 | `event.action` `event.code` | 出来事の行 | 出来事の名前（3 章）と、エラー応答の `code`（[error-handling-design.md](error-handling-design.md) の分類表） |
 | `app.post.id` `app.comment.id` `app.image.keys` | 出来事の行 | 辞書に無い、このアプリ固有の値。`app.image.keys` は文字列の配列 |

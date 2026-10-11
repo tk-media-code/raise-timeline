@@ -8,24 +8,33 @@
 	</insert>
 
 	<!--
-		期限内の行だけを消して、持ち主の id を返す。消した行が無ければ（知らない・期限切れ・使用済み）null。
-		SELECT と DELETE に分けず 1 文にするのは、同じトークンの同時使用でどちらか 1 件だけが成功するようにするため。
-		DELETE ... RETURNING は結果を返すので <select> で書く。flushCache="true" にするのは、
-		同じセッションで同じ引数を繰り返したとき、ローカルキャッシュが前回の結果を返して DELETE が実行されなくなるのを防ぐため。
+		期限内の行を FOR UPDATE で読む。同じトークンで同時に 2 本の更新が来たとき、後の 1 本は
+		前の 1 本がコミットするまでここで待ち、コミット後の used_at を読めるようにするため。
+		使用済みの行も返す。受け付けるかどうかは used_at を見てサービスが決める。
+		flushCache="true" にするのは、同じトランザクションで同じ引数を繰り返したとき、
+		ローカルキャッシュが前回の結果を返して、ロックも最新の値も取れなくなるのを防ぐため。
 	-->
-	<select id="consume" resultType="java.util.UUID" flushCache="true" useCache="false">
-		DELETE FROM refresh_tokens
+	<select id="lockByTokenHash" resultType="com.tkmedia.raisetimeline.domain.RefreshToken"
+			flushCache="true" useCache="false">
+		SELECT id, user_id, token_hash, expires_at, created_at, used_at
+		FROM refresh_tokens
 		WHERE token_hash = #{tokenHash} AND expires_at &gt; #{now}
-		RETURNING user_id
+		FOR UPDATE
 	</select>
+
+	<!-- used_at IS NULL を付けるのは、最初に使った時刻を書き換えない約束を DB でも守るため。猶予は最初の時刻から数える。 -->
+	<update id="markUsed">
+		UPDATE refresh_tokens SET used_at = #{usedAt} WHERE id = #{id} AND used_at IS NULL
+	</update>
+
+	<delete id="deleteUnusableByUserId">
+		DELETE FROM refresh_tokens
+		WHERE user_id = #{userId} AND (expires_at &lt;= #{now} OR used_at &lt;= #{usedBefore})
+	</delete>
 
 	<!-- ログアウト用。期限に関わらず消す。持ち主の id は、ログアウトの出来事に利用者 id を載せるために返す。 -->
 	<select id="deleteByTokenHash" resultType="java.util.UUID" flushCache="true" useCache="false">
 		DELETE FROM refresh_tokens WHERE token_hash = #{tokenHash} RETURNING user_id
 	</select>
-
-	<delete id="deleteExpiredByUserId">
-		DELETE FROM refresh_tokens WHERE user_id = #{userId} AND expires_at &lt;= #{now}
-	</delete>
 
 </mapper>

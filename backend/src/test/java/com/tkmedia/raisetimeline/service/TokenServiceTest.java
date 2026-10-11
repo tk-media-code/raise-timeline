@@ -93,7 +93,7 @@ class TokenServiceTest {
 
 	private AuthProperties properties() {
 		return new AuthProperties(Base64.getEncoder().encodeToString(key), Duration.ofHours(1), Duration.ofDays(30),
-				"refresh_token", true, ISSUER);
+				Duration.ofSeconds(60), "refresh_token", true, ISSUER);
 	}
 
 	private static byte[] randomKey() {

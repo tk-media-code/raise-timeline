@@ -44,6 +44,7 @@ erDiagram
         uuid user_id FK "users.id"
         text token_hash UK "SHA-256"
         timestamptz expires_at
+        timestamptz used_at "更新に使った時刻。NULL はまだ使っていない"
         timestamptz created_at
     }
     posts {
@@ -116,11 +117,12 @@ erDiagram
 | user_id | uuid | 不可 | | 持ち主。users.id |
 | token_hash | text | 不可 | | トークンの SHA-256。トークンそのものは保存しない |
 | expires_at | timestamptz | 不可 | | 有効期限（発行から 30 日） |
+| used_at | timestamptz | 可 | | 更新に使った時刻。NULL はまだ使っていない。最初に使った時刻だけを書き、あとから書き換えない。使ってから 60 秒（猶予）は同じトークンでの更新を受け付け、それを過ぎると受け付けない（[auth-design.md](auth-design.md) の 3 章） |
 | created_at | timestamptz | 不可 | now() | |
 
 - 外部キー: `user_id → users.id`（CASCADE）
 - 一意: `token_hash`
-- 索引: `(user_id)`。更新のときに、その人の期限切れの行をついでに消すため
+- 索引: `(user_id)`。更新のときに、その人の期限切れの行と、使ってから猶予（60 秒）を過ぎた行をついでに消すため。`used_at` には索引を張らない。トークンは `token_hash` の一意制約で引き、掃除は `(user_id)` の索引で足りる
 
 ### posts（投稿）
 
@@ -286,6 +288,7 @@ LIMIT #{limit};
 | `V3__likes.sql` | `likes` | いいね |
 | `V4__comments.sql` | `comments` | コメント |
 | `V5__follows.sql` | `follows` | フォロー |
+| `V6__refresh_token_used_at.sql` | `refresh_tokens.used_at` | ログインの更新が重なってもログアウトしないようにする |
 
 `post_images` は投稿の Issue で作る。画像の Issue では DB を変えない。
 
