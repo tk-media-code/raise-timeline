@@ -257,6 +257,28 @@ class UserSearchIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("続きの目印（nextCursor）の人が続きを読む前に退会しても、続きは欠けも重複も無く残りの 1 人だけが返る")
+	void pagesThroughWhenCursorUserIsDeleted() throws Exception {
+		List<String> created = new ArrayList<>();
+		for (int i = 0; i < 21; i++) {
+			created.add(createUser("cd" + s + "_" + i, "表示名").id().toString());
+		}
+		String q = "cd" + s;
+		MvcResult first = search(q);
+		List<String> firstIds = ids(first);
+		String nextCursor = JsonPath.read(json(first), "$.nextCursor");
+		assertThat(nextCursor).isEqualTo(firstIds.get(19));
+		userMapper.deleteById(UUID.fromString(nextCursor));
+
+		MvcResult second = search(q, nextCursor);
+
+		List<String> secondIds = ids(second);
+		assertThat(secondIds).containsExactly(created.get(0));
+		assertThat(JsonPath.<Object>read(json(second), "$.nextCursor")).isNull();
+		assertThat(firstIds).doesNotContainAnyElementsOf(secondIds);
+	}
+
+	@Test
 	@DisplayName("並びは id の降順")
 	void ordersByIdDescending() throws Exception {
 		for (int i = 0; i < 5; i++) {

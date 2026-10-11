@@ -72,6 +72,12 @@ class SearchQueriesTest {
 	}
 
 	@Test
+	@DisplayName("51 文字で NUL を含むなら、長さの判定より先に 使えない文字が含まれています になる")
+	void unusableCharsComeBeforeLengthCheck() {
+		assertRejected("a".repeat(51) + "\u0000", SearchQueries.UNUSABLE_CHARS);
+	}
+
+	@Test
 	@DisplayName("誤りの field は q")
 	void fieldIsQ() {
 		assertThatThrownBy(() -> SearchQueries.validate(""))

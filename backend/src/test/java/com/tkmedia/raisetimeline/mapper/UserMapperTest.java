@@ -275,10 +275,11 @@ class UserMapperTest {
 	@Test
 	@DisplayName("search: 表示名の一部で、その人が返る")
 	void searchByDisplayNamePart() {
-		UUID target = createUser("user_" + suffix(), "検索太郎" + suffix());
-		createUser("user_" + suffix(), "別の人" + suffix());
+		String s = suffix();
+		UUID target = createUser("user_" + suffix(), "検索太" + s);
+		createUser("user_" + suffix(), "別の人" + s);
 
-		List<UserCardRow> rows = userMapper.search("%索太%", UUID.randomUUID(), null, 20);
+		List<UserCardRow> rows = userMapper.search("%索太" + s + "%", UUID.randomUUID(), null, 20);
 
 		assertThat(idsOf(rows)).containsExactly(target);
 	}
@@ -345,10 +346,11 @@ class UserMapperTest {
 	@Test
 	@DisplayName("search: \\ をエスケープ文字として扱う。\\% は % という文字だけに一致する")
 	void searchTreatsBackslashAsEscape() {
-		UUID percent = createUser("user_" + suffix(), "100%達成");
-		createUser("user_" + suffix(), "100点");
+		String s = suffix();
+		UUID percent = createUser("user_" + suffix(), "100%達成" + s);
+		createUser("user_" + suffix(), "100点" + s);
 
-		List<UserCardRow> rows = userMapper.search("%100\\%%", UUID.randomUUID(), null, 20);
+		List<UserCardRow> rows = userMapper.search("%100\\%%" + s + "%", UUID.randomUUID(), null, 20);
 
 		assertThat(idsOf(rows)).containsExactly(percent);
 	}
