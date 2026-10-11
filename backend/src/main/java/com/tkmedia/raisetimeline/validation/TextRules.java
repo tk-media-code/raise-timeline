@@ -50,6 +50,9 @@ public final class TextRules {
 	 * <p>Java の {@code String.strip()} は {@code Character.isWhitespace} で判定するので、U+00A0・U+2007・U+202F
 	 * （改行しない空白）と U+FEFF は除かない。{@code trim()} が除くこれらを足して、画面と API で「空」の判定が
 	 * ずれないようにする。U+200B のような幅の無い文字は {@code trim()} も除かないので、空白に含めない。
+	 *
+	 * <p>画面と完全には一致しない。{@code Character.isWhitespace} 由来で、U+001C〜U+001F（区切りの制御文字）も除く。
+	 * 画面はこれらを除かないので、サーバーの方が少し広い（これらだけの本文は、画面ではボタンが押せ、サーバーが 422 にする）。
 	 */
 	public static boolean isBlankChar(char c) {
 		return Character.isWhitespace(c) || Character.isSpaceChar(c) || c == '\uFEFF';

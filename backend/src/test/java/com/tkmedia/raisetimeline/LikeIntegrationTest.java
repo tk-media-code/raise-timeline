@@ -1,6 +1,7 @@
 package com.tkmedia.raisetimeline;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -9,10 +10,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.jayway.jsonpath.JsonPath;
 import com.tkmedia.raisetimeline.domain.Post;
 import com.tkmedia.raisetimeline.domain.User;
+import com.tkmedia.raisetimeline.error.UnauthenticatedException;
 import com.tkmedia.raisetimeline.mapper.FollowMapper;
 import com.tkmedia.raisetimeline.mapper.LikeMapper;
 import com.tkmedia.raisetimeline.mapper.PostMapper;
 import com.tkmedia.raisetimeline.mapper.UserMapper;
+import com.tkmedia.raisetimeline.service.LikeService;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -62,6 +65,9 @@ class LikeIntegrationTest {
 
 	@Autowired
 	private FollowMapper followMapper;
+
+	@Autowired
+	private LikeService likeService;
 
 	@Autowired
 	private JdbcTemplate jdbc;
@@ -201,6 +207,15 @@ class LikeIntegrationTest {
 
 		assertThat(result.getResponse().getStatus()).isEqualTo(404);
 		assertThat((String) JsonPath.read(json(result), "$.code")).isEqualTo("NOT_FOUND");
+	}
+
+	@Test
+	@DisplayName("トークンの利用者が users に居ないとき、付ける処理は likes_user_id_fkey の違反を UnauthenticatedException にする")
+	void likeByMissingUserIsUnauthenticated() {
+		UUID post = createPost(other);
+
+		// 単体テストは違反の例外を模擬するだけなので、ここでは本物の DB の制約名で変換されることを確かめる。
+		assertThatThrownBy(() -> likeService.like(UUID.randomUUID(), post)).isInstanceOf(UnauthenticatedException.class);
 	}
 
 	@Test

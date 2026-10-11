@@ -289,6 +289,43 @@ class WithdrawalIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("パスワードが違うとき、送った文字列は応答にもログにも標準出力にも出ない")
+	void wrongPasswordIsNotWrittenAnywhere(CapturedOutput output) throws Exception {
+		Account taro = newAccount();
+		String wrong = "Wr0ng-pass-" + UUID.randomUUID();
+
+		MvcResult result = withdraw(taro, wrong);
+
+		assertThat(statusOf(result)).isEqualTo(401);
+		assertThat(json(result)).doesNotContain(wrong);
+		String requestId = result.getResponse().getHeader("X-Request-Id");
+		List<Map<String, Object>> mine = LogLines.parse(output).stream()
+				.filter(line -> requestId.equals(LogLines.get(line, LogFields.HTTP_REQUEST_ID)))
+				.toList();
+		assertThat(mine).isNotEmpty();
+		assertThat(mine).noneSatisfy(line -> assertThat(line.toString()).contains(wrong));
+		assertThat(output.getOut()).doesNotContain(wrong);
+		assertThat(output.getErr()).doesNotContain(wrong);
+	}
+
+	@Test
+	@DisplayName("72 バイトを超えるパスワードでの退会は、パスワード違いと同じ 401 INVALID_PASSWORD で、500 にならず何も消えない")
+	void overlongPasswordIsAnInvalidPasswordNotAServerError(CapturedOutput output) throws Exception {
+		Account taro = newAccount();
+		String overlong = "a".repeat(73);
+
+		MvcResult result = withdraw(taro, overlong);
+
+		assertThat(statusOf(result)).isEqualTo(401);
+		assertThat((String) JsonPath.read(json(result), "$.code")).isEqualTo("INVALID_PASSWORD");
+		assertThat((String) JsonPath.read(json(result), "$.detail")).isEqualTo("パスワードが違います");
+		assertThat(json(result)).doesNotContain(overlong);
+		assertThat(output.getOut()).doesNotContain(overlong);
+		assertThat(userRows(taro)).isEqualTo(1);
+		assertThat(statusOf(getMe(taro.token()))).isEqualTo(200);
+	}
+
+	@Test
 	@DisplayName("S3 の削除が失敗しても 204 で、WARN の image.delete_failed に消せなかったキーが載る")
 	void storageFailureStillReturns204AndLogsKeys(CapturedOutput output) throws Exception {
 		Account taro = newAccount();

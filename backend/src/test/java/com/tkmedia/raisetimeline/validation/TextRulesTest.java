@@ -65,11 +65,21 @@ class TextRulesTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "", " ", "\u00A0", "\u2007", "\u202F", "\uFEFF", "\u3000", "\t\r\n", " \u00A0\u3000\uFEFF" })
 	@NullSource
+	@ValueSource(strings = { "", " ", "\u00A0", "\u2007", "\u202F", "\uFEFF", "\u3000", "\t\r\n", " \u00A0\u3000\uFEFF",
+			"\u2028", "\u2029", "\u000B", "\u000C", "\u1680", "\u2000", "\u200A", "\u205F" })
 	@DisplayName("空白の文字だけ・空文字・null は isBlank が true")
 	void blankTextIsBlank(String value) {
 		assertThat(TextRules.isBlank(value)).isTrue();
+	}
+
+	@ParameterizedTest
+	@ValueSource(chars = { '\u001C', '\u001D', '\u001E', '\u001F' })
+	@DisplayName("区切りの制御文字（U+001C〜U+001F）は空白の文字とみなす（画面の trim() は除かないので、サーバーの方が少し広い）")
+	void separatorControlCharsAreBlankChars(char c) {
+		assertThat(TextRules.isBlankChar(c)).isTrue();
+		assertThat(TextRules.isBlank(String.valueOf(c))).isTrue();
+		assertThat(TextRules.stripBlank("a" + c)).isEqualTo("a");
 	}
 
 	@ParameterizedTest

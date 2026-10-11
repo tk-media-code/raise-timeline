@@ -1,6 +1,10 @@
 package com.tkmedia.raisetimeline.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -106,12 +110,16 @@ class LikeControllerTest {
 	@Test
 	@DisplayName("GET はトークンの利用者を viewer として渡す")
 	void getPassesTokenUserAsViewer() throws Exception {
-		when(likeService.likers(USER_ID, POST_ID, null, 20)).thenReturn(new PageResponse<>(List.of(), null));
+		// 他のテストと別の利用者・別の limit・別の cursor にして、「トークンの利用者」が渡ることを単独で見分ける。
+		UUID viewer = UUID.fromString("0199b000-0000-7000-8000-000000000009");
+		when(likeService.likers(viewer, POST_ID, CURSOR, 7)).thenReturn(new PageResponse<>(List.of(), null));
 
-		mockMvc.perform(get("/api/posts/{id}/likes", POST_ID).with(me()))
+		mockMvc.perform(get("/api/posts/{id}/likes", POST_ID).param("cursor", CURSOR.toString()).param("limit", "7")
+				.with(jwt().jwt(j -> j.subject(viewer.toString()))))
 				.andExpect(status().isOk());
 
-		verify(likeService).likers(USER_ID, POST_ID, null, 20);
+		verify(likeService).likers(viewer, POST_ID, CURSOR, 7);
+		verify(likeService, never()).likers(eq(USER_ID), any(), any(), anyInt());
 	}
 
 	@Test

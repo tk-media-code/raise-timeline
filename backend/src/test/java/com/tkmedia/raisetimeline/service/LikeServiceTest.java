@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.tkmedia.raisetimeline.domain.UserCardRow;
@@ -63,6 +64,14 @@ class LikeServiceTest {
 		assertThatCode(() -> service.like(ME, POST_ID)).doesNotThrowAnyException();
 
 		verify(likeMapper).insert(POST_ID, ME);
+	}
+
+	@Test
+	@DisplayName("付けるときは投稿の存在を先に確かめない（postMapper を呼ばない）")
+	void likeDoesNotCheckPostBeforehand() {
+		service.like(ME, POST_ID);
+
+		verifyNoInteractions(postMapper);
 	}
 
 	@Test

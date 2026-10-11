@@ -73,7 +73,7 @@ class PostBodyRulesTest {
 		assertRejected(" \r\n　 ", false, EMPTY);
 	}
 
-	@ParameterizedTest(name = "{index}: 空白の文字")
+	@ParameterizedTest(name = "[{index}] 空白の文字")
 	@ValueSource(strings = { "\u00A0", "\u2007", "\u202F", "\uFEFF", "\u00A0\u3000 \n\uFEFF" })
 	@DisplayName("U+00A0 などの空白の文字だけの本文は、画像が無ければ「本文か画像を入れてください」。画像があれば空文字として返る")
 	void nonBreakingBlankOnly(String raw) {

@@ -47,10 +47,14 @@ class CommentMapperTest {
 	private JdbcTemplate jdbc;
 
 	private UUID createUser() {
+		return createUser(null);
+	}
+
+	private UUID createUser(String avatarKey) {
 		String s = UUID.randomUUID().toString().substring(0, 8);
 		String username = "user_" + s;
 		return userMapper.insert(new User(null, username, "表示名" + s, username + "@example.com",
-				"hash", "自己紹介" + s, null, NOW, NOW));
+				"hash", "自己紹介" + s, avatarKey, NOW, NOW));
 	}
 
 	private UUID createPost(UUID userId) {
@@ -65,7 +69,8 @@ class CommentMapperTest {
 	@Test
 	@DisplayName("insert は id を返し、findById は本文・作成日時・書いた人の username・displayName・avatarKey を返す")
 	void insertThenFindById() {
-		UUID author = createUser();
+		// アイコンのキーが null だと null 同士の比較になるので、書いた人にはキーを持たせる
+		UUID author = createUser("avatars/author.png");
 		UUID post = createPost(createUser());
 
 		UUID id = commentMapper.insert(post, author, "はじめてのコメント", NOW);
@@ -80,6 +85,7 @@ class CommentMapperTest {
 		assertThat(row.createdAt().toInstant()).isEqualTo(NOW.toInstant());
 		assertThat(row.username()).isEqualTo(user.username());
 		assertThat(row.displayName()).isEqualTo(user.displayName());
+		assertThat(user.avatarKey()).isEqualTo("avatars/author.png");
 		assertThat(row.avatarKey()).isEqualTo(user.avatarKey());
 	}
 

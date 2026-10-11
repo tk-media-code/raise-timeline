@@ -106,6 +106,7 @@ class UserSearchIntegrationTest {
 		assertThat((String) JsonPath.read(body, "$.code")).isEqualTo("VALIDATION_ERROR");
 		assertThat((String) JsonPath.read(body, "$.errors[0].field")).isEqualTo("q");
 		assertThat((String) JsonPath.read(body, "$.errors[0].message")).isEqualTo(message);
+		assertThat(JsonPath.<List<Object>>read(body, "$.errors")).hasSize(1);
 	}
 
 	@Test
@@ -185,6 +186,16 @@ class UserSearchIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("絵文字でも 50 文字は 200、51 文字は 422 で『50 文字以内で入力してください』（UTF-16 の長さでなく文字数で数える）")
+	void lengthLimitCountsEmojiAsOneCharacter() throws Exception {
+		String fifty = "😀".repeat(50);
+		assertThat(fifty.length()).isEqualTo(100);
+
+		assertThat(search(fifty).getResponse().getStatus()).isEqualTo(200);
+		assertValidationError(search(fifty + "😀"), TOO_LONG);
+	}
+
+	@Test
 	@DisplayName("前後の空白（全角を含む）は取り除かれる")
 	void surroundingWhitespaceIsStripped() throws Exception {
 		Person alice = createUser("alice_" + s, "アリス");
@@ -218,6 +229,15 @@ class UserSearchIntegrationTest {
 
 		assertThat(ids(search("a\\b" + s))).containsExactly(withBackslash.id().toString());
 		assertThat(ids(search(s + "\\"))).isEmpty();
+	}
+
+	@Test
+	@DisplayName("末尾が \\ の語で、表示名がその語と同じ人が返る（\\ をエスケープしないと LIKE が壊れる）")
+	void trailingBackslashFindsThePersonWhoHasIt() throws Exception {
+		Person withBackslash = createUser("tb_" + s, "z" + s + "\\");
+		createUser("tc_" + s, "z" + s);
+
+		assertThat(ids(search("z" + s + "\\"))).containsExactly(withBackslash.id().toString());
 	}
 
 	@Test
