@@ -96,7 +96,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 | 応答 | 場面 |
 | --- | --- |
 | 200 `{ "accessToken": "...", "user": Me }` ＋ 新しい Cookie | 有効なリフレッシュトークン |
-| 401 `INVALID_REFRESH_TOKEN`（Cookie は消さない） | 無い、期限切れ、ログアウト済み、使用済み |
+| 401 `INVALID_REFRESH_TOKEN`（Cookie は消さない） | 無い、期限切れ、ログアウト済み、使用済みで猶予（60 秒）を過ぎた |
 
 ### `POST /api/auth/logout`
 
@@ -154,7 +154,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 - 正しい入力で登録すると 201。応答に `accessToken` と `user`（`isMe` が true、`email` を含む）が入り、`refresh_token` の Cookie が付く
 - 登録したメールアドレスとパスワードでログインすると 200
 - ログインで返った Cookie で更新を呼ぶと 200。新しい `accessToken` と新しい Cookie が返る
-- 更新のあと、古いリフレッシュトークンで更新を呼ぶと 401（使い捨て）
+- 更新のあと、古いリフレッシュトークンで更新を呼ぶと、使ってから 60 秒未満なら 200（猶予。新しい `accessToken` と新しい Cookie が返る）、60 秒以上なら 401
 - ログアウトのあと更新を呼ぶと 401
 - `accessToken` を付けて `GET /api/users/me` を呼ぶと 200
 - 応答の `user` にパスワードのハッシュが含まれない。DB のハッシュは `$2` で始まる（BCrypt）

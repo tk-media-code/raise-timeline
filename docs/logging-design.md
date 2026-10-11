@@ -53,7 +53,8 @@
 | `auth.register` | INFO | 無し。行を書く前に `user.id` を MDC に置く | 登録 |
 | `auth.login.succeeded` | INFO | 無し。行を書く前に `user.id` を MDC に置く | ログイン成功 |
 | `auth.login.failed` | INFO | 無し。メールアドレスの有無も書かない | ログイン失敗 |
-| `auth.refresh.failed` | INFO | 無し | リフレッシュトークンが無い・期限切れ・ログアウト済み・使用済み（再利用） |
+| `auth.refresh.failed` | INFO | 無し | リフレッシュトークンが無い・期限切れ・ログアウト済み・使用済みで猶予（60 秒）を過ぎた |
+| `auth.refresh.grace_used` | INFO | 無し。行を書く前に `user.id` を MDC に置く | 使用済みのリフレッシュトークンを、猶予（60 秒）の中で受け付けた。初めて使った成功は残さない。通知は付けず、本番で数を見てから決める |
 | `auth.logout` | INFO | 無し。リフレッシュトークンの行から利用者が分かれば、行を書く前に `user.id` を MDC に置く | ログアウト |
 | `user.withdrew` | INFO | 無し（`user.id` は MDC にある） | 退会 |
 | `post.deleted` | INFO | 投稿 id（`app.post.id`） | 投稿の削除 |

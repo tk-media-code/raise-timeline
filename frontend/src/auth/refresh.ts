@@ -10,8 +10,8 @@ import {
 } from './tokenStore'
 
 // 進行中の更新。同じタブでは、同じ世代の間だけ更新を 1 本にまとめる。
-// リフレッシュトークンは使い捨てなので、同時に 2 本出すと片方が 401 になって
-// 利用者がログアウトされてしまう（docs/auth-design.md 3 章）。
+// 同時に 2 本出しても、サーバーの猶予で両方通る（docs/auth-design.md 3 章）。
+// ただし、そのたびにリフレッシュトークンが増え、猶予の出来事も残るので、1 本にまとめる。
 // 世代が進んだ後の呼び出しは相乗りせず、新しく更新を始める（下の refreshSession を参照）。
 let inFlight: { generation: number; promise: Promise<AuthResponse | null> } | null = null
 
