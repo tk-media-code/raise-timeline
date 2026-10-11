@@ -61,18 +61,23 @@
 
 	<!--
 		自分の投稿と、自分がフォローしている人の投稿を、findAll と同じ列・並び・cursor の扱いで返す。
-		実行計画は、主キー posts_pkey を逆向きにたどって新しい順に読み、1 行ごとに「自分の投稿か、書いた人が
-		自分のフォロー先か」で絞り、limit 件たまったところで止める。フォロー先の引きには follows (follower_id, id)
-		の索引を使う。OR の下の IN (副問い合わせ) は semi-join にならず絞り込みのまま残るので、posts (user_id, id)
-		の索引は使われない（この索引で id の降順になるのは user_id が 1 人のとき、つまり findByUser）。
-		自分とフォロー先がしばらく投稿していないと、ページが埋まるまでに多くの投稿を読むことになる。
-		このアプリの規模（数十〜数百人、docs/requirements.md）では問題にならない。利用者が増えたら問い合わせの形を見直す。
+		書いた人を「自分のフォロー先と自分自身」の集合への IN で絞る。IN を WHERE の最上位に置くので、
+		副問い合わせを結合（semi-join）に引き上げられ、投稿の多い表では相手ごとに posts (user_id, id) の索引を
+		引く計画も選べる。IN を OR の下に置く形（p.user_id = 自分 OR p.user_id IN (...)）では引き上げられず、
+		主キー posts_pkey を逆向きに読んで 1 行ずつ捨てる計画になりうる。テスト用 DB の 6 万件（300 人 x 200 件）
+		で、フォローも投稿も無い利用者の読み込みが 856 buffers だったのが、この形では 14 buffers だった。
+		どの計画を選ぶかは表の統計しだいで、保証ではない。
+		自分の id は CAST で型を明示する（UNION ALL の片方に型の無い引数だけが並ぶのを避ける）。
 		cursor が null のときは <if> で条件ごと外す（findAll と同じ理由）。
 	-->
 	<select id="findFollowing" resultType="com.tkmedia.raisetimeline.domain.PostWithAuthor">
 		SELECT <include refid="columns"/>
 		FROM posts p JOIN users u ON u.id = p.user_id
-		WHERE (p.user_id = #{viewer} OR p.user_id IN (SELECT followee_id FROM follows WHERE follower_id = #{viewer}))
+		WHERE p.user_id IN (
+			SELECT followee_id FROM follows WHERE follower_id = #{viewer}
+			UNION ALL
+			SELECT CAST(#{viewer} AS uuid)
+		)
 		<if test="cursor != null">AND p.id &lt; #{cursor}</if>
 		ORDER BY p.id DESC
 		LIMIT #{limit}

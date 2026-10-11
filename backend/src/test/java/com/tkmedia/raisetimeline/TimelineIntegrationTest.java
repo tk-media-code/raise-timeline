@@ -314,6 +314,23 @@ class TimelineIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("フォロー中は、nextCursor の投稿が消えても、2 ページ目は残りの古い 1 件")
+	void followingDeletedCursorPost() throws Exception {
+		UUID followee = createUser("followee");
+		followMapper.insert(me, followee);
+		List<UUID> created = new ArrayList<>(createPosts(me, 10));
+		created.addAll(createPosts(followee, 11));
+		MvcResult first = following(null);
+		String cursor = nextCursorOf(first);
+
+		postMapper.delete(UUID.fromString(cursor));
+		MvcResult second = following(cursor);
+
+		assertThat(idsOf(second)).containsExactly(created.get(0).toString());
+		assertThat(nextNull(second)).isTrue();
+	}
+
+	@Test
 	@DisplayName("フォロー中の各投稿に likeCount・commentCount・likedByMe が付く")
 	void followingItemsCarryCountsAndLikedByMe() throws Exception {
 		UUID followee = createUser("followee");

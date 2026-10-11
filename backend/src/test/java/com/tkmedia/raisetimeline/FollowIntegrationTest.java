@@ -208,8 +208,12 @@ class FollowIntegrationTest {
 	void unknownUsernameIsNotFound() throws Exception {
 		String ghost = "ghost_" + UUID.randomUUID().toString().substring(0, 8);
 
-		assertThat(send(put("/api/users/{username}/follow", ghost), me).getResponse().getStatus()).isEqualTo(404);
-		assertThat(send(delete("/api/users/{username}/follow", ghost), me).getResponse().getStatus()).isEqualTo(404);
+		MvcResult put = send(put("/api/users/{username}/follow", ghost), me);
+		MvcResult del = send(delete("/api/users/{username}/follow", ghost), me);
+		assertThat(put.getResponse().getStatus()).isEqualTo(404);
+		assertThat(del.getResponse().getStatus()).isEqualTo(404);
+		assertThat((String) JsonPath.read(json(put), "$.code")).isEqualTo("NOT_FOUND");
+		assertThat((String) JsonPath.read(json(del), "$.code")).isEqualTo("NOT_FOUND");
 		MvcResult followers = list(me, ghost, "followers", null);
 		MvcResult following = list(me, ghost, "following", null);
 		assertThat(followers.getResponse().getStatus()).isEqualTo(404);
@@ -229,7 +233,9 @@ class FollowIntegrationTest {
 				get(URI.create("/api/users/" + username + "/following")));
 
 		for (MockHttpServletRequestBuilder request : requests) {
-			assertThat(send(request, me).getResponse().getStatus()).isEqualTo(404);
+			MvcResult result = send(request, me);
+			assertThat(result.getResponse().getStatus()).isEqualTo(404);
+			assertThat((String) JsonPath.read(json(result), "$.code")).isEqualTo("NOT_FOUND");
 		}
 	}
 
@@ -339,6 +345,56 @@ class FollowIntegrationTest {
 		assertThat(secondIds).containsExactly(followers.get(0).toString());
 		assertThat(JsonPath.<Object>read(second, "$.nextCursor")).isNull();
 		assertThat(firstIds).doesNotContainAnyElementsOf(secondIds);
+	}
+
+	@Test
+	@DisplayName("フォロワー一覧で nextCursor の行の人が解除しても、続きは欠けも重複も無く最初の 1 人だけ")
+	void followersCursorRowRemoved() throws Exception {
+		List<Person> followers = new ArrayList<>();
+		for (int i = 0; i < 21; i++) {
+			Person follower = createUser("f");
+			followMapper.insert(follower.id(), alice.id());
+			followers.add(follower);
+		}
+		String first = json(list(me, alice.username(), "followers", null));
+		List<String> firstIds = JsonPath.read(first, "$.items[*].id");
+		String nextCursor = JsonPath.read(first, "$.nextCursor");
+		Person cursorPerson = followers.reversed().get(19);
+		assertThat(firstIds.get(19)).isEqualTo(cursorPerson.id().toString());
+
+		assertThat(unfollow(cursorPerson, alice.username())).isEqualTo(204);
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM follows WHERE id = ?::uuid", Integer.class, nextCursor))
+				.isZero();
+		String second = json(list(me, alice.username(), "followers", nextCursor));
+
+		assertThat(JsonPath.<List<String>>read(second, "$.items[*].id"))
+				.containsExactly(followers.get(0).id().toString());
+		assertThat(JsonPath.<Object>read(second, "$.nextCursor")).isNull();
+	}
+
+	@Test
+	@DisplayName("フォロー中一覧で nextCursor の行の相手を解除しても、続きは欠けも重複も無く最初の 1 人だけ")
+	void followingCursorRowRemoved() throws Exception {
+		List<Person> followees = new ArrayList<>();
+		for (int i = 0; i < 21; i++) {
+			Person followee = createUser("g");
+			followMapper.insert(alice.id(), followee.id());
+			followees.add(followee);
+		}
+		String first = json(list(me, alice.username(), "following", null));
+		List<String> firstIds = JsonPath.read(first, "$.items[*].id");
+		String nextCursor = JsonPath.read(first, "$.nextCursor");
+		Person cursorPerson = followees.reversed().get(19);
+		assertThat(firstIds.get(19)).isEqualTo(cursorPerson.id().toString());
+
+		assertThat(unfollow(alice, cursorPerson.username())).isEqualTo(204);
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM follows WHERE id = ?::uuid", Integer.class, nextCursor))
+				.isZero();
+		String second = json(list(me, alice.username(), "following", nextCursor));
+
+		assertThat(JsonPath.<List<String>>read(second, "$.items[*].id"))
+				.containsExactly(followees.get(0).id().toString());
+		assertThat(JsonPath.<Object>read(second, "$.nextCursor")).isNull();
 	}
 
 	@Test

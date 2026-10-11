@@ -133,7 +133,7 @@ erDiagram
 | updated_at | timestamptz | 不可 | now() | created_at より後なら「編集済み」 |
 
 - 外部キー: `user_id → users.id`（CASCADE）
-- 索引: `(user_id, id)`。プロフィールの投稿一覧に使う。フォロー中タイムラインには使わない（4 章）
+- 索引: `(user_id, id)`。プロフィールの投稿一覧に使う。フォロー中タイムラインでも、投稿の多い表では相手ごとの引きに使われうる（5 章の注）
 
 ### post_images（投稿に添付した画像）
 
@@ -197,12 +197,12 @@ erDiagram
 
 | 索引 | 速くする問い合わせ | 付けない理由があるもの |
 | --- | --- | --- |
-| `posts (user_id, id)` | その人の投稿を新しい順に（プロフィール）。`user_id` でまとめ、その中が `id` 順なので、並べ替えなしに末尾から読める | `user_id` 単独の索引は要らない。2 列の索引は先頭の列だけの検索にも使える。フォロー中タイムラインには使われない（5 章の注） |
+| `posts (user_id, id)` | その人の投稿を新しい順に（プロフィール）。`user_id` でまとめ、その中が `id` 順なので、並べ替えなしに末尾から読める。フォロー中タイムラインでは、相手ごとにこの索引を引く計画も選べる（5 章の注） | `user_id` 単独の索引は要らない。2 列の索引は先頭の列だけの検索にも使える |
 | `likes (post_id, user_id)`（一意制約） | 「自分がいいね済みか」「投稿のいいね数」 | |
 | `likes (post_id, id)` | いいねした人の一覧を新しい順に | |
 | `likes (user_id)`、`comments (user_id)` | 退会で `users` の行を消すときの連鎖削除で、その人の行を探す | 「このユーザーがいいねした投稿の一覧」などの機能は無いが、連鎖削除のために要る |
 | `comments (post_id, id)` | 投稿のコメント一覧を新しい順に。コメント数 | 削除の認可は主キーで 1 行引いてから `user_id` を見るだけなので、それ用の索引は要らない |
-| `follows (followee_id, id)` と `(follower_id, id)` | フォロワー一覧とフォロー中一覧。逆方向から引く機能が両方あるので 2 本 | |
+| `follows (followee_id, id)` と `(follower_id, id)` | フォロワー一覧とフォロー中一覧。逆方向から引く機能が両方あるので 2 本。`(follower_id, id)` はフォロー中タイムラインで「自分のフォロー先」を引くのにも使う | |
 | `users lower(username)`、`lower(email)` | 一意性の保証。プロフィール URL とログインの完全一致の検索 | 部分一致のユーザー検索には使えない。数百人なら全件走査で十分。数万人になったら `pg_trgm` を足す |
 
 退会で `users` の行を消すと、外部キーの連鎖で投稿・画像の行・いいね・コメント・フォロー関係・リフレッシュトークンが消える。S3 のオブジェクトはアプリが消す（[image-storage-design.md](image-storage-design.md)）。
@@ -218,13 +218,17 @@ SELECT p.id, p.user_id, p.body, p.created_at, p.updated_at,
        u.username, u.display_name, u.avatar_key
 FROM posts p
 JOIN users u ON u.id = p.user_id
-WHERE (p.user_id = #{me} OR p.user_id IN (SELECT followee_id FROM follows WHERE follower_id = #{me}))
+WHERE p.user_id IN (
+        SELECT followee_id FROM follows WHERE follower_id = #{me}
+        UNION ALL
+        SELECT CAST(#{me} AS uuid)
+      )
   AND (#{cursor}::uuid IS NULL OR p.id < #{cursor})
 ORDER BY p.id DESC
 LIMIT 21;
 ```
 
-`OR` の形のまま使う。実際の実行計画は、`posts` の主キーを新しい方から逆向きに走査し、1 行ずつ条件で絞る形になる（フォロー相手の引きには `follows (follower_id, id)` を使う）。`posts (user_id, id)` は使われない。自分とフォロー相手が長く投稿していないと、1 ページを埋めるまでに多くの投稿を読むことになるが、利用者が数十〜数百人の規模では十分速い。利用者が増えたら、問い合わせの形を見直す。
+書いた人を「フォロー先と自分自身」の集合への `IN` で絞る。`IN` を `WHERE` の最上位に置くので、副問い合わせを結合（semi-join）に引き上げられ、投稿の多い表では相手ごとに `posts (user_id, id)` を引く計画も選べる。`p.user_id = 自分 OR p.user_id IN (...)` のように `IN` を `OR` の下に置くと引き上げられず、`posts` の主キーを逆向きに読んで 1 行ずつ捨てる計画になりうる（テスト用 DB の 6 万件（300 人 x 200 件）で、フォローも投稿も無い利用者の読み込みが 856 buffers から 14 buffers になった）。どの計画を選ぶかは表の統計しだいで、保証ではない。自分とフォロー相手が長く投稿していないと、1 ページを埋めるまでに多くの投稿を読むことがあるが、利用者が数十〜数百人の規模では十分速い。利用者が増えたら、問い合わせの形を見直す。
 
 投稿に付く画像・数・「自分がいいね済みか」は、投稿の一覧を取ったあとに、その投稿 id の集合に対してまとめて取る（投稿ごとに取りに行かない）。1 ページあたりの問い合わせは本体を含めて 5 本で固定になる。
 

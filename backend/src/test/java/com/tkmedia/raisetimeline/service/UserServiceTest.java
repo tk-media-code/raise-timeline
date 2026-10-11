@@ -68,7 +68,7 @@ class UserServiceTest {
 	@Test
 	@DisplayName("toMe は stats の数を入れ、isFollowing は false、isMe は true。アイコンが無ければ avatarUrl は null")
 	void toMeUsesStats() {
-		when(followMapper.stats(USER_ID, USER_ID)).thenReturn(new FollowStats(7, 3, false));
+		when(followMapper.stats(USER_ID, USER_ID)).thenReturn(new FollowStats(7, 3, true));
 
 		Me me = service.toMe(user());
 
