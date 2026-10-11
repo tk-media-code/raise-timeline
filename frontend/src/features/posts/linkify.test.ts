@@ -29,6 +29,25 @@ describe('linkify', () => {
     expect(linkify(body)).toEqual(expected)
   })
 
+  it.each([
+    ['Https://example.com', 'Https://example.com'],
+    ['HTTPS://EXAMPLE.COM/a', 'HTTPS://EXAMPLE.COM/a'],
+    ['hTTp://a.example/B?c=D', 'hTTp://a.example/B?c=D'],
+  ])('スキームの大文字小文字を区別してリンクにする。url は書かれたまま（%s）', (body, url) => {
+    expect(linkify(`見て ${body} です`)).toEqual([text('見て '), link(url), text(' です')])
+  })
+
+  it('大文字でも、外した結果スキームだけになるもの（HTTPS://.）はリンクにしない', () => {
+    expect(linkify('HTTPS://.')).toEqual([text('HTTPS://.')])
+  })
+
+  it.each(['JavaScript:alert(1)', 'JAVASCRIPT:alert(1)', 'FTP://example.com', 'HTTPS://'])(
+    '%s は大文字でもリンクにしない',
+    (body) => {
+      expect(linkify(body)).toEqual([text(body)])
+    },
+  )
+
   it.each(['javascript:alert(1)', 'data:text/html,<script>', 'ftp://example.com', 'https://'])(
     '%s はリンクにしない。text 1 つだけ',
     (body) => {

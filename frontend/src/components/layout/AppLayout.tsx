@@ -18,7 +18,14 @@ function tabClass({ isActive }: { isActive: boolean }): string {
   return 'flex min-h-14 flex-1 items-center justify-center text-sm text-black' + (isActive ? ' font-bold text-sky-600' : '')
 }
 
-// 上部バーに出す画面名。まだ画面が無いものは、ロゴの名前に倒す。
+// React Router は大文字小文字と末尾の / を区別せずに画面を選ぶ（/Settings/profile も /users/bob/followers/ も開く）。
+// 画面名と丸ボタンの判定だけが文字どおりに比べるとずれるので、判定の前に 1 回そろえる（小文字にして、末尾の / を除く。/ だけは残す）。
+function normalizePath(pathname: string): string {
+  const lower = pathname.toLowerCase()
+  return lower.length > 1 && lower.endsWith('/') ? lower.replace(/\/+$/, '') || '/' : lower
+}
+
+// 上部バーに出す画面名。まだ画面が無いものは、ロゴの名前に倒す。pathname は normalizePath を通したもの。
 function screenName(pathname: string): string {
   if (pathname === '/') return 'ホーム'
   if (pathname.startsWith('/search')) return '検索'
@@ -34,7 +41,8 @@ function screenName(pathname: string): string {
 
 export function AppLayout() {
   const { user, signOut } = useAuth()
-  const { pathname } = useLocation()
+  const { pathname: rawPathname } = useLocation()
+  const pathname = normalizePath(rawPathname)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
@@ -122,8 +130,10 @@ export function AppLayout() {
       </nav>
 
       {/* 下の余白は、固定の下部タブ（pb-16）に隠れない分。右下の丸い＋ボタンがあるスマホ幅では、さらにその分（pb-36）を空ける。
-          空けないと、一覧の最後のカードのフォローボタンが＋ボタンの下に隠れて押せない。 */}
-      <main className={'mx-auto w-full max-w-[800px] md:pb-0 ' + (showPhoneComposeButton ? 'pb-36' : 'pb-16')}>
+          空けないと、一覧の最後のカードのフォローボタンが＋ボタンの下に隠れて押せない。
+          PC 幅（md 以上）は下部タブも＋ボタンも無いが、通知が画面の下（md:bottom-4）に固定されるので、
+          ページの最後の要素（「退会する」ボタンなど）がその下に入ったままにならないよう、md:pb-24 を空ける。 */}
+      <main className={'mx-auto w-full max-w-[800px] md:pb-24 ' + (showPhoneComposeButton ? 'pb-36' : 'pb-16')}>
         <Outlet />
       </main>
 

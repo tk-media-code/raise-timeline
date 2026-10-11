@@ -127,6 +127,43 @@ describe('FollowButton', () => {
     expect(screen.getByRole('button')).toHaveClass('relative', 'min-w-[calc(5em+2rem+2px)]')
   })
 
+  it('文字は 14px（text-sm）', () => {
+    const { unmount } = renderButton()
+    expect(screen.getByRole('button')).toHaveClass('text-sm')
+    unmount()
+
+    renderButton(makeDetail({ isFollowing: true }))
+    expect(screen.getByRole('button')).toHaveClass('text-sm')
+  })
+
+  it('フォロー中のボタンは、マウスを載せると赤い枠・薄い赤の背景・赤い文字になる', () => {
+    renderButton(makeDetail({ isFollowing: true }))
+
+    expect(screen.getByRole('button')).toHaveClass('hover:border-red-700', 'hover:bg-red-50', 'hover:text-red-700')
+  })
+
+  it('押した直後は赤くならない。ポインタが離れると元に戻る', async () => {
+    const user = userEvent.setup()
+    renderButton()
+
+    await user.click(screen.getByRole('button', { name: 'アリスさんをフォロー' }))
+
+    const button = await screen.findByRole('button', { name: 'アリスさんをフォロー中（押すと解除）' })
+    expect(button).not.toHaveClass('hover:border-red-700')
+    expect(button).not.toHaveClass('hover:bg-red-50')
+    expect(button).not.toHaveClass('hover:text-red-700')
+
+    fireEvent.mouseLeave(button)
+
+    expect(button).toHaveClass('hover:border-red-700', 'hover:bg-red-50', 'hover:text-red-700')
+  })
+
+  it('未フォローのボタンに、赤くなるクラスは付かない', () => {
+    renderButton()
+
+    expect(screen.getByRole('button').className).not.toContain('red')
+  })
+
   it('自分（useAuth の利用者と同じ id）には何も出さない', () => {
     useAuth.mockReturnValue({ status: 'authenticated', user: { id: 'a', username: 'alice' } })
     renderButton()
