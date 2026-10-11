@@ -156,16 +156,12 @@
 
 コメント（Issue 8）が解消した仮の振る舞いは、表から外した。Post の `commentCount` を 0 で返していたことと、画面のコメント数を押せない表示（`role="img"`）にしていたことの 2 つ。今は、`comments` を数えた値を返し、投稿詳細でコメントを書く・読む・本人が消せる。一覧のカードのコメント数は投稿詳細へのリンクで、投稿詳細の中では押せない表示のまま（[features/comment.md](features/comment.md)）。コメント数の名前は、押せない表示のときと同じ「コメント n 件」のままにした。「投稿を削除するといいねとコメントも消える」も、どちらも確かめ終えたので、表から外した。
 
+フォロー（Issue 9）が解消した仮の振る舞いは、表から外した。ホームを「すべて」のタブだけにしていたこと（既定も「すべて」で、URL の `tab` を読まなかった）、プロフィールの `followersCount` と `followingCount` を 0、`isFollowing` を false で返していたこと、いいねした人の一覧の `isFollowing` を false で返していたこと、プロフィールとユーザーカードにフォローボタンを出さず、「フォロー中 n」「フォロワー n」を押せない文字にしていたこと、の 4 つ。今は、`follows` を数えた値を返し、フォロー・解除ができ、数を押すとフォロワーとフォロー中の一覧へ移り、ホームは「フォロー中」を既定にして `?tab=all` で「すべて」へ切り替わる（[features/follow.md](features/follow.md)、[features/timeline.md](features/timeline.md)）。「退会でフォロー関係も消える」も、確かめ終えたので、表から外した。
+
 | Issue | 仮の振る舞い |
 | --- | --- |
-| 3〜8 | ホームは「すべて」のタブだけ。「フォロー中」のタブと `GET /api/timeline/following` は Issue 9 で足す。それまでホームの既定は「すべて」で、URL の `tab` はまだ読まない（Issue 9 で足す） |
-| 4〜8（プロフィール） | `followersCount` と `followingCount` は 0、`isFollowing` は false を返す。`follows` ができたら数えた値に変える |
-| 6（退会） | フォローの表はまだ無いので、退会で消えるのは利用者・投稿・画像・いいね・コメント・リフレッシュトークンだけ。Issue 9 で表を作るときに `ON DELETE CASCADE` を付けるので、自動的に対象になる。「フォローも消える」は Issue 9 で確かめる |
 | 2 | テスト用の DB（[test-strategy.md](test-strategy.md) の 3 章）はこの Issue で用意する |
 | 5 | JPEG の GPS 情報の除去もこの Issue で入れる |
-| 7〜8（いいねした人の一覧） | `isFollowing` は false を返す。SQL の `EXISTS (SELECT 1 FROM follows ...)` は Issue 9 で足す |
-| 4〜8 | プロフィールとユーザーカードのフォローボタンは出さない。Issue 9 で足す |
-| 4〜8 | プロフィールの「フォロー中 n」「フォロワー n」は押せない文字にする。一覧の画面は Issue 9 で作るので、今リンクにしても「見つかりません」に飛ぶだけになる。Issue 9 でリンクにする |
 
 ## 7. 決めたこと（人の判断）
 

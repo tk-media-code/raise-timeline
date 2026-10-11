@@ -133,7 +133,7 @@ erDiagram
 | updated_at | timestamptz | 不可 | now() | created_at より後なら「編集済み」 |
 
 - 外部キー: `user_id → users.id`（CASCADE）
-- 索引: `(user_id, id)`。プロフィールの投稿一覧とフォロー中タイムラインに使う
+- 索引: `(user_id, id)`。プロフィールの投稿一覧に使う。フォロー中タイムラインには使わない（4 章）
 
 ### post_images（投稿に添付した画像）
 
@@ -189,7 +189,7 @@ erDiagram
 - 外部キー: `follower_id → users.id`、`followee_id → users.id`（どちらも CASCADE）
 - 一意: `(follower_id, followee_id)`。同じ人を 2 回フォローできない
 - チェック: `follower_id <> followee_id`。自分自身をフォローできない
-- 索引: `(followee_id, id)` フォロワー一覧用、`(follower_id, id)` フォロー中一覧用
+- 索引: `(followee_id, id)` フォロワー一覧用、`(follower_id, id)` フォロー中一覧用（フォロー中タイムラインで相手を引くのにも使う）
 
 ## 4. インデックスの考え方
 
@@ -197,7 +197,7 @@ erDiagram
 
 | 索引 | 速くする問い合わせ | 付けない理由があるもの |
 | --- | --- | --- |
-| `posts (user_id, id)` | その人の投稿を新しい順に（プロフィール）。フォロー相手の投稿を新しい順に（フォロー中タイムライン）。`user_id` でまとめ、その中が `id` 順なので、並べ替えなしに末尾から読める | `user_id` 単独の索引は要らない。2 列の索引は先頭の列だけの検索にも使える |
+| `posts (user_id, id)` | その人の投稿を新しい順に（プロフィール）。`user_id` でまとめ、その中が `id` 順なので、並べ替えなしに末尾から読める | `user_id` 単独の索引は要らない。2 列の索引は先頭の列だけの検索にも使える。フォロー中タイムラインには使われない（5 章の注） |
 | `likes (post_id, user_id)`（一意制約） | 「自分がいいね済みか」「投稿のいいね数」 | |
 | `likes (post_id, id)` | いいねした人の一覧を新しい順に | |
 | `likes (user_id)`、`comments (user_id)` | 退会で `users` の行を消すときの連鎖削除で、その人の行を探す | 「このユーザーがいいねした投稿の一覧」などの機能は無いが、連鎖削除のために要る |
@@ -224,6 +224,8 @@ ORDER BY p.id DESC
 LIMIT 21;
 ```
 
+`OR` の形のまま使う。実際の実行計画は、`posts` の主キーを新しい方から逆向きに走査し、1 行ずつ条件で絞る形になる（フォロー相手の引きには `follows (follower_id, id)` を使う）。`posts (user_id, id)` は使われない。自分とフォロー相手が長く投稿していないと、1 ページを埋めるまでに多くの投稿を読むことになるが、利用者が数十〜数百人の規模では十分速い。利用者が増えたら、問い合わせの形を見直す。
+
 投稿に付く画像・数・「自分がいいね済みか」は、投稿の一覧を取ったあとに、その投稿 id の集合に対してまとめて取る（投稿ごとに取りに行かない）。1 ページあたりの問い合わせは本体を含めて 5 本で固定になる。
 
 ```sql
@@ -234,7 +236,7 @@ SELECT post_id FROM likes WHERE user_id = #{me} AND post_id IN (<foreach>);
 
 コメント数も同じ形で `comments` を数える。
 
-いいねした人の一覧。`EXISTS` の副問い合わせは `follows` ができる Issue 9 で足す。それまでは `is_following` を false で返す。並びとカーソルは `likes.id` で、項目は利用者。各行の「ログイン中の利用者がその人をフォローしているか」は `EXISTS` で取る。フォロワーとフォロー中の一覧も同じ形（`follows.id` で並べる）。
+いいねした人の一覧。並びとカーソルは `likes.id` で、項目は利用者。各行の「ログイン中の利用者がその人をフォローしているか」は `EXISTS` で取る。フォロワーとフォロー中の一覧も同じ形（`follows.id` で並べる）。
 
 ```sql
 SELECT l.id AS cursor_id, u.id, u.username, u.display_name, u.avatar_key, u.bio,

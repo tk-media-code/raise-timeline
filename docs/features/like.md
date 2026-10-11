@@ -33,8 +33,9 @@
 
 - 投稿詳細のいいね数のリンクを押すと移る
 - 見出しと、スマホの上部バーの画面名は「いいねした人」
-- ユーザーカード（アイコン・表示名・`@ユーザー名`・自己紹介）の無限スクロール。新しい順。押すとプロフィールへ移る。カードの余白を押しても移る（投稿カードの「詳細へ移る」と同じ、マウス向けの近道。リンク・ボタンの上と、文字の選択中は動かない）。Issue 9 のフォローボタンがカードの中に入るので、カード全体は `<a>` にしない
-- フォローボタンと `isFollowing` は Issue 9 で足す。それまで `isFollowing` は false
+- ユーザーカード（アイコン・表示名・`@ユーザー名`・自己紹介）の無限スクロール。新しい順。押すとプロフィールへ移る。カードの余白を押しても移る（投稿カードの「詳細へ移る」と同じ、マウス向けの近道。リンク・ボタンの上と、文字の選択中は動かない）。フォローボタンがカードの中に入るので、カード全体は `<a>` にしない
+- 各カードの右端にフォローボタンが付く（自分には出さない。[follow.md](follow.md)）。`isFollowing` は見ている人がその人をフォローしているか
+- スマホ幅で右下の「＋」を出す画面では、`<main>` の下の余白を広げ（`pb-36`）、最後のカードのフォローボタンが「＋」に隠れないようにする
 - 0 件なら「まだいいねがありません」
 - 投稿が無い（404）か、id が UUID でない（`/posts/abc/likes`。API は 400）ときは、投稿詳細と同じ「見つかりません」の画面にする。URL を打ち間違えた人にとっては、どちらも「無い」ため。ただし、まだ一覧を 1 度も読み込めていないときにこの失敗になった場合だけ。読み込んだ一覧があるときの 404・400（次のページなど）は、一覧を残して「再試行」を出す。それ以外の失敗も「再試行」
 
@@ -53,7 +54,7 @@
 - 投稿の存在確認: `PUT` は存在を先に確かめず、`INSERT ... ON CONFLICT DO NOTHING` の外部キー違反で投稿の有無を見分ける。`DELETE` は付けていなくても 204 なので、消した行数では投稿の有無が分からない。そのため `DELETE` と一覧は、先に `PostMapper.existsById` で確かめて、無ければ 404 にする（一覧は、投稿が無いのか 0 件なのかを区別する）
 - 外部キー違反は制約名で見分ける。`likes_post_id_fkey` は 404 `NOT_FOUND`（付ける直前に投稿が消された）、`likes_user_id_fkey` は 401 `UNAUTHENTICATED`（退会と同時に付けた）。知らない名前は変換せず 500（[error-handling-design.md](../error-handling-design.md)）
 - 投稿の `likeCount` と `likedByMe` は、投稿を返すときに `likes` を数える。1 ページの問い合わせは、本体・画像・いいね数・自分のいいね・コメント数の 5 本で、ページの件数によらない（コメント数は [comment.md](comment.md)）。空のページでは問い合わせない（[timeline.md](timeline.md) の 4 章）
-- 一覧: 並びとカーソルは `likes.id`。`nextCursor` には返す最後の行の `likes.id` を入れ、画面はそのまま送り返す。項目は UserCard で、`isFollowing` は Issue 9 まで false 固定にして、SQL に `follows` は出さない（[database-design.md](../database-design.md) の 5 章）。`email` と `password_hash` は読まない
+- 一覧: 並びとカーソルは `likes.id`。`nextCursor` には返す最後の行の `likes.id` を入れ、画面はそのまま送り返す。項目は UserCard で、`isFollowing` は `EXISTS (SELECT 1 FROM follows ...)` で取る（[database-design.md](../database-design.md) の 5 章）。フォロワーとフォロー中の一覧と同じ行の型（`UserCardRow`）を使う。`email` と `password_hash` は読まない
 - いいねの出来事のログは足さない。[logging-design.md](../logging-design.md) の 3 章の表に無く、要求ログ（`http.request`）で追えるため
 
 ## 5. データ
@@ -67,7 +68,7 @@
 - 付けると 204。投稿を取り直すと `likeCount` が 1 増え、`likedByMe` が true
 - 外すと 204。`likeCount` が戻り、`likedByMe` が false
 - 自分の投稿にも付けられる
-- いいねした人の一覧に、付けた人が新しい順に UserCard で返る。`isFollowing` が付く（`isFollowing` は Issue 9 で確かめる。それまでは false）
+- いいねした人の一覧に、付けた人が新しい順に UserCard で返る。`isFollowing` が付く（見ている人がフォローしている人は true）
 - タイムラインと投稿詳細の `likeCount`・`likedByMe` が、`likes` を数えた値になる。1 ページの問い合わせは 5 本で、ページの件数によらない
 - 投稿を消すと、その投稿のいいねも消える。退会すると、本人のいいねと、本人の投稿へのいいねが消え、他人の投稿の `likeCount` が減る
 
