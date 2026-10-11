@@ -52,6 +52,38 @@ class AuthPropertiesTest {
 		assertThat(create(secret).toString()).doesNotContain(secret);
 	}
 
+	@Test
+	@DisplayName("猶予が null なら受け付けない")
+	void nullGraceIsRejected() {
+		assertThatThrownBy(() -> create(validSecret(), null))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("auth.refresh-token-grace");
+	}
+
+	@Test
+	@DisplayName("猶予が負なら受け付けない")
+	void negativeGraceIsRejected() {
+		assertThatThrownBy(() -> create(validSecret(), Duration.ofSeconds(-1)))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("auth.refresh-token-grace");
+	}
+
+	@Test
+	@DisplayName("猶予 0 は受け付ける（猶予なし、元の使い捨て）")
+	void zeroGraceIsAccepted() {
+		assertThatCode(() -> create(validSecret(), Duration.ZERO)).doesNotThrowAnyException();
+	}
+
+	@Test
+	@DisplayName("toString に猶予が出る")
+	void toStringShowsGrace() {
+		assertThat(create(validSecret()).toString()).contains("refreshTokenGrace=PT1M");
+	}
+
+	private static String validSecret() {
+		return Base64.getEncoder().encodeToString(new byte[32]);
+	}
+
 	/** 拒否されること。文言は環境変数名を示し、渡された値を含まない。 */
 	private static void assertRejected(String secret) {
 		assertThatThrownBy(() -> create(secret))
@@ -62,7 +94,11 @@ class AuthPropertiesTest {
 	}
 
 	private static AuthProperties create(String secret) {
-		return new AuthProperties(secret, Duration.ofHours(1), Duration.ofDays(30), "refresh_token", true,
+		return create(secret, Duration.ofSeconds(60));
+	}
+
+	private static AuthProperties create(String secret, Duration grace) {
+		return new AuthProperties(secret, Duration.ofHours(1), Duration.ofDays(30), grace, "refresh_token", true,
 				"raise-timeline");
 	}
 

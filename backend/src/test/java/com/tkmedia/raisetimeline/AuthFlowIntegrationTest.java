@@ -8,8 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.tkmedia.raisetimeline.logging.LogLines;
+import com.tkmedia.raisetimeline.service.TokenService;
 import jakarta.servlet.http.Cookie;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +57,9 @@ class AuthFlowIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbc;
+
+	@Autowired
+	private TokenService tokenService;
 
 	/** このテストが作った（作ろうとした）利用者名。後片付けでこの名前の行だけを消す。 */
 	private final List<String> usernames = new ArrayList<>();
@@ -167,7 +172,7 @@ class AuthFlowIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("登録、me、ログイン、更新、古い Cookie での更新の失敗、ログアウト、ログアウト後の更新の失敗が、続けて動く")
+	@DisplayName("登録、me、ログイン、更新、猶予の中の古い Cookie での更新、猶予を過ぎた古い Cookie での更新の失敗、ログアウト、ログアウト後の更新の失敗が、続けて動く")
 	void registerLoginMeRefreshLogout() throws Exception {
 		String username = newName("flow");
 		String email = username + "@example.com";
@@ -195,6 +200,20 @@ class AuthFlowIntegrationTest {
 		assertThat(newCookie).isNotBlank().isNotEqualTo(oldCookie);
 		assertThat(body(refreshed, "$.accessToken")).isNotBlank();
 
+		// 猶予の中なら、使った古い Cookie でも更新できる。返ってくるのは別の新しいトークン。
+		MvcResult withinGrace = refresh(oldCookie, null);
+		assertThat(statusOf(withinGrace)).isEqualTo(200);
+		String graceCookie = cookieValue(withinGrace);
+		assertThat(graceCookie).isNotBlank().isNotEqualTo(oldCookie).isNotEqualTo(newCookie);
+		mockMvc.perform(get("/api/users/me")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + body(withinGrace, "$.accessToken")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.username").value(username));
+		assertThat(statusOf(refresh(graceCookie, null))).isEqualTo(200);
+
+		// 猶予を過ぎた状態は、使った時刻を 60 秒戻して作る（待たない）。
+		assertThat(jdbc.update("UPDATE refresh_tokens SET used_at = used_at - interval '60 seconds' "
+				+ "WHERE token_hash = ?", tokenService.hashRefreshToken(oldCookie))).isEqualTo(1);
 		MvcResult reused = refresh(oldCookie, null);
 		assertThat(statusOf(reused)).isEqualTo(401);
 
@@ -264,16 +283,51 @@ class AuthFlowIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("同じ Cookie の更新を同時に 2 つ送ると、成功は 1 つだけ")
-	void concurrentRefreshAllowsOnlyOne() throws Exception {
+	@DisplayName("同じ Cookie の更新を同時に 2 つ送ると、両方 200 で、返る Cookie は別々で、猶予の出来事は 1 件だけ")
+	void concurrentRefreshSucceedsForBoth(CapturedOutput output) throws Exception {
 		String username = newName("race");
 		MvcResult registered = register(username, username + "@example.com", PASSWORD);
 		String cookie = cookieValue(registered);
+		List<MvcResult> results = Collections.synchronizedList(new ArrayList<>());
 
-		List<Integer> statuses = Concurrently.run(() -> statusOf(refresh(cookie, null)),
-				() -> statusOf(refresh(cookie, null)));
+		List<Integer> statuses = Concurrently.run(() -> {
+			MvcResult result = refresh(cookie, null);
+			results.add(result);
+			return statusOf(result);
+		}, () -> {
+			MvcResult result = refresh(cookie, null);
+			results.add(result);
+			return statusOf(result);
+		});
 
-		assertThat(statuses).containsExactlyInAnyOrder(200, 401);
+		assertThat(statuses).containsExactly(200, 200);
+		assertThat(results).hasSize(2);
+		String first = cookieValue(results.get(0));
+		String second = cookieValue(results.get(1));
+		assertThat(first).isNotBlank().isNotEqualTo(second).isNotEqualTo(cookie);
+		assertThat(second).isNotBlank().isNotEqualTo(cookie);
+		// 元のトークンは使用済みになっている。先に読んだほうが使った時刻を書き、後の 1 本は猶予として読む。
+		assertThat(jdbc.queryForObject("SELECT used_at IS NOT NULL FROM refresh_tokens WHERE token_hash = ?",
+				Boolean.class, tokenService.hashRefreshToken(cookie))).isTrue();
+		List<String> requestIds = results.stream().map(AuthFlowIntegrationTest::requestId).toList();
+		List<Map<String, Object>> mine = LogLines.parse(output).stream()
+				.filter(line -> requestIds.contains(LogLines.get(line, "http.request.id")))
+				.toList();
+		assertThat(LogLines.withAction(mine, "auth.refresh.grace_used")).hasSize(1);
+		assertThat(LogLines.withAction(mine, "auth.refresh.failed")).isEmpty();
+	}
+
+	@Test
+	@DisplayName("猶予の中でも、ログアウトに送った Cookie は 401")
+	void loggedOutCookieIsRejectedEvenWithinGrace() throws Exception {
+		String username = newName("lgo");
+		MvcResult registered = register(username, username + "@example.com", PASSWORD);
+		String oldCookie = cookieValue(registered);
+		assertThat(statusOf(refresh(oldCookie, null))).isEqualTo(200);
+
+		assertThat(statusOf(logout(oldCookie, null))).isEqualTo(204);
+
+		assertThat(statusOf(refresh(oldCookie, null))).isEqualTo(401);
 	}
 
 	@Test
@@ -315,6 +369,18 @@ class AuthFlowIntegrationTest {
 		String loginAccessToken = body(succeeded, "$.accessToken");
 		String loginCookie = cookieValue(succeeded);
 
+		// 1 回目は通常の更新、2 回目は同じ Cookie を猶予の中で使った更新。
+		MvcResult refreshed = refresh(loginCookie, null);
+		requestIds.add(requestId(refreshed));
+		assertThat(statusOf(refreshed)).isEqualTo(200);
+		String refreshedCookie = cookieValue(refreshed);
+		String refreshedAccessToken = body(refreshed, "$.accessToken");
+		MvcResult withinGrace = refresh(loginCookie, null);
+		requestIds.add(requestId(withinGrace));
+		assertThat(statusOf(withinGrace)).isEqualTo(200);
+		String graceCookie = cookieValue(withinGrace);
+		String graceAccessToken = body(withinGrace, "$.accessToken");
+
 		MvcResult loggedOut = logout(loginCookie, null);
 		requestIds.add(requestId(loggedOut));
 		assertThat(statusOf(loggedOut)).isEqualTo(204);
@@ -328,17 +394,23 @@ class AuthFlowIntegrationTest {
 		List<Map<String, Object>> failedLines = LogLines.withAction(mine, "auth.login.failed");
 		List<Map<String, Object>> succeededLines = LogLines.withAction(mine, "auth.login.succeeded");
 		List<Map<String, Object>> logoutLines = LogLines.withAction(mine, "auth.logout");
+		List<Map<String, Object>> graceLines = LogLines.withAction(mine, "auth.refresh.grace_used");
 		assertThat(registerLines).hasSize(1);
 		assertThat(failedLines).hasSize(1);
 		assertThat(succeededLines).hasSize(1);
 		assertThat(logoutLines).hasSize(1);
+		// 初めて使った更新は出来事にしない。猶予の中の 1 回だけが残り、利用者 id は MDC から付く。
+		assertThat(graceLines).hasSize(1);
+		assertThat(LogLines.get(graceLines.get(0), "user.id")).isEqualTo(userId);
+		assertThat(LogLines.get(graceLines.get(0), "message")).isEqualTo("使用済みのリフレッシュトークンを猶予の中で受け付けた");
+		assertThat(LogLines.withAction(mine, "auth.refresh.failed")).isEmpty();
 		assertThat(LogLines.get(failedLines.get(0), "user.id")).isNull();
 		assertThat(LogLines.get(succeededLines.get(0), "user.id")).isEqualTo(userId);
 
 		// パスワードとトークンは、DEBUG を含む出力のどこにも無い。値はこのテスト専用なので、全体を見て誤検出しない。
 		String all = output.getOut();
 		for (String secret : List.of(PASSWORD, wrongPassword, registerAccessToken, loginAccessToken, registerCookie,
-				loginCookie)) {
+				loginCookie, refreshedCookie, graceCookie, refreshedAccessToken, graceAccessToken)) {
 			assertThat(all).doesNotContain(secret);
 		}
 		// メールアドレスは DEBUG の SQL の引数に出るので、INFO 以上の行だけを見る。
@@ -348,6 +420,9 @@ class AuthFlowIntegrationTest {
 		assertThat(important).isNotEmpty();
 		assertThat(important).noneSatisfy(line -> assertThat(line.toString().toLowerCase())
 				.contains(email.toLowerCase()));
+		// トークンのハッシュも、INFO 以上の行には出ない（DEBUG の SQL の引数には出る）。
+		String usedHash = tokenService.hashRefreshToken(loginCookie);
+		assertThat(important).noneSatisfy(line -> assertThat(line.toString()).contains(usedHash));
 	}
 
 	private static String requestId(MvcResult result) {

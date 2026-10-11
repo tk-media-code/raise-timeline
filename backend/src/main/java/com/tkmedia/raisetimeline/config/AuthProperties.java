@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param jwtSecret アクセストークンの署名鍵（Base64）
  * @param accessTokenTtl アクセストークンの有効期間
  * @param refreshTokenTtl リフレッシュトークンの有効期間
+ * @param refreshTokenGrace 更新に使ったリフレッシュトークンを、使った直後に限って受け付け続ける時間
  * @param cookieName リフレッシュトークンを入れる Cookie の名前
  * @param cookieSecure Cookie に Secure を付けるか
  * @param issuer JWT の発行者
@@ -19,6 +20,7 @@ public record AuthProperties(
 		String jwtSecret,
 		Duration accessTokenTtl,
 		Duration refreshTokenTtl,
+		Duration refreshTokenGrace,
 		String cookieName,
 		boolean cookieSecure,
 		String issuer) {
@@ -32,8 +34,13 @@ public record AuthProperties(
 	 * <p>{@code @ConfigurationProperties} の束縛は、解決できない {@code ${JWT_SECRET}} を例外にせず、
 	 * 文字列のまま渡してくる。ここで確かめないと、環境変数の渡し忘れに気づかないまま起動してしまう。
 	 * 例外の文言には、渡された値を入れない（鍵がログに残らないようにする）。
+	 * 猶予も同じく、渡し忘れを起動時に止める。0 は受け付ける（猶予なし、つまり使い捨て）。
 	 */
 	public AuthProperties {
+		if (refreshTokenGrace == null || refreshTokenGrace.isNegative()) {
+			throw new IllegalStateException(
+					"auth.refresh-token-grace が未設定か負の値です。PT60S のような期間を渡してください");
+		}
 		if (jwtSecret == null || jwtSecret.isBlank()) {
 			throw invalidSecret();
 		}
@@ -58,7 +65,8 @@ public record AuthProperties(
 	@Override
 	public String toString() {
 		return "AuthProperties[jwtSecret=***, accessTokenTtl=" + accessTokenTtl
-				+ ", refreshTokenTtl=" + refreshTokenTtl + ", cookieName=" + cookieName
+				+ ", refreshTokenTtl=" + refreshTokenTtl + ", refreshTokenGrace=" + refreshTokenGrace
+				+ ", cookieName=" + cookieName
 				+ ", cookieSecure=" + cookieSecure + ", issuer=" + issuer + "]";
 	}
 

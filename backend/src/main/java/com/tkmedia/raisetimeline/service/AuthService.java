@@ -1,6 +1,7 @@
 package com.tkmedia.raisetimeline.service;
 
 import com.tkmedia.raisetimeline.config.AuthProperties;
+import com.tkmedia.raisetimeline.domain.RefreshToken;
 import com.tkmedia.raisetimeline.domain.User;
 import com.tkmedia.raisetimeline.dto.LoginRequest;
 import com.tkmedia.raisetimeline.dto.RegisterRequest;
@@ -38,6 +39,7 @@ import org.springframework.transaction.support.TransactionOperations;
  * {@code login} はトランザクションを持たない（読み 1 回と挿入 1 回で、まとめる必要がない）。
  * ただし照合の間に本人が退会すると挿入が外部キー違反になるので、それは「メールアドレスまたはパスワードが違う」に変える。
  * {@code refresh} と {@code logout} は BCrypt を使わないので、{@code @Transactional} のまま。
+ * {@code refresh} は、行を {@code FOR UPDATE} で押さえて読むので、そのロックを更新が終わるまで持つためにも要る。
  *
  * <p>ログには利用者 id を {@code MDC} で渡し、メールアドレス・パスワード・トークンは書かない。
  */
@@ -139,8 +141,13 @@ public class AuthService {
 	}
 
 	/**
-	 * リフレッシュトークンを使い切り、新しいトークンに差し替える。使えるのは 1 回だけで、
-	 * 同じトークンの 2 度目は {@code consume} が何も消さず、失敗になる。
+	 * リフレッシュトークンを新しいトークンに差し替える。使ったトークンの行は消さず、使った時刻を書いて残す。
+	 *
+	 * <p>使用済みのトークンも、最初に使った時刻から猶予（{@code auth.refresh-token-grace}）の間は受け付け、
+	 * 別の新しいトークンを発行する。更新の応答がブラウザに届かなかったときも、ログアウトさせないため。
+	 * 猶予を過ぎたトークンは失敗にする。猶予の中で使われても、使った時刻は書き換えない
+	 * （書き換えると、猶予の間隔で使い続ければ古いトークンをいつまでも生かせる）。
+	 * 同じトークンの更新が同時に 2 本来ても、行を押さえて読むので、後の 1 本は前の 1 本の結果を見て猶予として成功する。
 	 */
 	@Transactional
 	public AuthResult refresh(String rawRefreshToken) {
@@ -149,12 +156,22 @@ public class AuthService {
 			throw refreshFailed();
 		}
 		OffsetDateTime now = OffsetDateTime.now(clock);
-		UUID userId = refreshTokenMapper.consume(tokenService.hashRefreshToken(rawRefreshToken), now);
-		if (userId == null) {
+		RefreshToken row = refreshTokenMapper.lockByTokenHash(tokenService.hashRefreshToken(rawRefreshToken), now);
+		if (row == null) {
 			throw refreshFailed();
 		}
-		// 期限切れの行は誰も使えないので、更新のついでにその人の分だけ掃除する。
-		refreshTokenMapper.deleteExpiredByUserId(userId, now);
+		UUID userId = row.userId();
+		if (row.usedAt() == null) {
+			refreshTokenMapper.markUsed(row.id(), now);
+		} else if (now.isBefore(row.usedAt().plus(props.refreshTokenGrace()))) {
+			MDC.put(LogFields.USER_ID, userId.toString());
+			log.atInfo().addKeyValue(LogFields.EVENT_ACTION, LogEvents.AUTH_REFRESH_GRACE_USED)
+					.log("使用済みのリフレッシュトークンを猶予の中で受け付けた");
+		} else {
+			throw refreshFailed();
+		}
+		// 期限切れの行と猶予を過ぎた行は誰も使えないので、更新のついでにその人の分だけ掃除する。
+		refreshTokenMapper.deleteUnusableByUserId(userId, now, now.minus(props.refreshTokenGrace()));
 		String newRaw = tokenService.newRefreshToken();
 		refreshTokenMapper.insert(userId, tokenService.hashRefreshToken(newRaw), now.plus(props.refreshTokenTtl()));
 		return new AuthResult(tokenService.issueAccessToken(userId), newRaw, userService.getMe(userId));

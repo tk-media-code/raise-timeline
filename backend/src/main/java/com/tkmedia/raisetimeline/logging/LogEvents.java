@@ -16,6 +16,7 @@ public final class LogEvents {
 	public static final String AUTH_LOGIN_SUCCEEDED = "auth.login.succeeded";
 	public static final String AUTH_LOGIN_FAILED = "auth.login.failed";
 	public static final String AUTH_REFRESH_FAILED = "auth.refresh.failed";
+	public static final String AUTH_REFRESH_GRACE_USED = "auth.refresh.grace_used";
 	public static final String AUTH_LOGOUT = "auth.logout";
 	public static final String USER_WITHDREW = "user.withdrew";
 

@@ -166,7 +166,8 @@ class JwtAuthenticationTest {
 	@DisplayName("発行者の違うトークンでも、存在確認の問い合わせをしない")
 	void otherIssuerBearerDoesNotQueryUser() throws Exception {
 		AuthProperties other = new AuthProperties(properties.jwtSecret(), properties.accessTokenTtl(),
-				properties.refreshTokenTtl(), properties.cookieName(), properties.cookieSecure(), "other-issuer");
+				properties.refreshTokenTtl(), properties.refreshTokenGrace(), properties.cookieName(),
+				properties.cookieSecure(), "other-issuer");
 		String token = new TokenService(encoder, other, Clock.systemUTC()).issueAccessToken(USER_ID);
 
 		mockMvc.perform(get("/api/t/whoami").header("Authorization", "Bearer " + token))

@@ -49,33 +49,6 @@ class RefreshTokenMapperTest {
 	}
 
 	@Test
-	@DisplayName("consume は持ち主の id を一度だけ返し、二度目は null を返す")
-	void consumeReturnsUserIdOnce() {
-		UUID userId = createUser();
-		String tokenHash = hash();
-		refreshTokenMapper.insert(userId, tokenHash, NOW.plusDays(30));
-
-		assertThat(refreshTokenMapper.consume(tokenHash, NOW)).isEqualTo(userId);
-		assertThat(refreshTokenMapper.consume(tokenHash, NOW)).isNull();
-	}
-
-	@Test
-	@DisplayName("期限が now より前のトークンは consume できず null を返す")
-	void consumeRejectsExpired() {
-		UUID userId = createUser();
-		String tokenHash = hash();
-		refreshTokenMapper.insert(userId, tokenHash, NOW.minusSeconds(1));
-
-		assertThat(refreshTokenMapper.consume(tokenHash, NOW)).isNull();
-	}
-
-	@Test
-	@DisplayName("知らないトークンは consume できず null を返す")
-	void consumeReturnsNullWhenUnknown() {
-		assertThat(refreshTokenMapper.consume(hash(), NOW)).isNull();
-	}
-
-	@Test
 	@DisplayName("deleteByTokenHash は期限に関わらず消して持ち主の id を返し、無ければ null を返す")
 	void deleteByTokenHashReturnsUserId() {
 		UUID userId = createUser();
@@ -84,25 +57,6 @@ class RefreshTokenMapperTest {
 
 		assertThat(refreshTokenMapper.deleteByTokenHash(tokenHash)).isEqualTo(userId);
 		assertThat(refreshTokenMapper.deleteByTokenHash(tokenHash)).isNull();
-	}
-
-	@Test
-	@DisplayName("deleteExpiredByUserId は、その人の期限切れの行だけを消す")
-	void deleteExpiredByUserIdRemovesOnlyExpired() {
-		UUID userId = createUser();
-		UUID otherUserId = createUser();
-		String expired = hash();
-		String valid = hash();
-		String othersExpired = hash();
-		refreshTokenMapper.insert(userId, expired, NOW.minusDays(1));
-		refreshTokenMapper.insert(userId, valid, NOW.plusDays(1));
-		refreshTokenMapper.insert(otherUserId, othersExpired, NOW.minusDays(1));
-
-		assertThat(refreshTokenMapper.deleteExpiredByUserId(userId, NOW)).isEqualTo(1);
-
-		assertThat(count(expired)).isZero();
-		assertThat(count(valid)).isEqualTo(1);
-		assertThat(count(othersExpired)).isEqualTo(1);
 	}
 
 	@Test
