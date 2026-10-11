@@ -207,6 +207,17 @@ describe('App のルート', () => {
     expect(screen.getByRole('list', { name: 'フォロー中' })).toBeInTheDocument()
   })
 
+  it('ログイン済みで /search を開くと、レイアウトの中に検索の画面が描かれる', async () => {
+    apiRefresh.mockResolvedValue(session)
+    renderAt('/search')
+
+    expect(await screen.findByRole('searchbox', { name: 'ユーザー名か表示名' })).toBeInTheDocument()
+    expect(screen.getByRole('banner', { name: '上部バー' })).toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(within(screen.getByRole('main')).getByRole('heading', { level: 1, name: '検索' })).toBeInTheDocument()
+    expect(screen.getByText('ユーザー名か表示名で探せます')).toBeInTheDocument()
+  })
+
   it('ログイン済みで /settings/profile を開くと、レイアウトの中にプロフィール編集が描かれる', async () => {
     apiRefresh.mockResolvedValue(session)
     renderAt('/settings/profile')
