@@ -14,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.tkmedia.raisetimeline.domain.RefreshToken;
 import com.tkmedia.raisetimeline.domain.User;
 
 /**
@@ -113,6 +114,98 @@ class RefreshTokenMapperTest {
 
 		jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
 
+		assertThat(count(tokenHash)).isZero();
+	}
+
+	@Test
+	@DisplayName("lockByTokenHash は期限内の行を返し、入れたばかりの行の usedAt は null")
+	void lockByTokenHashReturnsLiveRow() {
+		UUID userId = createUser();
+		String tokenHash = hash();
+		refreshTokenMapper.insert(userId, tokenHash, NOW.plusDays(30));
+
+		RefreshToken row = refreshTokenMapper.lockByTokenHash(tokenHash, NOW);
+
+		assertThat(row).isNotNull();
+		assertThat(row.id()).isNotNull();
+		assertThat(row.userId()).isEqualTo(userId);
+		assertThat(row.tokenHash()).isEqualTo(tokenHash);
+		assertThat(row.expiresAt()).isEqualTo(NOW.plusDays(30));
+		assertThat(row.usedAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("lockByTokenHash は、知らないトークンと期限切れのトークン（使用済みでも未使用でも）に null を返す")
+	void lockByTokenHashReturnsNullWhenUnknownOrExpired() {
+		UUID userId = createUser();
+		String expiredUnused = hash();
+		String expiredUsed = hash();
+		String expiresExactlyNow = hash();
+		refreshTokenMapper.insert(userId, expiredUnused, NOW.minusSeconds(1));
+		refreshTokenMapper.insert(userId, expiredUsed, NOW.minusSeconds(1));
+		jdbcTemplate.update("UPDATE refresh_tokens SET used_at = ? WHERE token_hash = ?", NOW.minusDays(1), expiredUsed);
+		refreshTokenMapper.insert(userId, expiresExactlyNow, NOW);
+
+		assertThat(refreshTokenMapper.lockByTokenHash(hash(), NOW)).isNull();
+		assertThat(refreshTokenMapper.lockByTokenHash(expiredUnused, NOW)).isNull();
+		assertThat(refreshTokenMapper.lockByTokenHash(expiredUsed, NOW)).isNull();
+		assertThat(refreshTokenMapper.lockByTokenHash(expiresExactlyNow, NOW)).isNull();
+	}
+
+	@Test
+	@DisplayName("markUsed は used_at を書いて 1 を返し、2 回目は 0 を返して最初の時刻を書き換えない")
+	void markUsedWritesOnce() {
+		UUID userId = createUser();
+		String tokenHash = hash();
+		refreshTokenMapper.insert(userId, tokenHash, NOW.plusDays(30));
+		UUID id = refreshTokenMapper.lockByTokenHash(tokenHash, NOW).id();
+
+		assertThat(refreshTokenMapper.markUsed(id, NOW)).isEqualTo(1);
+		assertThat(refreshTokenMapper.markUsed(id, NOW.plusSeconds(30))).isZero();
+
+		assertThat(refreshTokenMapper.lockByTokenHash(tokenHash, NOW).usedAt()).isEqualTo(NOW);
+	}
+
+	@Test
+	@DisplayName("deleteUnusableByUserId は、その人の期限切れの行と、usedBefore 以前に使った行だけを消す")
+	void deleteUnusableByUserIdRemovesExpiredAndOldUsed() {
+		UUID userId = createUser();
+		UUID otherUserId = createUser();
+		String expired = hash();
+		String usedExactlyAtBoundary = hash();
+		String usedJustInsideGrace = hash();
+		String unusedAndValid = hash();
+		String othersExpired = hash();
+		refreshTokenMapper.insert(userId, expired, NOW.minusDays(1));
+		refreshTokenMapper.insert(userId, usedExactlyAtBoundary, NOW.plusDays(1));
+		refreshTokenMapper.insert(userId, usedJustInsideGrace, NOW.plusDays(1));
+		refreshTokenMapper.insert(userId, unusedAndValid, NOW.plusDays(1));
+		refreshTokenMapper.insert(otherUserId, othersExpired, NOW.minusDays(1));
+		jdbcTemplate.update("UPDATE refresh_tokens SET used_at = ? WHERE token_hash = ?",
+				NOW.minusSeconds(60), usedExactlyAtBoundary);
+		jdbcTemplate.update("UPDATE refresh_tokens SET used_at = ? WHERE token_hash = ?",
+				NOW.minusSeconds(59), usedJustInsideGrace);
+
+		assertThat(refreshTokenMapper.deleteUnusableByUserId(userId, NOW, NOW.minusSeconds(60))).isEqualTo(2);
+
+		assertThat(count(expired)).isZero();
+		assertThat(count(usedExactlyAtBoundary)).isZero();
+		assertThat(count(usedJustInsideGrace)).isEqualTo(1);
+		assertThat(count(unusedAndValid)).isEqualTo(1);
+		assertThat(count(othersExpired)).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("使用済みの行も、利用者を消すと一緒に消える")
+	void deletingUserCascadesToUsedRows() {
+		UUID userId = createUser();
+		String tokenHash = hash();
+		refreshTokenMapper.insert(userId, tokenHash, NOW.plusDays(30));
+		refreshTokenMapper.markUsed(refreshTokenMapper.lockByTokenHash(tokenHash, NOW).id(), NOW);
+
+		jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
+
+		assertThat(refreshTokenMapper.lockByTokenHash(tokenHash, NOW)).isNull();
 		assertThat(count(tokenHash)).isZero();
 	}
 
