@@ -180,10 +180,10 @@ public interface ImageStorage {
 
 | 変数 | ローカル | 本番 |
 | --- | --- | --- |
-| `AWS_REGION` | `.env`（`ap-northeast-1`） | 環境変数 |
-| `S3_BUCKET` | `.env`（開発用バケット名） | 環境変数（本番用バケット名） |
-| `S3_PUBLIC_BASE_URL` | `.env`（`https://<バケット>.s3.ap-northeast-1.amazonaws.com`） | 環境変数。CloudFront に変えるときはここだけ変える |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `.env`（開発用 IAM ユーザー） | 置かない。インスタンスロールを SDK が自動で使う |
+| `AWS_REGION` | 既定値（`ap-northeast-1`）。変えるときは `.env` | 環境変数 |
+| `S3_BUCKET` | 1Password（`s3.op`）か `.env`（開発用バケット名） | 環境変数（本番用バケット名） |
+| `S3_PUBLIC_BASE_URL` | 1Password（`s3.op`）か `.env`（`https://<バケット>.s3.ap-northeast-1.amazonaws.com`） | 環境変数。CloudFront に変えるときはここだけ変える |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | 1Password（`s3.op`）か `.env`（開発用 IAM ユーザー） | 置かない。インスタンスロールを SDK が自動で使う |
 
 `S3_BUCKET` が無いときは `DisabledImageStorage` が使われ、画像の操作だけが 503 になる。それ以外の機能は動く。
 
@@ -193,8 +193,8 @@ AWS SDK は認証情報を標準の探索順（環境変数 → … → イン�
 
 1. AWS コンソールで開発用バケットを作り、バケットの「パブリックアクセスのブロック」のうちバケットポリシーに関する 2 項目を外して、上のバケットポリシーを付ける。アカウント単位の「パブリックアクセスのブロック」も、バケットポリシーに関する項目を外しておく必要がある
 2. 開発用の IAM ユーザーを作り、上の IAM ポリシーを付けて、アクセスキーを発行する
-3. リポジトリ直下の `.env` に `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_REGION`、`S3_BUCKET`、`S3_PUBLIC_BASE_URL` を書く
-4. `docker compose up -d` で backend に渡る
+3. 1Password の tk-media 保管庫にアイテム `raise-timeline-s3` を作り、`bucket`、`public-base-url`、`access-key-id`、`secret-access-key` の 4 つのフィールドに値を入れる。リポジトリ直下の `s3.op` が、このフィールドを参照する。1Password を使わないときは、リポジトリ直下の `.env` に `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`S3_BUCKET`、`S3_PUBLIC_BASE_URL`（必要なら `AWS_REGION` も）を書く
+4. `op run --env-file=s3.op -- docker compose up -d` で backend に渡る（WSL から Windows の 1Password を使うときは、`op.exe inject` で解決して環境変数で渡すラッパー、例えば `oprun s3.op -- docker compose up -d`）。`.env` の場合は `docker compose up -d` だけでよい。雛形を通さずに `up -d` し直すと S3 の設定が外れる。`.env` と雛形の両方にあれば雛形（環境変数）が勝つ
 
 手順の詳細は、[README.md](../README.md) の「画像の保存（S3）の準備」にある。
 

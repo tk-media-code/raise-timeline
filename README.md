@@ -86,16 +86,25 @@ docker compose exec db psql -U raise_timeline -d raise_timeline -c 'CREATE DATAB
 
 1. AWS コンソールで開発用バケットを作る。「パブリックアクセスのブロック」のうち、バケットポリシーに関する 2 項目を外し（アカウント単位の設定も同じ）、1 章のバケットポリシー（読み取り用）を付ける
 2. 開発用の IAM ユーザーを作り、1 章の IAM ポリシー（書き込み用）を付けて、アクセスキーを発行する
-3. リポジトリ直下の `.env` に、次の 5 つの変数を書く（`.env` はコミットしません。アクセスキーは誰にも見せません）
-4. `docker compose up -d` で backend を作り直す。`.env` の値は `docker-compose.yml` を通って backend に渡ります
+3. 1Password の tk-media 保管庫にアイテム `raise-timeline-s3` を作り、次の 4 つのフィールドに値を入れる（リポジトリ直下の `s3.op` が、このフィールドを参照します。アクセスキーは誰にも見せません）
+4. `s3.op` を通して `docker compose up -d` で backend を作り直す。1Password が値を解決して環境変数で渡し、`docker-compose.yml` を通って backend に届きます
 
-| 変数 | 内容 |
-| --- | --- |
-| `AWS_REGION` | バケットのリージョン。省略すると東京リージョンになる |
-| `S3_BUCKET` | 開発用バケットの名前 |
-| `S3_PUBLIC_BASE_URL` | 画像の URL の前半。`S3_PUBLIC_BASE_URL=https://<バケット>.s3.ap-northeast-1.amazonaws.com` の形 |
-| `AWS_ACCESS_KEY_ID` | 開発用 IAM ユーザーのアクセスキー ID |
-| `AWS_SECRET_ACCESS_KEY` | 同じアクセスキーの秘密鍵 |
+   - macOS・Linux・Windows（PowerShell）: `op run --env-file=s3.op -- docker compose up -d`
+   - WSL から Windows の 1Password を使う場合: `op.exe run` は使えません（実行するコマンドを Windows 側で起動するため）。`op.exe inject` で参照を解決して環境変数で渡すラッパーを使います。例: `oprun s3.op -- docker compose up -d`
+
+| 変数 | 1Password のフィールド | 内容 |
+| --- | --- | --- |
+| `S3_BUCKET` | `bucket` | 開発用バケットの名前 |
+| `S3_PUBLIC_BASE_URL` | `public-base-url` | 画像の URL の前半。`https://<バケット>.s3.ap-northeast-1.amazonaws.com` の形 |
+| `AWS_ACCESS_KEY_ID` | `access-key-id` | 開発用 IAM ユーザーのアクセスキー ID |
+| `AWS_SECRET_ACCESS_KEY` | `secret-access-key` | 同じアクセスキーの秘密鍵 |
+
+リージョン（`AWS_REGION`）は `docker-compose.yml` の既定値の東京リージョンです。変えるときは、`s3.op` ではなく、環境変数か `.env` に `AWS_REGION` を書きます。
+
+- 1Password の保管庫やアイテムの名前が違う場合は、`s3.op` の `op://` の参照を書き換えます。`s3.op` は参照だけを書いたファイルで、実値は入っていません
+- 1Password を使わない場合は、従来どおりリポジトリ直下の `.env` に `S3_BUCKET`、`S3_PUBLIC_BASE_URL`、`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`（必要なら `AWS_REGION` も）を書き、`docker compose up -d` で backend を作り直します（`.env` はコミットしません）
+- 雛形を通さずに `docker compose up -d` し直すと、環境変数が渡らないので、S3 の設定が外れます。backend を作り直すときは、毎回 `s3.op` を通してください
+- `.env` と `s3.op` の両方に同じ変数があるときは、`s3.op`（環境変数）が勝ちます
 
 設定しなくても、アプリは起動します。そのときは画像を付ける操作（画像付きの投稿、アイコンの変更）だけが 503「画像の保存が設定されていません」になり、ほかの機能は動きます。
 

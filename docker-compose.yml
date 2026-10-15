@@ -41,7 +41,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-bG9jYWwtZGV2LW9ubHktand0LXNlY3JldC0zMi1ieXRlcyE=}
       # ローカルは http://localhost で HTTPS ではないので、Secure 付きの Cookie がブラウザに捨てられる。ローカル専用で false にする。
       AUTH_COOKIE_SECURE: "false"
-      # 画像の保存先（S3）。リポジトリ直下の .env に書くと渡る。空のままなら画像の操作だけが 503 になり、ほかは動く。
+      # 画像の保存先（S3）。`s3.op` を通して渡すか、リポジトリ直下の .env に書くと渡る（README）。空のままなら画像の操作だけが 503 になり、ほかは動く。
       # アクセスキーは AWS SDK が環境変数から読む。コードや properties には書かない。
       AWS_REGION: ${AWS_REGION:-ap-northeast-1}
       S3_BUCKET: ${S3_BUCKET:-}

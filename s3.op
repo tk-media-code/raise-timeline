@@ -1,0 +1,8 @@
+# 画像の保存先（S3）の設定を 1Password から渡すための雛形。
+# 値は 1Password の tk-media 保管庫のアイテム raise-timeline-s3 にある。ここには参照（op://）だけを書く。
+# このリポジトリは public なので、実値は書かない。
+# 使い方は README の「画像の保存（S3）の準備」にある。
+S3_BUCKET=op://tk-media/raise-timeline-s3/bucket
+S3_PUBLIC_BASE_URL=op://tk-media/raise-timeline-s3/public-base-url
+AWS_ACCESS_KEY_ID=op://tk-media/raise-timeline-s3/access-key-id
+AWS_SECRET_ACCESS_KEY=op://tk-media/raise-timeline-s3/secret-access-key
