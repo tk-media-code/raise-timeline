@@ -46,11 +46,11 @@ flowchart LR
 
 `.env` で上書きできる変数は次のとおり。`.env` は `.gitignore` 済みで、コミットしない。S3 の値は 1Password の雛形 `s3.op` か `.env` で渡す（README）。1Password を使えば `.env` は要らない。
 
-| 変数 | 中身 | 既定値（.env が無いとき） |
+| 変数 | 中身 | 既定値（.env も s3.op も無いとき） |
 | --- | --- | --- |
 | `JWT_SECRET` | アクセストークンの署名鍵。256 ビット以上の乱数を Base64 にしたもの | `docker-compose.yml` のローカル専用の値 |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | 開発用 IAM ユーザーのアクセスキー | 無し。無ければ画像の操作が 503 |
-| `AWS_REGION` | `ap-northeast-1` | 無し |
+| `AWS_REGION` | `ap-northeast-1` | `ap-northeast-1`（`docker-compose.yml` の既定値） |
 | `S3_BUCKET` | 開発用バケット名 | 無し |
 | `S3_PUBLIC_BASE_URL` | `https://<バケット名>.s3.ap-northeast-1.amazonaws.com` | 無し |
 | `LOG_LEVEL_APP` | アプリのログの水準。`DEBUG` では SQL とその引数も出る。`INFO` にすると本番と同じ行だけになる | `DEBUG`（`docker-compose.yml` の既定値。アプリ自体の既定は `INFO`） |

@@ -43,7 +43,7 @@ X（旧 Twitter）を模した、学習用の SNS アプリです。プログラ
 docker compose up -d --build
 ```
 
-S3 を 1Password で設定しているときは、`op run --env-file=s3.op -- docker compose up -d --build` で起動します（WSL は `oprun s3.op -- docker compose up -d --build`）。詳しくは [画像の保存（S3）の準備](#画像の保存s3の準備) にあります。
+S3 を 1Password で設定しているときは、`op run --env-file=s3.op -- docker compose up -d --build` で起動します（WSL は `op.exe inject` を通すラッパーで起動します。例: `oprun`）。詳しくは [画像の保存（S3）の準備](#画像の保存s3の準備) にあります。
 
 初回はイメージのビルドと依存のダウンロードで数分かかります。
 
@@ -92,7 +92,7 @@ docker compose exec db psql -U raise_timeline -d raise_timeline -c 'CREATE DATAB
 4. `s3.op` を通して `docker compose up -d` で backend を作り直す。1Password が値を解決して環境変数で渡し、`docker-compose.yml` を通って backend に届きます
 
    - macOS・Linux・Windows（PowerShell）: `op run --env-file=s3.op -- docker compose up -d`
-   - WSL から Windows の 1Password を使う場合: `op.exe run` は使えません（実行するコマンドを Windows 側で起動するため）。`op.exe inject` で参照を解決して環境変数で渡すラッパーを使います。例: `oprun s3.op -- docker compose up -d`
+   - WSL から Windows の 1Password を使う場合: `op.exe run` は使えません（実行するコマンドを Windows 側で起動するため）。`op.exe inject` で参照を解決して環境変数で渡すラッパーを使います。例: `oprun s3.op -- docker compose up -d`。`oprun` はこのリポジトリに含まれません。値がまるごと `op://` の行を `{{ }}` で包んで `op.exe inject` に通し、結果を環境変数にしてコマンドを起動するラッパーを、各自で用意します
 
 | 変数 | 1Password のフィールド | 内容 |
 | --- | --- | --- |
