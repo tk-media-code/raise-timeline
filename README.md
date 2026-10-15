@@ -43,6 +43,8 @@ X（旧 Twitter）を模した、学習用の SNS アプリです。プログラ
 docker compose up -d --build
 ```
 
+S3 を 1Password で設定しているときは、`op run --env-file=s3.op -- docker compose up -d --build` で起動します（WSL は `oprun s3.op -- docker compose up -d --build`）。詳しくは [画像の保存（S3）の準備](#画像の保存s3の準備) にあります。
+
 初回はイメージのビルドと依存のダウンロードで数分かかります。
 
 | URL | 内容 |
@@ -64,7 +66,7 @@ docker compose up -d --build
 | `JWT_SECRET` | `bG9jYWwtZGV2LW9ubHktand0LXNlY3JldC0zMi1ieXRlcyE=` | アクセストークンの署名鍵。32 バイト以上のデータを Base64 にした文字列でなければならず、満たさないと backend は起動しない。ローカル専用の値で、本番は別の値を渡す |
 | `AUTH_COOKIE_SECURE` | `false` | ログイン用 Cookie に `Secure` を付けるか。ローカルは HTTP なので `false`（`docker-compose.yml` に固定で、`.env` では変えられない）。アプリ本体の既定は `true` |
 | `DB_URL_TEST` | `jdbc:postgresql://db:5432/raise_timeline_test` | テストが繋ぐ DB。開発用の DB にテストのデータが混ざらないよう別にしてある（`docker-compose.yml` に固定で、`.env` では変えられない。`POSTGRES_DB` を変えると、それに `_test` が付く） |
-| `LOG_LEVEL_APP` | `DEBUG` | アプリのログの水準。`DEBUG` では SQL とその引数も出る。`INFO` にすると本番と同じ行だけになる。変えたら `docker compose up -d` で backend を作り直す |
+| `LOG_LEVEL_APP` | `DEBUG` | アプリのログの水準。`DEBUG` では SQL とその引数も出る。`INFO` にすると本番と同じ行だけになる。変えたら `docker compose up -d` で backend を作り直す（S3 を `s3.op` で渡しているときは `s3.op` を通す） |
 
 DB の3つは初回起動時だけ読まれます。変えたら `docker compose down -v` でデータごと作り直してください。依存のボリュームも消えるので、次の起動は数分かかります。
 
@@ -138,7 +140,7 @@ docker compose logs --no-log-prefix backend --since 10m | jq -R -r 'fromjson? //
 | 1 つの要求だけ読む | 上のコマンドの `fromjson? // empty` の後ろに `\| select(.http.request.id == "<requestId>")` を足す |
 | ERROR だけ読む | 同じく `\| select(.log.level == "ERROR")` を足す。スタックトレースは `.error.stack_trace` に入っている |
 | DEBUG を除いて読む | 同じく `\| select(.log.level != "DEBUG")` を足す。本番で見えるのと同じ行だけになる |
-| SQL を出さない | ローカルの既定は DEBUG で、SQL とその引数も出る。止めたいときは `.env` に `LOG_LEVEL_APP=INFO` を書き、`docker compose up -d` で backend を作り直す |
+| SQL を出さない | ローカルの既定は DEBUG で、SQL とその引数も出る。止めたいときは `.env` に `LOG_LEVEL_APP=INFO` を書き、`docker compose up -d` で backend を作り直す（S3 を `s3.op` で渡しているときは `s3.op` を通す） |
 
 エラー応答の `requestId` と同じ値が、ログの `http.request.id` に入っています。応答で受け取った `requestId` を `<requestId>` に入れれば、その要求の行だけを読めます。
 

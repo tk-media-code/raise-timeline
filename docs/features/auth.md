@@ -233,7 +233,7 @@ Vite の proxy、フロントの API クライアント・認証状態・共通�
 
 ## 7. 手動確認の手順
 
-1. `docker compose up -d --build` で起動し、`http://localhost:5173/register` で登録する → `/` に移る
+1. `docker compose up -d --build` で起動し（S3 を `s3.op` で渡しているときは `s3.op` を通す。README の「画像の保存（S3）の準備」）、`http://localhost:5173/register` で登録する → `/` に移る
 2. リロードしても ログイン状態が続く（起動時の更新が通る）
 3. ログアウト → `/login` に移り、アドレスバーに `/` を入力して開くと `/login?next=%2F` に戻される
 4. ログイン → `/` に戻る
