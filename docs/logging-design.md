@@ -175,7 +175,7 @@ docker compose logs --no-log-prefix backend --since 10m | jq -R -r 'fromjson? //
 | 1 つの要求だけ読む | 上のコマンドの `fromjson? // empty` の後ろに `\| select(.http.request.id == "<requestId>")` を足す |
 | ERROR だけ読む | 同じく `\| select(.log.level == "ERROR")` を足す。スタックトレースは `.error.stack_trace` に入っている |
 | DEBUG を除いて読む | 同じく `\| select(.log.level != "DEBUG")` を足す。本番で見えるのと同じ行だけになる |
-| SQL を出さない | ローカルの既定は DEBUG で、SQL とその引数も出る。止めたいときは `.env` に `LOG_LEVEL_APP=INFO` を書き、`docker compose up -d` で backend を作り直す |
+| SQL を出さない | ローカルの既定は DEBUG で、SQL とその引数も出る。止めたいときは `.env` に `LOG_LEVEL_APP=INFO` を書き、`docker compose up -d` で backend を作り直す（S3 を `s3.op` で渡しているときは `s3.op` を通す） |
 
 ローカルの既定を DEBUG にしているのは、不具合が起きた時点で SQL とその引数が揃っていて、DEBUG に切り替えて同じ操作をやり直す手間が要らないため。行が増えても、requestId で絞れば関係のない行は混ざらない。
 

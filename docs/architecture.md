@@ -35,7 +35,7 @@ flowchart LR
                 ▼
              backend（Spring Boot :8080）──→ db（PostgreSQL 18）
                 │
-                └──→ S3 開発用バケット（インターネット経由。認証情報は .env から）
+                └──→ S3 開発用バケット（インターネット経由。認証情報は 1Password の雛形 `s3.op` か .env から）
 ブラウザ ──→ S3 開発用バケット（画像の表示）
 ```
 
@@ -44,13 +44,13 @@ flowchart LR
 - backend の環境変数に、JWT の秘密鍵と S3 の設定が増える。土台の決定（`.env` を必須にしない。`docker compose up` だけで起動する）は守る。`JWT_SECRET` はローカル専用の既定値を `docker-compose.yml` に書く（DB のパスワードと同じ扱い）。`AUTH_COOKIE_SECURE=false` もローカル専用の値として `docker-compose.yml` に書く。S3 の変数は無くても起動し、無いときは画像の操作だけが 503 `IMAGE_STORAGE_UNAVAILABLE` になる
 - 結合テスト用の DB `raise_timeline_test` を、`db` サービスの初期化スクリプト（`/docker-entrypoint-initdb.d/`）で作る。backend には `DB_URL_TEST` で渡し、テストのプロファイル（`application-test.properties`）だけがそれを使う（[test-strategy.md](test-strategy.md)）。初期化スクリプトは DB の初回起動時（データのボリュームが空のとき）だけ走り、テストのたびには走らない。既にある開発環境では `docker compose exec db psql -U raise_timeline -d raise_timeline -c 'CREATE DATABASE raise_timeline_test OWNER raise_timeline'` を 1 回だけ手で実行する。`docker compose down -v` で作り直すと、DB のデータに加えて依存とビルドのボリュームも消えるので使わない
 
-`.env` で上書きできる変数は次のとおり。`.env` は `.gitignore` 済みで、コミットしない。S3 を使うときだけ `.env` が要る。
+`.env` で上書きできる変数は次のとおり。`.env` は `.gitignore` 済みで、コミットしない。S3 の値は 1Password の雛形 `s3.op` か `.env` で渡す（README）。1Password を使えば `.env` は要らない。
 
-| 変数 | 中身 | 既定値（.env が無いとき） |
+| 変数 | 中身 | 既定値（.env も s3.op も無いとき） |
 | --- | --- | --- |
 | `JWT_SECRET` | アクセストークンの署名鍵。256 ビット以上の乱数を Base64 にしたもの | `docker-compose.yml` のローカル専用の値 |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | 開発用 IAM ユーザーのアクセスキー | 無し。無ければ画像の操作が 503 |
-| `AWS_REGION` | `ap-northeast-1` | 無し |
+| `AWS_REGION` | `ap-northeast-1` | `ap-northeast-1`（`docker-compose.yml` の既定値） |
 | `S3_BUCKET` | 開発用バケット名 | 無し |
 | `S3_PUBLIC_BASE_URL` | `https://<バケット名>.s3.ap-northeast-1.amazonaws.com` | 無し |
 | `LOG_LEVEL_APP` | アプリのログの水準。`DEBUG` では SQL とその引数も出る。`INFO` にすると本番と同じ行だけになる | `DEBUG`（`docker-compose.yml` の既定値。アプリ自体の既定は `INFO`） |
@@ -154,8 +154,8 @@ TanStack Query を足す理由は、タイムラインやコメントの「20 �
 | --- | --- | --- |
 | DB の接続先・ユーザー・パスワード | `docker-compose.yml` の既定値 | RDS のエンドポイント。パスワードは SSM Parameter Store |
 | JWT の秘密鍵 | `docker-compose.yml` のローカル専用の値（`.env` で上書きできる） | SSM Parameter Store |
-| S3 のバケット名・リージョン・公開ベース URL | `.env` | 環境変数 |
-| S3 の認証情報 | `.env` のアクセスキー（開発用バケット限定の IAM ユーザー） | EC2 のインスタンスロール（キーを置かない） |
+| S3 のバケット名・リージョン・公開ベース URL | 1Password の雛形 `s3.op` か `.env`（リージョンは既定値） | 環境変数 |
+| S3 の認証情報 | 1Password の雛形 `s3.op` か `.env` のアクセスキー（開発用バケット限定の IAM ユーザー） | EC2 のインスタンスロール（キーを置かない） |
 | トークンの有効期限 | `application.properties` の既定値（アクセス 1 時間、リフレッシュ 30 日） | 同じ |
 | 環境名（`APP_ENV`） | 無し。ログの `service.environment` は `local` になる | 環境変数で `production` |
 | ログの水準（`LOG_LEVEL_APP`） | `docker-compose.yml` の既定値 `DEBUG`（`.env` で `INFO` にできる） | 環境変数で `INFO`。アプリ自体の既定も `INFO` |
@@ -192,7 +192,7 @@ AWS SDK は認証情報を標準の探索順（環境変数 → インスタン�
 | 認可 | すべての変更系 API で、ログイン中のユーザーが資源の持ち主かを確かめる（[auth-design.md](auth-design.md)） |
 | 入力検証 | サーバーで必ず検証する。画面の検証は入力中に伝えるためのもの |
 | アップロード | 1 枚 5 MB、1 要求 4 枚までを nginx と Spring の両方で制限する |
-| 秘密情報 | リポジトリに置かない。ローカルは `.env`、本番は SSM Parameter Store |
+| 秘密情報 | リポジトリに置かない。ローカルは 1Password か `.env`、本番は SSM Parameter Store |
 | DB | インターネットから届かない。EC2 からだけ接続できる |
 | EC2 | SSH を開けない。SSM Session Manager で入る |
 | エラー応答 | 例外の文言・SQL・スタックトレースを本文に載せない（[error-handling-design.md](error-handling-design.md)） |
